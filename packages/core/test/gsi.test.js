@@ -5,8 +5,9 @@ import { normalizeGsiPayload } from "../src/gsi/normalize-gsi.js";
 import {
   buildLiveMatchContext,
   isLiveMatchFresh,
+  selectLiveStateForViewer,
 } from "../src/gsi/match-context.js";
-import { listRoster } from "../src/players/roster.js";
+import { listRoster, toSteamId64 } from "../src/players/roster.js";
 
 /**
  * Ornek GSI payload'u. Roster'daki ilk iki oyuncu radiant tarafinda.
@@ -170,5 +171,73 @@ test("mac izlerken takima gore ic ice gelen oyuncular okunur", () => {
       (row) => row.name === "Local Player",
     ),
     "izleyici verisi varken yerel oyuncu yedegi kullanilmamali",
+  );
+});
+
+test("ayni anda birden fazla mac varsa izleyicinin maci secilir", () => {
+  // Uc arkadas uc ayri macta. Hepsi surekli veri gonderdigi icin "en taze"
+  // kaydi secmek paneli maclar arasinda ziplatiyordu.
+  const now = Date.now();
+  const state = (uploader, players, ageMs) => ({
+    uploaderSteamId: uploader,
+    updatedAt: new Date(now - ageMs).toISOString(),
+    matchId: "mac-" + uploader,
+    radiantPlayers: players,
+    direPlayers: [],
+  });
+
+  const states = [
+    state("111", [{ steamId: "111" }], 4000),
+    state("222", [{ steamId: "222" }], 1000), // en taze
+    state("333", [{ steamId: "333" }], 8000),
+  ];
+
+  // Kendi macini gonderen kisi kendi macini gorur (en taze olmasa bile).
+  assert.equal(
+    selectLiveStateForViewer(states, { viewerSteamId: "333" }).matchId,
+    "mac-333",
+  );
+
+  // Baska birinin gonderdigi ama icinde oynadigim mac da benim macimdir.
+  const spectated = [
+    state("999", [{ steamId: "999" }, { steamId: "444" }], 5000),
+    state("222", [{ steamId: "222" }], 1000),
+  ];
+  assert.equal(
+    selectLiveStateForViewer(spectated, { viewerSteamId: "444" }).matchId,
+    "mac-999",
+  );
+
+  // Kimlik yoksa yine bir sonuc doner (bos ekran kalmaz).
+  assert.ok(selectLiveStateForViewer(states, {}));
+  assert.equal(selectLiveStateForViewer([], { viewerSteamId: "111" }), null);
+});
+
+test("izleyici hicbir macta yoksa kadrodan en cok oyuncu olan mac secilir", () => {
+  const now = Date.now();
+  // players.seed.js icindeki gercek bir account id -> SteamID64 karsiligi.
+  const rosterSteamId = toSteamId64("201008262");
+
+  const states = [
+    {
+      uploaderSteamId: "aaa",
+      updatedAt: new Date(now - 500).toISOString(), // daha taze
+      matchId: "yabanci-mac",
+      radiantPlayers: [{ steamId: "555" }],
+      direPlayers: [],
+    },
+    {
+      uploaderSteamId: "bbb",
+      updatedAt: new Date(now - 9000).toISOString(),
+      matchId: "arkadas-maci",
+      radiantPlayers: [{ steamId: rosterSteamId }],
+      direPlayers: [],
+    },
+  ];
+
+  // Taze olan yabanci mac degil, kadrodan oyuncu iceren mac secilmeli.
+  assert.equal(
+    selectLiveStateForViewer(states, { viewerSteamId: "777" }).matchId,
+    "arkadas-maci",
   );
 });

@@ -13,6 +13,7 @@ import {
   buildLiveMatchContext,
   isLiveMatchFresh,
   normalizeGsiPayload,
+  selectLiveStateForViewer,
 } from "@dotastat/core";
 import { getCachedStatsByPlayerId } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
@@ -69,21 +70,16 @@ async function ingest(request) {
 }
 
 /**
- * En taze canli mac kaydini bulur.
+ * Su an yayinda olan TUM taze canli mac kayitlari.
+ *
+ * Masaustu uygulamasini kuran herkes kendi macini ayri bir anahtara yazar
+ * (`state:<steamId>`), bu yuzden ayni anda birden fazla mac olabilir.
  */
-async function readFreshest() {
+async function readFreshStates() {
   const store = liveStore();
   const keys = (await store.keys()).filter((key) => key.startsWith("state:"));
   const rows = await Promise.all(keys.map((key) => store.get(key)));
-
-  return (
-    rows
-      .filter((row) => row && isLiveMatchFresh(row))
-      .sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      )[0] || null
-  );
+  return rows.filter((row) => row && isLiveMatchFresh(row));
 }
 
 export default async (request) => {
@@ -96,20 +92,30 @@ export default async (request) => {
   }
 
   try {
-    const liveState = await readFreshest();
+    const url = new URL(request.url);
+    const viewerSteamId = url.searchParams.get("steamId") || "";
+
+    const states = await readFreshStates();
+    // Birden fazla arkadas ayni anda ayri maclardaysa hangisinin gosterilecegi
+    // izleyiciye gore secilir; yoksa panel surekli maclar arasinda zipliyordu.
+    const liveState = selectLiveStateForViewer(states, { viewerSteamId });
     if (!liveState) {
       return json({ ok: true, active: false, reason: "canli-mac-yok" });
     }
 
-    const url = new URL(request.url);
     const statsByPlayerId = await getCachedStatsByPlayerId();
     const context = buildLiveMatchContext({
       liveState,
       statsByPlayerId,
-      viewerSteamId: url.searchParams.get("steamId") || "",
+      viewerSteamId,
     });
 
-    return json({ ok: true, ...context });
+    return json({
+      ok: true,
+      ...context,
+      // Ayni anda baska maclar da varsa arayuz bunu belirtebilsin.
+      liveMatchCount: states.length,
+    });
   } catch (error) {
     return fail("canli-mac-alinamadi", {
       status: 500,

@@ -42,6 +42,70 @@ function matchToRoster(livePlayer) {
 }
 
 /**
+ * Ayni anda birden fazla canli mac varsa SAYFAYI ACAN KISIYE gore secer.
+ *
+ * NEDEN GEREKLI: masaustu uygulamasini kuran herkes kendi macini siteye
+ * gonderiyor ve her kayit ayri tutuluyor. Eskiden site "en son guncellenen"
+ * kaydi herkese gosteriyordu; uc arkadas uc ayri mactayken panel saniyede bir
+ * baska maca zipliyordu, cunku hepsi surekli veri gonderiyor.
+ *
+ * Oncelik sirasi:
+ *   1. Izleyicinin KENDI gonderdigi mac
+ *   2. Izleyicinin oyuncu olarak icinde bulundugu mac
+ *   3. Kadrodan en cok taninan oyuncuyu iceren mac (arkadaslarin maci)
+ *   4. Hicbiri yoksa en taze mac
+ *
+ * @param {Array<Record<string, any>>} states Taze canli mac kayitlari
+ * @param {{ viewerSteamId?: string }} [options]
+ * @returns {Record<string, any>|null}
+ */
+export function selectLiveStateForViewer(states, options = {}) {
+  const rows = (Array.isArray(states) ? states : []).filter(Boolean);
+  if (!rows.length) {
+    return null;
+  }
+
+  const viewer = String(options.viewerSteamId || "").trim();
+  const freshness = (row) => new Date(row?.updatedAt || 0).getTime() || 0;
+  const byFreshest = (a, b) => freshness(b) - freshness(a);
+
+  const playersOf = (row) => [
+    ...(row?.radiantPlayers || []),
+    ...(row?.direPlayers || []),
+  ];
+
+  if (viewer) {
+    const own = rows
+      .filter((row) => String(row?.uploaderSteamId || "") === viewer)
+      .sort(byFreshest)[0];
+    if (own) {
+      return own;
+    }
+
+    const playing = rows
+      .filter((row) =>
+        playersOf(row).some(
+          (player) => String(player?.steamId || "") === viewer,
+        ),
+      )
+      .sort(byFreshest)[0];
+    if (playing) {
+      return playing;
+    }
+  }
+
+  // Kadrodan kac taninan oyuncu var? Cok olan once gelir, esitlikte taze olan.
+  const scored = rows
+    .map((row) => ({
+      row,
+      known: playersOf(row).filter((player) => matchToRoster(player)).length,
+    }))
+    .sort((a, b) => b.known - a.known || byFreshest(a.row, b.row));
+
+  return scored[0].row;
+}
+
+/**
  * @param {Object} input
  * @param {Record<string, any>|null} input.liveState normalizeGsiPayload ciktisi
  * @param {Record<string, Object>} [input.statsByPlayerId] roster id -> PlayerStats
