@@ -1,0 +1,35 @@
+{
+  "name": "dotastat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dota 2 oyuncu degerlendirme + canli mac paneli. Netlify uzerinde canli, Electron ile masaustu.",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace @dotastat/web",
+    "dev:cloud": "npx netlify-cli dev --filter @dotastat/web",
+    "dev:desktop": "npm --prefix packages/desktop run dev",
+    "build": "npm run build --workspace @dotastat/web",
+    "build:web": "npm run build --workspace @dotastat/web",
+    "preview": "npm run preview --workspace @dotastat/web",
+    "desktop:dist": "npm --prefix packages/desktop run dist",
+    "desktop:pack": "npm --prefix packages/desktop run pack",
+    "test": "node --test \"packages/core/test/**/*.test.js\"",
+    "lint:format": "prettier --check \"packages/**/src/**/*.{js,jsx,css}\" \"netlify/**/*.mjs\"",
+    "format": "prettier --write \"packages/**/src/**/*.{js,jsx,css}\" \"netlify/**/*.mjs\"",
+    "desktop:install": "npm --prefix packages/desktop install",
+    "desktop:serve": "npm --prefix packages/desktop run serve"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

@@ -1,0 +1,59 @@
+/** primitives.jsx bilesenlerinin stilleri. */
+
+.hero-icon {
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  object-fit: cover;
+  display: block;
+  flex: none;
+}
+
+.hero-icon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--txt-2);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.rank-medal {
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+
+.rank-medal img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.rank-medal .rank-star {
+  z-index: 1;
+}
+
+.form-strip {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.form-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: block;
+}
+
+.form-dot.win {
+  background: var(--good);
+}
+
+.form-dot.loss {
+  background: var(--bad);
+  opacity: 0.75;
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@dotastat/core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DotaStat paylasilan alan mantigi: oyuncu degerlendirme, draft asistani, GSI normalizasyonu",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./data/*": "./src/data/*",
+    "./players/*": "./src/players/*",
+    "./draft/*": "./src/draft/*",
+    "./gsi/*": "./src/gsi/*",
+    "./heroes/*": "./src/heroes/*",
+    "./providers/*": "./src/providers/*"
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

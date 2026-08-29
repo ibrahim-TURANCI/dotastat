@@ -1,0 +1,319 @@
+/**
+ * DotaStat tema ve ortak bilesen stilleri.
+ *
+ * Tek bir koyu tema kullanilir (oyun ici overlay ve gece kullanimina uygun).
+ * Renkler token olarak :root icinde tanimlidir; bilesenler dogrudan renk
+ * degeri yazmaz.
+ */
+
+:root {
+  --bg-0: #080e16;
+  --bg-1: #0b1420;
+  --bg-2: #10202f;
+  --card: rgba(17, 30, 45, 0.82);
+  --card-hover: rgba(24, 42, 62, 0.92);
+  --line: rgba(148, 175, 212, 0.18);
+  --line-strong: rgba(148, 175, 212, 0.34);
+
+  --txt-0: #eaf3ff;
+  --txt-1: #a3b8d4;
+  --txt-2: #6d84a3;
+
+  --accent: #2ea7ff;
+  --accent-soft: rgba(46, 167, 255, 0.14);
+  --good: #29c97a;
+  --good-soft: rgba(41, 201, 122, 0.14);
+  --bad: #ff5d6c;
+  --bad-soft: rgba(255, 93, 108, 0.14);
+  --warn: #ffb648;
+  --warn-soft: rgba(255, 182, 72, 0.14);
+
+  --radiant: #4aa96c;
+  --dire: #c8443c;
+
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+
+  --shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  font-family:
+    "Segoe UI", Inter, Tahoma, Geneva, Verdana, system-ui, sans-serif;
+  color: var(--txt-0);
+  background:
+    radial-gradient(circle at 82% -6%, #1a3656, transparent 46%),
+    radial-gradient(circle at 4% 102%, #123024, transparent 40%),
+    linear-gradient(155deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2));
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+button {
+  font: inherit;
+}
+
+/* --- Duzen ---------------------------------------------------------------- */
+
+.app-shell {
+  width: min(1500px, 100%);
+  margin: 0 auto;
+  padding: 16px 16px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.section {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.section-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--txt-2);
+  font-weight: 400;
+}
+
+/* --- Kucuk parcalar ------------------------------------------------------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11px;
+  color: var(--txt-1);
+  white-space: nowrap;
+}
+
+.chip.accent {
+  border-color: rgba(46, 167, 255, 0.4);
+  background: var(--accent-soft);
+  color: #bfe2ff;
+}
+
+.chip.good {
+  border-color: rgba(41, 201, 122, 0.4);
+  background: var(--good-soft);
+  color: #8ff0bf;
+}
+
+.chip.bad {
+  border-color: rgba(255, 93, 108, 0.4);
+  background: var(--bad-soft);
+  color: #ffb3ba;
+}
+
+.chip.warn {
+  border-color: rgba(255, 182, 72, 0.4);
+  background: var(--warn-soft);
+  color: #ffd9a1;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--txt-0);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 550;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: linear-gradient(140deg, #2ea7ff, #1d7fd0);
+  border-color: transparent;
+  color: #041625;
+  font-weight: 650;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--txt-1);
+}
+
+.btn.small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--txt-2);
+  font-size: 12px;
+}
+
+.mono {
+  font-family: "Cascadia Mono", Consolas, "SF Mono", monospace;
+  font-size: 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* --- Akordeon ------------------------------------------------------------- */
+
+.accordion {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(11, 20, 32, 0.62);
+  overflow: hidden;
+}
+
+.accordion-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  background: transparent;
+  border: 0;
+  color: var(--txt-0);
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.accordion-trigger:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.accordion-caret {
+  color: var(--txt-2);
+  font-size: 12px;
+  transition: transform 160ms ease;
+}
+
+.accordion[data-open="true"] .accordion-caret {
+  transform: rotate(90deg);
+}
+
+.accordion-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+/* --- Yukleme / bos durum -------------------------------------------------- */
+
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.empty-state {
+  padding: 28px 18px;
+  text-align: center;
+  color: var(--txt-2);
+  font-size: 13px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.app-footer {
+  text-align: center;
+  padding: 8px 0 0;
+  line-height: 1.6;
+}

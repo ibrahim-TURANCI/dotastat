@@ -1,0 +1,76 @@
+{
+  "name": "@dotastat/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DotaStat masaustu uygulamasi: yerel GSI sunucusu + arayuz + bulut yayini",
+  "type": "commonjs",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "serve": "node src/server/standalone.js",
+    "icons": "node scripts/generate-icons.mjs",
+    "prebuild": "node scripts/prepare-build.mjs",
+    "pack": "npm run prebuild && electron-builder --dir",
+    "dist": "npm run prebuild && electron-builder --win nsis && npm run postbuild",
+    "postbuild": "node scripts/cleanup-build.mjs"
+  },
+  "dependencies": {
+    "@dotastat/core": "file:../core",
+    "electron-updater": "^6.3.9",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8",
+    "sharp": "^0.33.5"
+  },
+  "build": {
+    "appId": "com.ibrahim.dotastat",
+    "productName": "DotaStat",
+    "copyright": "DotaStat",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "web/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "."
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "DotaStat-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "author": {
+    "name": "ibrahim"
+  },
+  "license": "ISC"
+}

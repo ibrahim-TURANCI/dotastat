@@ -1,0 +1,217 @@
+import { heroDisplayName } from "@dotastat/core";
+import {
+  formatClock,
+  formatCompact,
+  formatRelativeTime,
+} from "../lib/format.js";
+import { EmptyState, HeroIcon } from "./primitives.jsx";
+import { DraftAssistant } from "./DraftAssistant.jsx";
+import "./LiveMatchPanel.css";
+
+/**
+ * Canli mac paneli.
+ *
+ * Veri GSI'dan gelir: bir arkadas masaustu uygulamasini calistirdiginda kendi
+ * bilgisayarindaki Dota, mac durumunu uygulamaya gonderir; uygulama da buluta
+ * iletir. Bu yuzden panel yalnizca "GSI kurulmus bir arkadas oyundayken"
+ * doludur.
+ *
+ * @param {Object} props
+ * @param {Record<string, any>|null} props.live `/api/live` yaniti
+ * @param {boolean} props.loading
+ * @param {Error|null} props.error
+ */
+export function LiveMatchPanel({ live, loading, error }) {
+  if (loading && !live) {
+    return (
+      <section className="section">
+        <SectionHead />
+        <p className="muted">Canlı maç aranıyor…</p>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="section">
+        <SectionHead />
+        <EmptyState
+          title="Canlı maç bilgisi alınamadı"
+          detail={error.message}
+        />
+      </section>
+    );
+  }
+
+  if (!live?.active) {
+    return (
+      <section className="section">
+        <SectionHead />
+        <EmptyState
+          title="Şu anda canlı maç yok"
+          detail="Arkadaşlardan biri GSI kurulu masaüstü uygulamasıyla oyuna girdiğinde maç burada belirir."
+        />
+      </section>
+    );
+  }
+
+  const advice = live.draftAdvice;
+
+  return (
+    <section className="section live-section">
+      <SectionHead
+        right={
+          <div className="row" style={{ gap: 8 }}>
+            <span className="chip good">Canlı</span>
+            <span className="muted micro">
+              güncellendi: {formatRelativeTime(live.updatedAt)}
+            </span>
+          </div>
+        }
+      />
+
+      <div className="live-scoreboard">
+        <TeamScore
+          side="radiant"
+          score={live.score?.radiant}
+          mine={live.myTeam === "radiant"}
+        />
+        <div className="live-clock">
+          <strong>{formatClock(live.gameTime)}</strong>
+          <span className="muted micro">{phaseLabel(live.phase)}</span>
+        </div>
+        <TeamScore
+          side="dire"
+          score={live.score?.dire}
+          mine={live.myTeam === "dire"}
+        />
+      </div>
+
+      <div className="live-teams">
+        <TeamColumn
+          title="Radiant"
+          side="radiant"
+          players={live.radiantPlayers}
+          mine={live.myTeam === "radiant"}
+        />
+        <TeamColumn
+          title="Dire"
+          side="dire"
+          players={live.direPlayers}
+          mine={live.myTeam === "dire"}
+        />
+      </div>
+
+      {advice?.visible ? (
+        <DraftAssistant advice={advice} />
+      ) : (
+        <p className="muted micro draft-done-note">
+          Draft tamamlandı — pick asistanı kapatıldı.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * @param {{ right?: React.ReactNode }} props
+ */
+function SectionHead({ right }) {
+  return (
+    <div className="section-head">
+      <div>
+        <h2 className="section-title">Canlı Maç</h2>
+        <p className="section-subtitle">
+          Game State Integration üzerinden anlık maç durumu
+        </p>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/**
+ * @param {{ side: string, score: number, mine: boolean }} props
+ */
+function TeamScore({ side, score, mine }) {
+  return (
+    <div className={"team-score " + side + (mine ? " mine" : "")}>
+      <span className="muted micro">
+        {side === "radiant" ? "Radiant" : "Dire"}
+        {mine ? " · bizim taraf" : ""}
+      </span>
+      <strong>{Number(score || 0)}</strong>
+    </div>
+  );
+}
+
+/**
+ * @param {{ title: string, side: string, players: Array<Record<string, any>>, mine: boolean }} props
+ */
+function TeamColumn({ title, side, players, mine }) {
+  const rows = players || [];
+
+  return (
+    <div className={"team-column " + side}>
+      <h3 className="team-column-title">
+        {title}
+        {mine ? <span className="chip accent">bizim taraf</span> : null}
+      </h3>
+
+      {rows.length ? (
+        <ul className="live-player-list">
+          {rows.map((player) => (
+            <li
+              key={player.slotKey + player.steamId}
+              className={"live-player" + (player.roster ? " known" : "")}
+            >
+              <HeroIcon hero={player.hero} size={32} />
+              <div className="live-player-text">
+                <strong>{player.roster?.name || player.name}</strong>
+                <span className="muted micro">
+                  {heroDisplayName(player.hero) || "hero seçilmedi"}
+                  {player.level ? " · sv " + player.level : ""}
+                </span>
+              </div>
+              <div className="live-player-stats">
+                <span className="mono">
+                  {player.kills}/{player.deaths}/{player.assists}
+                </span>
+                <span className="muted micro">
+                  {formatCompact(player.netWorth)} net
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted micro">Oyuncu verisi gelmedi.</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * GSI faz kodunu okunabilir hale getirir.
+ * @param {string} phase
+ * @returns {string}
+ */
+function phaseLabel(phase) {
+  const value = String(phase || "").toUpperCase();
+  if (value.includes("HERO_SELECTION")) {
+    return "Hero seçimi";
+  }
+  if (value.includes("STRATEGY_TIME")) {
+    return "Strateji süresi";
+  }
+  if (value.includes("PRE_GAME")) {
+    return "Maç öncesi";
+  }
+  if (value.includes("GAME_IN_PROGRESS")) {
+    return "Maç sürüyor";
+  }
+  if (value.includes("POST_GAME")) {
+    return "Maç bitti";
+  }
+  return "Bilinmiyor";
+}

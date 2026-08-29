@@ -1,0 +1,20 @@
+node_modules/
+.env
+.env.local
+.DS_Store
+Thumbs.db
+
+# Build ciktilari
+packages/web/dist/
+packages/desktop/release/
+packages/desktop/web/
+packages/desktop/out/
+.netlify/
+.vite/
+
+# Electron gecici klasorleri
+packages/desktop/.cache/
+
+# Yerel calisma verisi (kullaniciya ozel, repoda durmaz)
+packages/desktop/storage/
+*.log

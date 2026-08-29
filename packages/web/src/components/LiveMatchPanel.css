@@ -1,0 +1,145 @@
+/** Canli mac paneli stilleri. */
+
+.live-section {
+  border-color: rgba(41, 201, 122, 0.28);
+}
+
+.live-scoreboard {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.team-score {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.team-score.dire {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.team-score strong {
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
+
+.team-score.radiant strong {
+  color: var(--radiant);
+}
+
+.team-score.dire strong {
+  color: var(--dire);
+}
+
+.team-score.mine strong {
+  text-shadow: 0 0 18px currentColor;
+}
+
+.live-clock {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-clock strong {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.team-column {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.team-column.radiant {
+  border-left: 3px solid var(--radiant);
+}
+
+.team-column.dire {
+  border-left: 3px solid var(--dire);
+}
+
+.team-column-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--txt-1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-player-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.live-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+}
+
+.live-player.known {
+  border-color: rgba(46, 167, 255, 0.35);
+  background: var(--accent-soft);
+}
+
+.live-player-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.live-player-text strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-player-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.draft-done-note {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+
+@media (max-width: 860px) {
+  .live-teams {
+    grid-template-columns: 1fr;
+  }
+}

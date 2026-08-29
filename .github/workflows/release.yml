@@ -1,0 +1,84 @@
+# Masaustu kurulum dosyasini uretir ve GitHub Release olarak yayinlar.
+#
+# Tetikleme:  git tag v1.0.1 && git push origin v1.0.1
+# Sonuc:      DotaStat-Setup-1.0.1.exe  (Releases sayfasinda)
+#
+# Sitedeki "Masaustu surumu" butonu `/api/release` ucu uzerinden bu release'i
+# bulur; bu yuzden Netlify'da GITHUB_REPO degiskeninin dolu olmasi gerekir.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install (kok: core + web)
+        run: npm ci
+
+      # Masaustu paketi workspace disindadir, kendi node_modules ini kurar.
+      - name: Install (masaustu)
+        run: npm ci
+        working-directory: packages/desktop
+
+      # Etiketteki surumu ve repo adresini masaustu paketine yazar.
+      # Repo adresi olmadan electron-updater icin gereken latest.yml uretilemez.
+      - name: Surum ve repo bilgisini ayarla
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          if (-not $version) { throw "Surum etiketi okunamadi" }
+
+          Push-Location packages/desktop
+          npm version $version --no-git-tag-version --allow-same-version
+
+          $pkgPath = "package.json"
+          $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+          $pkg | Add-Member -NotePropertyName repository -NotePropertyValue @{
+            type = "git"
+            url  = "https://github.com/${{ github.repository }}.git"
+          } -Force
+          $pkg | ConvertTo-Json -Depth 20 | Set-Content $pkgPath -Encoding utf8
+          Pop-Location
+
+          Write-Host "Surum: $version / Repo: ${{ github.repository }}"
+
+      # prebuild adimi release/ klasorunu temizler ve web ciktisini kopyalar,
+      # boylece pakette yalnizca guncel dosyalar kalir.
+      # DOTASTAT_CLOUD_URL ve DOTASTAT_INGEST_TOKEN pakete gomulur; boylece
+      # kurulumu indiren arkadasin ayarlara elle bir sey girmesi gerekmez.
+      # Deger yoksa uygulama yine calisir, sadece canli mac yayini kapali olur.
+      # Ikisini de GitHub'da Settings -> Secrets and variables -> Actions
+      # altinda tanimla (URL "Variables", token "Secrets" sekmesinde).
+      - name: Kurulum dosyasini uret
+        run: npm run desktop:dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOTASTAT_CLOUD_URL: ${{ vars.DOTASTAT_CLOUD_URL }}
+
+      - name: Release olustur
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            packages/desktop/release/DotaStat-Setup-*.exe
+            packages/desktop/release/latest.yml
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,109 @@
+# Netlify yapilandirmasi.
+#
+# Site kokten build edilir; yayinlanan klasor web paketinin `dist` ciktisidir.
+# Fonksiyonlar `netlify/functions` altindadir ve `@dotastat/core` paketini
+# workspace symlink'i uzerinden import eder (esbuild bunlari bundle eder).
+#
+# Masaustu paketi (packages/desktop) workspace DISINDADIR; Netlify kurulumu
+# Electron ikilisini indirmez.
+
+[build]
+  command = "npm run build:web"
+  publish = "packages/web/dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--include=dev"
+
+# Yerel gelistirme (`netlify dev`).
+#
+# Vite 3045'te calisir (bkz. packages/web/vite.config.js); netlify dev onu
+# 8888 onunden servis eder ve `/api/*` isteklerini fonksiyonlara yollar.
+# Bu blok olmadan netlify dev Vite'i varsayilan 5173 portunda bekler ve
+# "Timed out waiting for port '5173'" hatasiyla durur.
+[dev]
+  command = "npm run dev"
+  targetPort = 3045
+  port = 8888
+  framework = "#custom"
+  autoLaunch = false
+
+[functions]
+  node_bundler = "esbuild"
+  # Workspace paketini fonksiyon paketine dahil et.
+  included_files = ["packages/core/src/**"]
+
+# Kisa API yollari -> fonksiyonlar
+[[redirects]]
+  from = "/api/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/return"
+  to = "/.netlify/functions/auth-return"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/session"
+  to = "/.netlify/functions/auth-session"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/logout"
+  to = "/.netlify/functions/auth-logout"
+  status = 200
+
+[[redirects]]
+  from = "/api/players"
+  to = "/.netlify/functions/players"
+  status = 200
+
+[[redirects]]
+  from = "/api/players/:playerKey"
+  to = "/.netlify/functions/player?playerKey=:playerKey"
+  status = 200
+
+[[redirects]]
+  from = "/api/live"
+  to = "/.netlify/functions/live"
+  status = 200
+
+[[redirects]]
+  from = "/api/presence"
+  to = "/.netlify/functions/presence"
+  status = 200
+
+[[redirects]]
+  from = "/api/me/match-roles"
+  to = "/.netlify/functions/match-roles"
+  status = 200
+
+[[redirects]]
+  from = "/api/release"
+  to = "/.netlify/functions/release"
+  status = 200
+
+[[redirects]]
+  from = "/api/debug"
+  to = "/.netlify/functions/debug"
+  status = 200
+
+# SPA fallback — her zaman en sonda kalmali.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
