@@ -16,7 +16,14 @@ import "./AppHeader.css";
  * @param {() => void} props.onLogout
  * @param {{ name: string, hero: string, team: string }|null} props.detectedPlayer
  */
-export function AppHeader({ user, sessionLoading, onLogout, detectedPlayer }) {
+export function AppHeader({
+  user,
+  sessionLoading,
+  onLogout,
+  detectedPlayer,
+  mode,
+  onOpenSettings,
+}) {
   const presence = useAsyncData(() => api.presence(), { intervalMs: 45000 });
   const release = useAsyncData(() => api.release(), { intervalMs: 0 });
 
@@ -53,11 +60,22 @@ export function AppHeader({ user, sessionLoading, onLogout, detectedPlayer }) {
           </a>
         ) : null}
 
+        {mode === "desktop" ? (
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={onOpenSettings}
+          >
+            ⚙ Ayarlar
+          </button>
+        ) : null}
+
         <IdentityBox
           user={user}
           loading={sessionLoading}
           onLogout={onLogout}
           detectedPlayer={detectedPlayer}
+          mode={mode}
         />
       </div>
     </header>
@@ -110,7 +128,7 @@ function OnlineStrip({ online, loading }) {
  * @param {() => void} props.onLogout
  * @param {{ name: string, hero: string }|null} props.detectedPlayer
  */
-function IdentityBox({ user, loading, onLogout, detectedPlayer }) {
+function IdentityBox({ user, loading, onLogout, detectedPlayer, mode }) {
   if (loading) {
     return <span className="muted">oturum kontrol ediliyor…</span>;
   }
@@ -136,6 +154,26 @@ function IdentityBox({ user, loading, onLogout, detectedPlayer }) {
         <button type="button" className="btn ghost small" onClick={onLogout}>
           Çıkış
         </button>
+      </div>
+    );
+  }
+
+  // Masaustunde Steam OpenID akisi YOKTUR: yerel sunucuda /api/auth/login
+  // diye bir uc yok, kimlik GSI'dan veya ayarlardaki SteamID'den gelir.
+  // Butonu yine de gostermek "Cannot GET /api/auth/login" hatasina goturuyordu.
+  if (mode === "desktop") {
+    return (
+      <div className="identity-box">
+        {detectedPlayer ? (
+          <div className="identity-text">
+            <strong>{detectedPlayer.name}</strong>
+            <span className="muted">oyundan tespit edildi</span>
+          </div>
+        ) : (
+          <div className="identity-text">
+            <span className="muted">Kimlik oyundan okunur</span>
+          </div>
+        )}
       </div>
     );
   }

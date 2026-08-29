@@ -164,6 +164,73 @@ function readHeroName(value) {
  * @param {Record<string, any>} raw ham GSI payload'u
  * @returns {Array<Record<string, any>>}
  */
+/**
+ * Izleyici (spectator) modunda GSI, oyuncu bloklarini TAKIMA GORE IC ICE
+ * gonderir:
+ *
+ *   player: { team2: { player0: {...} }, team3: { player5: {...} } }
+ *   hero:   { team2: { player0: {...} } }
+ *   items:  { team2: { player0: {...} } }
+ *
+ * Oynarken ise `player` ve `hero` duz nesnelerdir (yalnizca sen). Eskiden
+ * yalnizca duz bicim tanindigi icin mac izlerken tek bir "Local Player"
+ * satiri cikiyor, hero ve KDA bos gorunuyordu.
+ *
+ * @param {Record<string, any>} raw
+ * @returns {Array<Record<string, any>>}
+ */
+function extractSpectatorPlayers(raw) {
+  const teams = raw?.player;
+  if (!teams || typeof teams !== "object") {
+    return [];
+  }
+
+  const players = [];
+  for (const [teamKey, slots] of Object.entries(teams)) {
+    // Duz (oynayan) bicimde bu alanlar nesne degil, bu yuzden atlanir.
+    if (!/^team\d+$/.test(teamKey) || !slots || typeof slots !== "object") {
+      continue;
+    }
+    const team = teamKey === "team2" ? "radiant" : "dire";
+
+    for (const [slotKey, player] of Object.entries(slots)) {
+      if (!player || typeof player !== "object") {
+        continue;
+      }
+      const hero = raw?.hero?.[teamKey]?.[slotKey] || {};
+      const items = extractItems(raw?.items?.[teamKey]?.[slotKey] || {});
+
+      players.push({
+        slotKey,
+        steamId: String(player?.steamid || ""),
+        accountId: String(player?.accountid || ""),
+        name: String(player?.name || "Player " + slotKey),
+        team,
+        slot: inferTeamSlot(player, slotKey),
+        hero: normalizeHeroKey(readHeroName(hero)),
+        level: Number(hero?.level || player?.level || 0),
+        kills: Number(player?.kills || 0),
+        deaths: Number(player?.deaths || 0),
+        assists: Number(player?.assists || 0),
+        lastHits: Number(player?.last_hits || 0),
+        denies: Number(player?.denies || 0),
+        netWorth: Number(player?.net_worth || player?.gold || 0),
+        gpm: Number(player?.gpm || 0),
+        xpm: Number(player?.xpm || 0),
+        items: items.main,
+        backpack: items.backpack,
+        neutral: items.neutral,
+      });
+    }
+  }
+
+  return players;
+}
+
+/**
+ * @param {Record<string, any>} raw ham GSI payload'u
+ * @returns {Array<Record<string, any>>}
+ */
 function extractPlayers(raw) {
   const container = raw?.allplayers || {};
   const players = [];
@@ -196,6 +263,14 @@ function extractPlayers(raw) {
       backpack: items.backpack,
       neutral: items.neutral,
     });
+  }
+
+  // Mac izlenirken `allplayers` gelmez; oyuncular takima gore ic ice gelir.
+  if (players.length === 0) {
+    const spectated = extractSpectatorPlayers(raw);
+    if (spectated.length) {
+      return spectated;
+    }
   }
 
   // Bazi istemcilerde allplayers gelmez; en azindan yerel oyuncu gosterilir.

@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "./lib/api.js";
 import { useAsyncData } from "./hooks/useAsyncData.js";
 import { useSession } from "./hooks/useSession.js";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { LiveMatchPanel } from "./components/LiveMatchPanel.jsx";
 import { DebugPanel } from "./components/DebugPanel.jsx";
+import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
 
 /** Canli mac ne siklikta sorgulanir. */
@@ -21,6 +22,8 @@ const LIVE_POLL_MS = 5000;
  */
 export default function App() {
   const session = useSession();
+  // Ayar ekrani yalnizca masaustunde vardir; sitede boyle bir uc yok.
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const live = useAsyncData(() => api.live(session.user?.steamId || ""), {
     intervalMs: LIVE_POLL_MS,
@@ -62,7 +65,13 @@ export default function App() {
         sessionLoading={session.loading}
         onLogout={session.logout}
         detectedPlayer={detectedPlayer}
+        mode={session.mode}
+        onOpenSettings={() => setSettingsOpen((open) => !open)}
       />
+
+      {settingsOpen && session.mode === "desktop" ? (
+        <SettingsPanel onClose={() => setSettingsOpen(false)} />
+      ) : null}
 
       <PlayerEvaluationScreen
         liveKnownPlayerIds={live.data?.knownPlayerIds || []}

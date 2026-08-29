@@ -11,7 +11,7 @@ import { json } from "./_lib/respond.mjs";
 export default async (request) => {
   const session = readSession(request);
   if (!session) {
-    return json({ ok: true, signedIn: false, user: null });
+    return json({ ok: true, mode: "cloud", signedIn: false, user: null });
   }
 
   const accountId = session.accountId || toAccountId(session.steamId);
@@ -19,6 +19,7 @@ export default async (request) => {
 
   return json({
     ok: true,
+    mode: "cloud",
     signedIn: true,
     user: {
       steamId: session.steamId,

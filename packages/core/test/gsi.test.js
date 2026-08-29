@@ -123,3 +123,52 @@ test("eski durum bayat sayilir", () => {
   assert.equal(isLiveMatchFresh(old), false);
   assert.equal(isLiveMatchFresh(null), false);
 });
+
+test("mac izlerken takima gore ic ice gelen oyuncular okunur", () => {
+  // Izleyici modunda GSI `allplayers` GONDERMEZ; player/hero/items bloklari
+  // team2/team3 altinda ic ice gelir. Eskiden yalnizca duz (oynayan) bicim
+  // taninmadigi icin ekranda tek bir "Local Player" satiri cikiyordu.
+  const raw = {
+    map: {
+      name: "start",
+      matchid: "123",
+      clock_time: 1156,
+      radiant_score: 8,
+      dire_score: 16,
+      game_state: "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+    },
+    player: {
+      team2: {
+        player0: { name: "Alpha", kills: 3, deaths: 2, assists: 7 },
+        player1: { name: "Beta", kills: 1, deaths: 5, assists: 12 },
+      },
+      team3: {
+        player5: { name: "Gamma", kills: 9, deaths: 1, assists: 4 },
+      },
+    },
+    hero: {
+      team2: {
+        player0: { name: "npc_dota_hero_juggernaut", level: 16 },
+        player1: { name: "npc_dota_hero_crystal_maiden", level: 12 },
+      },
+      team3: { player5: { name: "npc_dota_hero_antimage", level: 20 } },
+    },
+  };
+
+  const out = normalizeGsiPayload(raw);
+
+  assert.equal(out.radiantPlayers.length, 2);
+  assert.equal(out.direPlayers.length, 1);
+  assert.equal(out.radiantPlayers[0].name, "Alpha");
+  assert.equal(out.radiantPlayers[0].hero, "juggernaut");
+  assert.equal(out.radiantPlayers[0].level, 16);
+  assert.equal(out.direPlayers[0].hero, "antimage");
+
+  // "Local Player" yedegine DUSMEMELI.
+  assert.ok(
+    ![...out.radiantPlayers, ...out.direPlayers].some(
+      (row) => row.name === "Local Player",
+    ),
+    "izleyici verisi varken yerel oyuncu yedegi kullanilmamali",
+  );
+});

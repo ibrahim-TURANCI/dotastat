@@ -96,6 +96,22 @@ export const api = {
 
   /** Debug paneli verisi. */
   debug: () => request("/api/debug"),
+
+  /**
+   * Masaustu ayarlari. Yalnizca masaustu sunucusunda vardir; sitede bu uc
+   * bulunmaz, bu yuzden arayuz onu sadece `mode === "desktop"` iken cagirir.
+   */
+  settings: () => request("/api/settings"),
+
+  /**
+   * @param {Record<string, unknown>} patch Yalnizca degisen alanlar
+   */
+  saveSettings: (patch) =>
+    request("/api/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
 };
 
 /** Steam girisi ayni sekmede baslatilir (OpenID yonlendirmesi). */

@@ -239,7 +239,15 @@ function createServerApp(options) {
   app.get("/api/auth/session", (request, response) => {
     const steamId = settings.resolveSteamId();
     if (!steamId) {
-      response.json({ ok: true, signedIn: false, user: null });
+      // `mode` arayuzun hangi ortamda oldugunu bilmesini saglar: masaustunde
+      // Steam OpenID akisi YOKTUR (kimlik GSI/ayarlardan gelir), bu yuzden
+      // arayuz "Steam ile giris" yerine "Ayarlar" gosterir.
+      response.json({
+        ok: true,
+        mode: "desktop",
+        signedIn: false,
+        user: null,
+      });
       return;
     }
 
@@ -247,6 +255,7 @@ function createServerApp(options) {
     const rosterPlayer = core.findRosterPlayer(accountId);
     response.json({
       ok: true,
+      mode: "desktop",
       signedIn: true,
       user: {
         steamId,
@@ -302,10 +311,14 @@ function createServerApp(options) {
       ok: true,
       settings: {
         ...current,
-        // Gizli anahtarlar arayuze ham halde gonderilmez.
+        // Gizli anahtarlar arayuze ham halde gonderilmez; yalnizca "dolu mu"
+        // bilgisi gider. Arayuz "***" gonderirse deger degistirilmemis sayilir.
         ingestToken: current.ingestToken ? "***" : "",
         openDotaApiKey: current.openDotaApiKey ? "***" : "",
+        stratzApiKey: current.stratzApiKey ? "***" : "",
       },
+      // GSI yapilandirmasinin bekledigi port; ayarlar ekraninda gosterilir.
+      gsiPort: Number(process.env.PORT) || 3044,
     });
   });
 
@@ -317,6 +330,7 @@ function createServerApp(options) {
       "cloudUrl",
       "ingestToken",
       "openDotaApiKey",
+      "stratzApiKey",
       "shareLive",
       "startMinimized",
       "autoInstallGsi",
@@ -409,6 +423,21 @@ function createServerApp(options) {
       response.sendFile(path.join(webDir, "index.html"));
     });
   }
+
+  // Taninmayan /api yollari icin Express'in duz metin "Cannot GET ..." sayfasi
+  // doner; koyu temada okunmaz ve ne oldugunu anlatmaz. Sitede olup burada
+  // olmayan uclar (ornek: Steam OpenID girisi) icin acik bir yanit veriyoruz.
+  app.use("/api", (request, response) => {
+    response.status(404).json({
+      ok: false,
+      error: "uc-bulunamadi",
+      message:
+        "Bu uc masaustu surumunde yok: " +
+        request.method +
+        " /api" +
+        request.path,
+    });
+  });
 
   return {
     app,
