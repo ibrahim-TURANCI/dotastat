@@ -20,7 +20,7 @@
     "preview": "npm run preview --workspace @dotastat/web",
     "desktop:dist": "npm --prefix packages/desktop run dist",
     "desktop:pack": "npm --prefix packages/desktop run pack",
-    "test": "node --test \"packages/core/test/**/*.test.js\"",
+    "test": "npm run test --workspace @dotastat/core",
     "lint:format": "prettier --check \"packages/**/src/**/*.{js,jsx,css}\" \"netlify/**/*.mjs\"",
     "format": "prettier --write \"packages/**/src/**/*.{js,jsx,css}\" \"netlify/**/*.mjs\"",
     "desktop:install": "npm --prefix packages/desktop install",

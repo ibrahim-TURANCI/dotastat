@@ -30,7 +30,9 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install (kok: core + web)
+      # Tirnak SART: tirnaksiz bir YAML degerinin icindeki ": " ic ice esleme
+      # olarak okunur ve tum dosya ayristirilamaz hale gelir.
+      - name: "Install (kok: core + web)"
         run: npm ci
 
       # Masaustu paketi workspace disindadir, kendi node_modules ini kurar.
