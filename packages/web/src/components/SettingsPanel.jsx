@@ -88,6 +88,7 @@ export function SettingsPanel({ onClose }) {
   }
 
   const gsiPort = loaded.data?.gsiPort || 3044;
+  const mmrStatus = loaded.data?.mmrStatus || null;
 
   return (
     <div className="settings-panel">
@@ -170,6 +171,31 @@ export function SettingsPanel({ onClose }) {
           type="password"
         />
       </section>
+
+      {/*
+        MMR okuma ve siteye gonderim durumu. Sessizce basarisiz olan bir
+        gonderim aylarca fark edilmeyebilir; burada acikca yaziyor.
+      */}
+      {mmrStatus ? (
+        <section className="settings-group">
+          <h4>MMR</h4>
+          <p className="muted micro">
+            {mmrStatus.available
+              ? mmrStatus.samples + " okuma kayıtlı."
+              : "Kaynak bulunamadı — Overwolf ve MMR uygulaması kurulu ve açık olmalı."}
+          </p>
+          <p className="muted micro">
+            Siteye gönderim:{" "}
+            {mmrStatus.upload?.ok ? (
+              <span className="chip good">çalışıyor</span>
+            ) : (
+              <span className="chip warn">
+                {mmrStatus.upload?.error || "bilinmiyor"}
+              </span>
+            )}
+          </p>
+        </section>
+      ) : null}
 
       <section className="settings-group">
         <h4>Uygulama</h4>

@@ -65,6 +65,50 @@ async function hasCloudSession(cloudUrl) {
 }
 
 /**
+ * Siteye kimlik dogrulanmis istek atar.
+ *
+ * NEDEN AYRI BIR YARDIMCI: Electron ana surecindeki global `fetch` Chromium'un
+ * ag yiginina baglidir ve Chromium `cookie` basligini YASAKLI sayar — elle
+ * kurulunca sessizce DUSURULUR. Istek cerezsiz gider, sunucu 401 doner ve
+ * hicbir yerde hata gorunmez.
+ *
+ * Dogru yol Electron'un `net.fetch`'ini oturumla kullanmaktir: `credentials`
+ * verildiginde cerezleri o oturumdan kendisi ekler.
+ *
+ * Electron yokken (`npm run desktop:serve`) duz `fetch` kullanilir ve cerez
+ * elle eklenir; orada Chromium kisitlamasi yoktur.
+ *
+ * @param {string} url
+ * @param {{ method?: string, body?: string, headers?: Record<string,string> }} [options]
+ * @returns {Promise<Response>}
+ */
+async function cloudFetch(url, options = {}) {
+  const electron = loadElectron();
+  const init = {
+    method: options.method || "GET",
+    headers: { ...(options.headers || {}) },
+    body: options.body,
+    // Site erisilemezse istek asili kalmasin; oyun ici deneyim etkilenmemeli.
+    signal: options.signal || AbortSignal.timeout(options.timeoutMs || 8000),
+  };
+
+  if (electron?.net?.fetch) {
+    return electron.net.fetch(url, {
+      ...init,
+      // Cerezleri varsayilan oturumdan otomatik ekler.
+      credentials: "include",
+      session: electron.session.defaultSession,
+    });
+  }
+
+  const cookie = await readSessionCookie(url);
+  if (cookie) {
+    init.headers.cookie = cookie;
+  }
+  return fetch(url, init);
+}
+
+/**
  * Oturumu kapatir (cerezi siler).
  * @param {string} cloudUrl
  * @returns {Promise<boolean>}
@@ -86,6 +130,7 @@ async function clearCloudSession(cloudUrl) {
 }
 
 module.exports = {
+  cloudFetch,
   SESSION_COOKIE,
   clearCloudSession,
   hasCloudSession,

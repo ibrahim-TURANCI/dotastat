@@ -341,6 +341,8 @@ function createServerApp(options) {
       },
       // GSI yapilandirmasinin bekledigi port; ayarlar ekraninda gosterilir.
       gsiPort: Number(process.env.PORT) || 3044,
+      // MMR okuma ve siteye gonderim durumu; sorun cikarsa burada gorunur.
+      mmrStatus: mmr ? mmr.status() : null,
     });
   });
 

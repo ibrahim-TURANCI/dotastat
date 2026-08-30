@@ -23,7 +23,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { readSessionCookie } = require("./cloud-session.js");
+const { cloudFetch, hasCloudSession } = require("./cloud-session.js");
 
 /** DotaPlus loglarinin bulundugu klasor. */
 const LOG_DIR = path.join(
@@ -123,6 +123,8 @@ function createMmrWatcher(options) {
 
   let timer = null;
   let lastResult = { available: false, samples: 0, at: "", error: "" };
+  /** Son siteye gonderim sonucu (ayar/debug ekraninda gosterilir). */
+  let lastUpload = { ok: false, at: "", error: "henuz-denenmedi" };
 
   /** Depodaki gecmis. */
   async function history() {
@@ -180,21 +182,39 @@ function createMmrWatcher(options) {
       return;
     }
 
-    const cookie = await readSessionCookie(cloudUrl);
-    if (!cookie) {
+    if (!(await hasCloudSession(cloudUrl))) {
       // Siteye giris yapilmamis; MMR yalnizca bu bilgisayarda gorunur.
+      lastUpload = { ok: false, at: "", error: "site-girisi-yok" };
       return;
     }
 
     try {
-      await fetch(cloudUrl.replace(/\/+$/, "") + "/api/me/mmr", {
-        method: "POST",
-        headers: { "content-type": "application/json", cookie },
-        body: JSON.stringify({ samples }),
-        signal: AbortSignal.timeout(8000),
-      });
+      const response = await cloudFetch(
+        cloudUrl.replace(/\/+$/, "") + "/api/me/mmr",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ samples }),
+        },
+      );
+
+      // `fetch` yalnizca AG hatasinda istisna atar; 401/500 sessizce gecerdi.
+      // Durum kodunu acikca yaziyoruz, yoksa sorun gorunmez oluyor.
+      lastUpload = {
+        ok: response.ok,
+        at: new Date().toISOString(),
+        error: response.ok ? "" : "http-" + response.status,
+      };
+      if (!response.ok) {
+        logger.warn?.("MMR siteye iletilemedi", lastUpload.error);
+      }
     } catch (error) {
-      logger.warn?.("MMR siteye iletilemedi", String(error?.message || error));
+      lastUpload = {
+        ok: false,
+        at: new Date().toISOString(),
+        error: String(error?.message || error),
+      };
+      logger.warn?.("MMR siteye iletilemedi", lastUpload.error);
     }
   }
 
@@ -230,7 +250,11 @@ function createMmrWatcher(options) {
     sync,
 
     /** Son okuma durumu (debug panelinde gosterilir). */
-    status: () => ({ ...lastResult, logDir: LOG_DIR }),
+    status: () => ({
+      ...lastResult,
+      upload: { ...lastUpload },
+      logDir: LOG_DIR,
+    }),
   };
 }
 

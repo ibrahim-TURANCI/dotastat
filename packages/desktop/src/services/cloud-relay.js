@@ -11,7 +11,7 @@
  *   - Hata durumunda sessizce gecilir; oyun ici deneyim etkilenmez.
  */
 
-const { readSessionCookie } = require("./cloud-session.js");
+const { cloudFetch, hasCloudSession } = require("./cloud-session.js");
 
 /** Iki gonderim arasindaki en kisa sure. */
 const MIN_INTERVAL_MS = 2500;
@@ -68,37 +68,38 @@ function createCloudRelay(options) {
     //   - Steam oturumu (tercih edilen): kullanici uygulamadan siteye giris
     //     yapmis, cerez Electron oturumunda duruyor.
     //   - Paylasilan token (eski yol): ayarlardan elle girilmis.
-    const cookie = await readSessionCookie(config.cloudUrl);
+    const signedIn = await hasCloudSession(config.cloudUrl);
     if (
       !config.shareLive ||
       !config.cloudUrl ||
-      !(cookie || config.ingestToken)
+      !(signedIn || config.ingestToken)
     ) {
       lastResult = {
         ok: false,
         at: new Date().toISOString(),
-        error: cookie || config.ingestToken ? "yapilandirilmadi" : "giris-yok",
+        error:
+          signedIn || config.ingestToken ? "yapilandirilmadi" : "giris-yok",
       };
       return;
     }
 
     const endpoint = config.cloudUrl.replace(/\/+$/, "") + "/api/live";
+    // Cerez ELLE eklenmez: Electron ana surecinde `cookie` yasakli bir
+    // basliktir ve sessizce dusurulur — istek kimliksiz gider. `cloudFetch`
+    // cerezi oturumdan kendisi ekler. Giris yoksa eski token yoluna dusulur.
     const headers = { "content-type": "application/json" };
-    if (cookie) {
-      headers.cookie = cookie;
-    } else {
+    if (!signedIn) {
       headers["x-dotastat-token"] = config.ingestToken;
     }
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await cloudFetch(endpoint, {
         method: "POST",
         headers,
         body: JSON.stringify({
           state,
           uploaderSteamId: config.steamId || state?.localSteamId || "",
         }),
-        signal: AbortSignal.timeout(6000),
       });
 
       lastResult = response.ok
