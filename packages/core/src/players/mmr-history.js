@@ -30,6 +30,16 @@
 export const MMR_MATCH_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 /**
+ * Okumanin mac bitisinden ONCE gelmesine izin verilen pay.
+ *
+ * Mac bitisi `startedAt + durationSeconds` ile hesaplaniyor ve bu, gercek
+ * bitisten birkac dakika SONRAYA dusuyor (olculdu: 1-3 dakika). Kaynak ise
+ * MMR'i mac biter bitmez okuyor. Pay olmadan her okuma bir onceki maca
+ * kayiyordu — kayip bir mac "+32" gorunuyordu.
+ */
+export const MMR_MATCH_LEAD_MS = 15 * 60 * 1000;
+
+/**
  * Bir yildizin MMR genisligi.
  *
  * Dota'da her madalya 5 yildizdir ve yildizlar esit araliklidir. Deger
@@ -207,12 +217,11 @@ export function attributeMmrToMatches(input) {
     ? input.changes
     : toMmrChanges(input?.samples || []);
 
-  // Maclari bitis zamanina gore YENIDEN ESKIYE sirala; her degisim icin
-  // kendisinden once biten ilk maci ariyoruz.
+  const leadMs = Number(input?.leadMs) || MMR_MATCH_LEAD_MS;
+
   const ordered = matches
     .map((match) => ({ match, endedAt: matchEndedAt(match) }))
-    .filter((row) => row.endedAt > 0)
-    .sort((a, b) => b.endedAt - a.endedAt);
+    .filter((row) => row.endedAt > 0);
 
   /** @type {Record<string, { delta: number, mmr: number, at: string }>} */
   const byMatch = {};
@@ -223,15 +232,30 @@ export function attributeMmrToMatches(input) {
       continue;
     }
 
-    const hit = ordered.find(
-      (row) =>
-        row.endedAt <= changedAt &&
-        changedAt - row.endedAt <= windowMs &&
-        !byMatch[row.match.matchId],
-    );
+    // Uygun maclar: okuma, macin bitisinden `leadMs` kadar once ile `windowMs`
+    // kadar sonra arasinda olmali. Aralarindan bitisi EN YAKIN olan secilir —
+    // "ilk bulunani al" demek, arka arkaya oynanan maclarda yanlis satira
+    // yazmaya yol aciyordu.
+    let best = null;
+    let bestDistance = Infinity;
 
-    if (hit) {
-      byMatch[hit.match.matchId] = {
+    for (const row of ordered) {
+      if (byMatch[row.match.matchId]) {
+        continue;
+      }
+      const offset = changedAt - row.endedAt;
+      if (offset < -leadMs || offset > windowMs) {
+        continue;
+      }
+      const distance = Math.abs(offset);
+      if (distance < bestDistance) {
+        best = row;
+        bestDistance = distance;
+      }
+    }
+
+    if (best) {
+      byMatch[best.match.matchId] = {
         delta: change.delta,
         mmr: change.mmr,
         at: change.at,

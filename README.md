@@ -477,8 +477,12 @@ Overwolf → MMR uygulaması → controller.html.log → DotaStat → maç liste
 
 - Kurulumdan **sonra** oynanan maçlar için birikir; geçmiş maçlarda boş kalır
 - Üçlü (Overwolf + MMR uygulaması + DotaStat) maç sırasında açık olmalı
-- Okuma maç bitiminden 2–66 dakika sonra geliyor; 3 saati aşan boşluklarda
-  hangi maça ait olduğu bilinemez ve hücre boş bırakılır
+- Eşleştirme zamana bakar: okuma, bitişi EN YAKIN olan maça yazılır. Maç
+  bitişi `startedAt + durationSeconds` ile hesaplandığı için gerçek bitişten
+  1–3 dakika sonraya düşer; bu yüzden okumanın bitişten biraz önce gelmesine
+  izin verilir (15 dk pay). Pay olmadan her değer bir önceki maça kayıyordu
+  ve kayıp maçlar pozitif MMR alıyordu.
+- 3 saati aşan boşluklarda hangi maça ait olduğu bilinemez, hücre boş kalır
 - Kaynak uygulamanın log biçimi değişirse okuma sessizce durur; uygulamanın
   geri kalanı etkilenmez
 

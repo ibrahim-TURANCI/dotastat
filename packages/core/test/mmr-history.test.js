@@ -215,3 +215,68 @@ test("en son MMR sirasiz veriden de dogru bulunur", () => {
   assert.equal(value, 3620);
   assert.equal(latestMmr([]), 0);
 });
+
+test("okuma mac bitisinden ONCE gelse de dogru maca yazilir", () => {
+  // Gercek olcum: mac bitisi `startedAt + durationSeconds` ile hesaplaninca
+  // gercek bitisten 1-3 dakika sonraya dusuyor, kaynak ise MMR'i mac biter
+  // bitmez okuyor. "Once bitmis olmali" sarti bu yuzden her degeri bir onceki
+  // maca kaydiriyordu.
+  const matches = [
+    match("200", "2026-08-29T15:54:00Z", 2580), // 16:37 bitti
+    match("100", "2026-08-29T15:05:00Z", 1500), // 15:30 bitti
+  ];
+  const samples = [
+    sample("2026-08-29T15:27:00Z", 3594), // 100'un bitisinden 3 dk ONCE
+    sample("2026-08-29T16:36:00Z", 3620), // 200'un bitisinden 1 dk ONCE
+  ];
+
+  const byMatch = attributeMmrToMatches({ matches, samples });
+  assert.equal(byMatch["200"].mmr, 3620, "son okuma son maca ait olmali");
+  assert.equal(byMatch["200"].delta, 26);
+});
+
+test("gercek veri: her galibiyet arti, her yenilgi eksi almali", () => {
+  // Isaret uyumu en guclu dogrulama: kayip bir maca pozitif MMR yazmak
+  // gozle gorulur bir hatadir. Asagidaki dizi oyuncunun gercek verisidir.
+  const base = Date.UTC(2026, 7, 29, 11, 0, 0);
+  const rows = [
+    { hero: "sand_king", result: "loss", start: 0, dur: 2040, mmr: 3540 },
+    { hero: "shredder", result: "loss", start: 78, dur: 1920, mmr: 3520 },
+    { hero: "magnataur", result: "loss", start: 136, dur: 2220, mmr: 3499 },
+    { hero: "treant", result: "win", start: 178, dur: 1860, mmr: 3531 },
+    { hero: "mirana", result: "win", start: 216, dur: 1440, mmr: 3564 },
+    { hero: "skeleton_king", result: "win", start: 245, dur: 1500, mmr: 3594 },
+    { hero: "pudge", result: "win", start: 294, dur: 2580, mmr: 3620 },
+  ];
+
+  const matches = rows.map((row, index) => ({
+    ...match(
+      String(index + 1),
+      new Date(base + row.start * 60_000).toISOString(),
+      row.dur,
+    ),
+    result: row.result,
+  }));
+
+  // Okumalar mac bitisinden 2 dakika ONCE geliyor (olculen davranis).
+  const samples = [
+    { at: new Date(base - 60_000).toISOString(), mmr: 3555 },
+    ...rows.map((row) => ({
+      at: new Date(base + (row.start + row.dur / 60 - 2) * 60_000).toISOString(),
+      mmr: row.mmr,
+    })),
+  ];
+
+  const byMatch = attributeMmrToMatches({ matches, samples });
+
+  for (const [index, row] of rows.entries()) {
+    const change = byMatch[String(index + 1)];
+    assert.ok(change, `${row.hero} icin MMR eslesmeliydi`);
+    assert.equal(change.mmr, row.mmr, `${row.hero} yanlis MMR aldi`);
+    assert.equal(
+      change.delta > 0,
+      row.result === "win",
+      `${row.hero}: ${row.result} macinda ${change.delta} celiskili`,
+    );
+  }
+});
