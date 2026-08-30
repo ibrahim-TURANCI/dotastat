@@ -44,6 +44,52 @@ function createServerApp(options) {
   const app = express();
   app.use(express.json({ limit: "2mb" }));
 
+  // --- Mac bitiminde otomatik tazeleme ----------------------------------------
+
+  /** Ayni mac icin bir kez tazelenir; GSI ayni durumu defalarca gonderir. */
+  let refreshedMatchId = "";
+
+  /**
+   * Mac bittiyse oyuncunun verisini bir kez tazeler.
+   *
+   * Kaynak maci hemen indekslemeyebilir, bu yuzden `expectMatchId` gecilir:
+   * OpenDota maci vermezse zincir Stratz'a duser (bkz. provider-chain).
+   *
+   * @param {Record<string, any>|null} before
+   * @param {Record<string, any>|null} after
+   */
+  function maybeRefreshAfterMatch(before, after) {
+    const phase = String(after?.phase || "").toUpperCase();
+    const wasPlaying = !String(before?.phase || "")
+      .toUpperCase()
+      .includes("POST_GAME");
+
+    if (!phase.includes("POST_GAME") || !wasPlaying) {
+      return;
+    }
+
+    const matchId = String(after?.matchId || "");
+    if (!matchId || matchId === refreshedMatchId) {
+      return;
+    }
+    refreshedMatchId = matchId;
+
+    const player = core.findRosterPlayer(ownAccountId());
+    if (!player) {
+      return;
+    }
+
+    logger.info?.("Mac bitti, veri tazeleniyor: " + matchId);
+    playerData
+      .getPlayerBundle(player, { refresh: true, expectMatchId: matchId })
+      .catch((error) =>
+        logger.warn?.(
+          "Mac sonrasi tazeleme basarisiz",
+          String(error?.message || error),
+        ),
+      );
+  }
+
   // --- GSI girisi ------------------------------------------------------------
 
   /**
@@ -52,8 +98,13 @@ function createServerApp(options) {
    */
   function handleGsi(request, response) {
     try {
+      const previous = liveState;
       liveState = core.normalizeGsiPayload(request.body || {});
       lastRawAt = new Date().toISOString();
+
+      // Mac bitti mi? Bittiyse oyuncunun kendi verisini bir kez tazele ki
+      // "Yenile"ye basmadan son mac listeye dussun.
+      maybeRefreshAfterMatch(previous, liveState);
 
       // Kullanici elle SteamID girmediyse oyundan gelen kimlik kullanilir.
       const localSteamId = String(liveState.localSteamId || "").trim();

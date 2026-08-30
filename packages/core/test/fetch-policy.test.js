@@ -446,3 +446,49 @@ test("acik tazelemede kaynaga tarama istegi gonderilir", async () => {
   await service.getPlayerBundle(player);
   assert.equal(refreshRequests, 0);
 });
+
+test("beklenen mac ilk kaynakta yoksa sonraki kaynaga gecilir", async () => {
+  // Olculen gercek durum: OpenDota yeni maci HATA VERMEDEN eksik donuyor
+  // (limit de dolu degil, sadece henuz indekslememis), Stratz ise veriyor.
+  // Zincir yalnizca hatada gecseydi yeni mac hic gorunmezdi.
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+
+  const eski = createProviderChain([
+    {
+      name: "gecikmis",
+      getRecentMatches: async () => [sampleMatch("100")],
+    },
+    {
+      name: "guncel",
+      getRecentMatches: async () => [sampleMatch("200"), sampleMatch("100")],
+    },
+  ]);
+
+  const rows = await eski.getRecentMatchesExpecting("1", {
+    expectMatchId: "200",
+  });
+
+  assert.equal(rows.length, 2, "ikinci kaynagin sonucu kullanilmali");
+  assert.equal(eski.lastUsedProvider, "guncel");
+});
+
+test("hicbir kaynakta yoksa eldeki en iyi sonuc doner", async () => {
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+
+  const chain = createProviderChain([
+    { name: "a", getRecentMatches: async () => [sampleMatch("100")] },
+    { name: "b", getRecentMatches: async () => [sampleMatch("100")] },
+  ]);
+
+  const rows = await chain.getRecentMatchesExpecting("1", {
+    expectMatchId: "999",
+  });
+
+  // Ekran bos kalmamali: aranan yoksa da mevcut maclar gosterilir.
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].matchId, "100");
+});

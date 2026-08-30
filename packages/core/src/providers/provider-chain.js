@@ -45,12 +45,23 @@ export function createProviderChain(providers, options = {}) {
 
   /**
    * Bir metodu zincir boyunca dener.
+   *
+   * `accept` verilirse yalnizca HATA degil, YETERSIZ SONUC da sonraki
+   * saglayiciya gecme sebebidir. Bu gerekli, cunku bir saglayici "basarili"
+   * yanit verip aradigimiz veriyi icermeyebiliyor: OpenDota yeni maclari kendi
+   * programina gore aliyor ve saatlerce eksik donebiliyor — hata vermeden.
+   *
    * @param {string} method
    * @param {unknown[]} args
+   * @param {{ accept?: (result: unknown) => boolean }} [options]
    */
-  async function callChained(method, args) {
+  async function callChained(method, args, options = {}) {
     /** @type {unknown} */
     let firstError = null;
+    /** @type {unknown} */
+    let rejected = null;
+    let hasRejected = false;
+    const accept = typeof options.accept === "function" ? options.accept : null;
 
     for (const provider of chain) {
       // Anahtari olmayan saglayici (ornek: STRATZ_API_KEY bos) atlanir.
@@ -63,6 +74,25 @@ export function createProviderChain(providers, options = {}) {
 
       try {
         const result = await provider[method](...args);
+
+        // Sonuc aranan veriyi icermiyorsa bir sonraki kaynagi dene. Elimizdeki
+        // en iyi cevabi yine de sakla: hicbiri yeterli degilse bos donmektense
+        // eksik olani gostermek daha iyidir.
+        if (accept && !accept(result)) {
+          if (!hasRejected) {
+            rejected = result;
+            hasRejected = true;
+          }
+          if (onFailover) {
+            onFailover({
+              provider: String(provider.name || ""),
+              code: "yetersiz-sonuc",
+              message: "aranan veri yok, sonraki kaynak denenecek",
+            });
+          }
+          continue;
+        }
+
         lastUsedProvider = String(provider.name || "");
         return result;
       } catch (error) {
@@ -84,6 +114,12 @@ export function createProviderChain(providers, options = {}) {
           throw error;
         }
       }
+    }
+
+    // Hicbir kaynak aranani veremediyse elimizdeki en iyi cevabi doneriz;
+    // eksik veri, hic veri olmamasindan iyidir.
+    if (hasRejected) {
+      return rejected;
     }
 
     throw (
@@ -117,6 +153,30 @@ export function createProviderChain(providers, options = {}) {
   for (const method of CHAINED_METHODS) {
     client[method] = (...args) => callChained(method, args);
   }
+
+  /**
+   * `getRecentMatches`'in, sonucu dogrulayan surumu.
+   *
+   * Yeni biten bir mac aranirken kullanilir: OpenDota onu henuz almadiysa
+   * hata vermeden eksik doner, bu yuzden Stratz denenmeli.
+   *
+   * @param {string} playerId
+   * @param {{ limit?: number, expectMatchId?: string }} [options]
+   */
+  client.getRecentMatchesExpecting = (playerId, options = {}) => {
+    const wanted = String(options.expectMatchId || "");
+    return callChained(
+      "getRecentMatches",
+      [playerId, { limit: options.limit }],
+      wanted
+        ? {
+            accept: (rows) =>
+              Array.isArray(rows) &&
+              rows.some((row) => String(row?.matchId) === wanted),
+          }
+        : {},
+    );
+  };
 
   // Zincirlenmeyen uclar (ornek: OpenDota'ya ozel canli mac aramasi) ilk
   // destekleyen saglayicidan aynen gecirilir.

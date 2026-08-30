@@ -483,7 +483,11 @@ Overwolf → MMR uygulaması → controller.html.log → DotaStat → maç liste
   izin verilir (15 dk pay). Pay olmadan her değer bir önceki maça kayıyordu
   ve kayıp maçlar pozitif MMR alıyordu.
 - 3 saati aşan boşluklarda hangi maça ait olduğu bilinemez, hücre boş kalır
-- **Yeni biten maç listede hemen görünmez.** OpenDota maçları kendi programına
+- **Maç bitince liste kendiliğinden tazelenir.** GSI bitişi bildirir, uygulama
+  o maç kimliğiyle veri çeker. Kaynak maçı vermiyorsa sonrakine geçilir
+  (ölçüldü: Stratz maçı dakikalar içinde verirken OpenDota'da 29 saat sonra
+  bile yoktu — üstelik OpenDota limitte de değildi, sadece indekslememişti).
+- **Elle yenilemede** yeni biten maç hemen görünmeyebilir; OpenDota maçları kendi programına
   göre alıyor; ölçüldü, bir maç bittikten 29 saat sonra bile listede
   olmayabiliyor. "Yenile" artık OpenDota'ya tarama isteği de gönderiyor ama
   sonuç aynı istekte gelmez — birkaç dakika sonra tekrar yenilemek gerekir.

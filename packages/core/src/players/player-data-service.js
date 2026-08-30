@@ -264,9 +264,20 @@ export function createPlayerDataService(options) {
     }
 
     try {
-      const matches = await client.getRecentMatches(player.player_id, {
-        limit: MATCH_FETCH_SIZE,
-      });
+      // `expectMatchId` verildiginde (canli mac yeni bitti) sonuc dogrulanir:
+      // OpenDota o maci henuz almadiysa HATA VERMEDEN eksik doner, bu yuzden
+      // zincir Stratz'a gecer. Olculdu: Stratz maci dakikalar icinde
+      // gosterirken OpenDota'da 29 saat sonra bile yoktu.
+      const wanted = String(matchOptions.expectMatchId || "");
+      const matches =
+        wanted && typeof client.getRecentMatchesExpecting === "function"
+          ? await client.getRecentMatchesExpecting(player.player_id, {
+              limit: MATCH_FETCH_SIZE,
+              expectMatchId: wanted,
+            })
+          : await client.getRecentMatches(player.player_id, {
+              limit: MATCH_FETCH_SIZE,
+            });
       const fetchedAt = new Date().toISOString();
       if (matches.length) {
         const row = { matches, fetchedAt, schema: MATCH_SCHEMA };
@@ -435,7 +446,20 @@ export function createPlayerDataService(options) {
       const cached = await storage.get(
         "matches:" + player.player_id + ":stale",
       );
-      refreshGate = refreshWindow(cached?.fetchedAt || "");
+      const wanted = String(bundleOptions.expectMatchId || "");
+      const alreadyCached =
+        Boolean(wanted) &&
+        (cached?.matches || []).some((row) => String(row?.matchId) === wanted);
+
+      // BEKLEME ATLANIR: belirli bir mac araniyorsa ve onbellekte yoksa yeni
+      // veri oldugunu KESIN biliyoruz (mac kimligi GSI'dan geldi). Bekleme
+      // kurali gereksiz cekimleri onlemek icin var, gerekli olani degil —
+      // aksi halde mac bitiminde tetiklenen otomatik tazeleme, az once elle
+      // yenilenmis olmasi yuzunden engelleniyordu.
+      refreshGate =
+        wanted && !alreadyCached
+          ? { allowed: true, ageMs: Infinity, availableInMs: 0 }
+          : refreshWindow(cached?.fetchedAt || "");
     }
 
     const effectiveOptions = refreshGate.allowed
