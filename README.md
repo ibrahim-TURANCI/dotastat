@@ -439,3 +439,47 @@ tıkta tamamlanır, sonrasında bekleme devreye girer.
 
 Süre [player-data-service.js](packages/core/src/players/player-data-service.js)
 içinde `MIN_REFRESH_INTERVAL_MS`.
+
+## Maç başına MMR değişimi
+
+Maç listesinde `+26` / `-21` sütunu **gerçek MMR farkıdır**, tahmin değildir.
+Ama gelmesi için bir koşul var.
+
+### Neden ekstra kurulum gerekiyor
+
+Dota 2 MMR'ı **hiçbir genel API'den vermiyor**. Denenip elenenler:
+
+| Kaynak | Sonuç |
+| --- | --- |
+| Dota GSI (tüm veri blokları) | rank/MMR alanı yok |
+| OpenDota | `computed_mmr` var ama `rank_tier` ile çelişiyor |
+| Stratz `MatchPlayerType` | yalnızca `imp` ve `behavior` |
+| Dota konsolu (`find mmr`) | sonuç yok |
+| Yerel dosyalar (628 dosya tarandı) | MMR diske hiç yazılmıyor |
+
+Değer yalnızca oyun istemcisinin belleğinde. Oraya Overwolf'un oyun içi
+sağlayıcısı erişebiliyor; Overwolf üzerinde çalışan uygulama da onu kendi düz
+metin loguna yazıyor. DotaStat **o dosyayı okuyor** — Dota'ya, belleğe veya
+başka bir sürece dokunmadan. VAC riski yoktur.
+
+### Nasıl çalışır
+
+```
+Overwolf → MMR uygulaması → controller.html.log → DotaStat → maç listesi
+```
+
+- Okunan değerler **kendi depomuza** yazılır; log dönse de geçmiş kalmaz
+- MMR değişimi, kendisinden **önce biten en yakın maça** bağlanır
+- Değer siteye de iletilir (Steam oturumuyla), böylece tarayıcıdan da görünür
+- MMR yalnızca **kendi profilinde** görünür
+
+### Sınırlar
+
+- Kurulumdan **sonra** oynanan maçlar için birikir; geçmiş maçlarda boş kalır
+- Üçlü (Overwolf + MMR uygulaması + DotaStat) maç sırasında açık olmalı
+- Okuma maç bitiminden 2–66 dakika sonra geliyor; 3 saati aşan boşluklarda
+  hangi maça ait olduğu bilinemez ve hücre boş bırakılır
+- Kaynak uygulamanın log biçimi değişirse okuma sessizce durur; uygulamanın
+  geri kalanı etkilenmez
+
+Sitedeki **"⬇ MMR için Overwolf"** butonu gerekli kurulumu başlatır.

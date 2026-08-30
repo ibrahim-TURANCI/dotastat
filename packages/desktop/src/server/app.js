@@ -28,7 +28,7 @@ const { hasCloudSession } = require("../services/cloud-session.js");
  * @param {number} [options.port]
  */
 function createServerApp(options) {
-  const { core, settings, storage, relay, webDir } = options;
+  const { core, settings, storage, relay, webDir, mmr } = options;
   const logger = options.logger || console;
 
   const playerData = core.createPlayerDataService({
@@ -182,6 +182,15 @@ function createServerApp(options) {
         refresh: request.query.refresh === "1",
         forcedRoles,
       });
+
+      // MMR yalnizca KENDI profilinde gosterilir: okunan deger bu bilgisayarda
+      // oturum acan oyuncuya aittir, baskasinin maclarina yazilamaz.
+      const mmrByMatch = isOwnProfile
+        ? core.attributeMmrToMatches({
+            matches: bundle.matches,
+            samples: await mmr.history(),
+          })
+        : {};
       response.json({
         ok: true,
         player: bundle.player,
@@ -197,6 +206,7 @@ function createServerApp(options) {
         historyUnavailable: bundle.historyUnavailable,
         refreshSkipped: bundle.refreshSkipped,
         refreshAvailableInMs: bundle.refreshAvailableInMs,
+        mmrByMatch,
         fetchedAt: bundle.fetchedAt,
         fromCache: bundle.fromCache,
         provider: bundle.provider,

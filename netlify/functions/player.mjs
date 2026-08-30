@@ -5,10 +5,15 @@
  * Rank degerlendirmeleri, hero havuzu istatistigi ve sinerji kayitlari.
  */
 
-import { findRosterPlayer, listSynergiesForPlayer } from "@dotastat/core";
+import {
+  attributeMmrToMatches,
+  findRosterPlayer,
+  listSynergiesForPlayer,
+} from "@dotastat/core";
 import { getPlayerBundle } from "./_lib/player-data.mjs";
 import { readMatchRoles, sessionAccountId } from "./_lib/match-roles.mjs";
 import { readSession } from "./_lib/session.mjs";
+import { mmrStore } from "./_lib/store.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
 export default async (request) => {
@@ -40,6 +45,16 @@ export default async (request) => {
 
   try {
     const bundle = await getPlayerBundle(player, { refresh, forcedRoles });
+
+    // MMR yalnizca KENDI profilinde gosterilir. Deger masaustu uygulamasinin
+    // ilettigi okumalardan turer; baskasinin sayfasinda okunmaz.
+    const mmrByMatch = isOwnProfile
+      ? attributeMmrToMatches({
+          matches: bundle.matches,
+          samples:
+            (await mmrStore().get("mmr:" + viewerAccountId))?.samples || [],
+        })
+      : {};
     return json(
       {
         ok: true,
@@ -55,6 +70,7 @@ export default async (request) => {
         canEditRoles: isOwnProfile,
         matchRoles: forcedRoles,
         historyUnavailable: bundle.historyUnavailable,
+        mmrByMatch,
         refreshSkipped: bundle.refreshSkipped,
         refreshAvailableInMs: bundle.refreshAvailableInMs,
         fetchedAt: bundle.fetchedAt,

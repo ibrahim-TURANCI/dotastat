@@ -11,6 +11,7 @@ const { createServerApp } = require("./app.js");
 const { createFileStore } = require("./storage.js");
 const { createSettingsStore } = require("./settings.js");
 const { createCloudRelay } = require("../services/cloud-relay.js");
+const { createMmrWatcher } = require("../services/mmr-watcher.js");
 
 /** Varsayilan port. Dota GSI yapilandirmasi da bu portu kullanir. */
 const DEFAULT_PORT = 3044;
@@ -50,11 +51,21 @@ async function startServer(options) {
     },
   });
 
+  // MMR yalnizca DotaPlus kuruluysa okunabilir; degilse sessizce bos kalir.
+  const mmr = createMmrWatcher({
+    storage,
+    core,
+    logger,
+    getConfig: () => ({ cloudUrl: settings.get().cloudUrl }),
+  });
+  mmr.start();
+
   const { app, getLiveState, playerData } = createServerApp({
     core,
     settings,
     storage,
     relay,
+    mmr,
     webDir: options.webDir || "",
     logger,
     version: options.version || "",
@@ -74,10 +85,12 @@ async function startServer(options) {
     core,
     settings,
     relay,
+    mmr,
     playerData,
     getLiveState,
     async stop() {
       relay.stop();
+      mmr.stop();
       await new Promise((resolve) => server.close(resolve));
     },
   };

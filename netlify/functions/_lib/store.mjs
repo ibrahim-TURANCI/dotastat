@@ -139,3 +139,10 @@ export const presenceStore = () => createStore("dotastat-presence");
  * TTL yoktur; bu veri kullanicinin kendi beyanidir, eskimez.
  */
 export const matchRoleStore = () => createStore("dotastat-match-roles");
+/**
+ * Masaustu uygulamasinin ilettigi MMR okumalari.
+ *
+ * Anahtar: `mmr:<accountId>`. Deger oyuncunun kendi beyanidir ve oturum
+ * cerezinden dogrulanir; TTL yoktur, gecmis birikir.
+ */
+export const mmrStore = () => createStore("dotastat-mmr");

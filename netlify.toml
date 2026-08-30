@@ -80,6 +80,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/me/mmr"
+  to = "/.netlify/functions/mmr"
+  status = 200
+
+[[redirects]]
   from = "/api/me/match-roles"
   to = "/.netlify/functions/match-roles"
   status = 200

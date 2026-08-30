@@ -220,6 +220,7 @@ export function PlayerDetail({ playerKey, onClose }) {
               canEditRoles={detail.data.canEditRoles}
               matchRoles={matchRoles}
               onRoleChange={handleRoleChange}
+              mmrByMatch={detail.data.mmrByMatch}
             />
           </>
         ) : null}
@@ -558,7 +559,15 @@ function HeroPoolTab({ player, stats, heroPool }) {
 /**
  * @param {{ matches: Array<Record<string, any>> }} props
  */
-function MatchesTab({ matches, canEditRoles, matchRoles, onRoleChange }) {
+function MatchesTab({
+  matches,
+  canEditRoles,
+  matchRoles,
+  onRoleChange,
+  mmrByMatch,
+}) {
+  // MMR yalnizca DotaPlus kuruluysa gelir; yoksa sutun hic gosterilmez.
+  const hasMmr = Object.keys(mmrByMatch || {}).length > 0;
   if (!matches?.length) {
     return <EmptyState title="Maç bulunamadı" />;
   }
@@ -578,6 +587,7 @@ function MatchesTab({ matches, canEditRoles, matchRoles, onRoleChange }) {
           <tr>
             <th>Hero</th>
             <th>Sonuç</th>
+            {hasMmr ? <th>MMR</th> : null}
             <th>Pozisyon</th>
             <th>KDA</th>
             <th>GPM / XPM</th>
@@ -601,6 +611,11 @@ function MatchesTab({ matches, canEditRoles, matchRoles, onRoleChange }) {
                   {row.result === "win" ? "G" : "M"}
                 </span>
               </td>
+              {hasMmr ? (
+                <td>
+                  <MmrCell change={mmrByMatch[row.matchId]} />
+                </td>
+              ) : null}
               <td>
                 <RoleCell
                   matchId={row.matchId}
@@ -624,6 +639,31 @@ function MatchesTab({ matches, canEditRoles, matchRoles, onRoleChange }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Bir maçtaki MMR değişimi.
+ *
+ * Değer DotaPlus'ın oyundan okuduğu GERÇEK MMR'dan türer (bkz.
+ * services/mmr-watcher.js); tahmin değildir. Eşleşmeyen maçlarda hücre boş
+ * kalır — MMR yalnızca uygulama açıkken oynanan maçlar için birikir.
+ *
+ * @param {{ change?: { delta: number, mmr: number } }} props
+ */
+function MmrCell({ change }) {
+  if (!change) {
+    return <span className="muted micro">—</span>;
+  }
+  const positive = change.delta > 0;
+  return (
+    <span
+      className={"chip " + (positive ? "good" : "bad")}
+      title={"Maç sonrası MMR: " + change.mmr}
+    >
+      {positive ? "+" : ""}
+      {change.delta}
+    </span>
   );
 }
 

@@ -4,6 +4,15 @@ import { useAsyncData } from "../hooks/useAsyncData.js";
 import "./AppHeader.css";
 
 /**
+ * Overwolf + MMR uygulamasinin birlikte kurulum baglantisi.
+ *
+ * Maç basina MMR degisimi (+26 / -21) yalnizca bu ikisi kuruluyken okunabilir;
+ * masaustu uygulamasi degeri onlarin ciktisindan alir.
+ */
+const OVERWOLF_INSTALL_URL =
+  "https://download.overwolf.com/install/Download?ExtensionId=fbdknfcamajbipmgdhhbopcicfakdkcloiaiohnh&Channel=web_dl_btn&utm_content=new-light&utm_source=web_app_store";
+
+/**
  * Ust bar: kimlik, online arkadaslar ve masaustu surumu indirme.
  *
  * Sol ustteki profil artik tahmine dayanmaz: Steam ile giris yapildiginda
@@ -60,6 +69,19 @@ export function AppHeader({
             ⬇ Masaüstü sürümü
           </a>
         ) : null}
+
+        {/*
+          MMR degeri hicbir genel API'de yok; yalnizca Overwolf'un oyun ici
+          saglayicisindan geliyor. Bu baglanti Overwolf'u ve MMR'i okuyan
+          uygulamayi birlikte kurar (bkz. services/mmr-watcher.js).
+        */}
+        <a
+          className="btn small"
+          href={OVERWOLF_INSTALL_URL}
+          title="Maç başına MMR değişimini görmek için gerekli"
+        >
+          ⬇ MMR için Overwolf
+        </a>
 
         {mode === "desktop" ? (
           <button

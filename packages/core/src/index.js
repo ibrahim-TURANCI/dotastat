@@ -92,6 +92,14 @@ export {
   shrunkWinRate,
 } from "./players/hero-pool.js";
 
+// --- MMR gecmisi (masaustu tarafindan beslenir) -----------------------------
+export {
+  attributeMmrToMatches,
+  mergeMmrSamples,
+  MMR_MATCH_WINDOW_MS,
+  toMmrChanges,
+} from "./players/mmr-history.js";
+
 export {
   HERO_PERFORMANCE_TTL_MS,
   MATCH_FETCH_SIZE,
