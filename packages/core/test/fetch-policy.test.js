@@ -552,3 +552,30 @@ test("en taze secimde erisilemeyen kaynak atlanir", async () => {
   assert.equal(rows[0].matchId, "300");
   assert.equal(chain.lastUsedProvider, "calisan");
 });
+
+test("bekleme suresi tazeleme istenmese de bildirilir", async () => {
+  // Arayuz butonu ACILISTA kapatabilmeli. Bekleme yalnizca tazeleme
+  // istendiginde hesaplansaydi buton acik gorunur, kullanici basar ve istek
+  // sessizce atlanirdi — disaridan "buton bozuk" gibi gorunur.
+  const fresh = new Date(Date.now() - 60 * 1000).toISOString();
+  const storage = createMemoryStorage({
+    "matches:1:stale": {
+      value: { matches: [sampleMatch("700")], fetchedAt: fresh },
+      expiresAt: 0,
+    },
+  });
+
+  const service = createPlayerDataService({ storage });
+  stubMatchFetch(service, async () => [sampleMatch("701")]);
+  service.client.getPlayerProfile = async () => null;
+  service.client.getHeroPerformance = async () => [];
+
+  // Tazeleme ISTENMEDEN normal acilis.
+  const bundle = await service.getPlayerBundle(player);
+
+  assert.equal(bundle.refreshSkipped, false, "istenmedi, atlanmis sayilmaz");
+  assert.ok(
+    bundle.refreshAvailableInMs > 0,
+    "kalan sure acilista da bildirilmeli",
+  );
+});

@@ -456,8 +456,11 @@ export function createPlayerDataService(options) {
     // ACIK tazeleme istegi geldiyse once verinin yasina bakilir. Onbellek
     // paylasildigi icin cok yeni veriyi yeniden cekmek kimseye bir sey
     // kazandirmaz, yalnizca gunluk kotayi harcar.
-    let refreshGate = { allowed: true, ageMs: Infinity, availableInMs: 0 };
-    if (bundleOptions.refresh) {
+    // Bekleme durumu HER ISTEKTE hesaplanir, yalnizca tazeleme istendiginde
+    // degil. Aksi halde normal acilista arayuz bekleme suresini bilmiyor,
+    // butonu acik gosteriyor ve kullanici basinca istek sessizce atlaniyordu.
+    let refreshGate;
+    {
       const cached = await storage.get(
         "matches:" + player.player_id + ":stale",
       );

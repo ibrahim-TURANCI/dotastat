@@ -3,7 +3,7 @@ import { api } from "../lib/api.js";
 import { formatRelativeTime } from "../lib/format.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { PlayerCard } from "../components/PlayerCard.jsx";
-import { PlayerDetail } from "../components/PlayerDetail.jsx";
+import { PlayerDetail, refreshTooltip } from "../components/PlayerDetail.jsx";
 import { EmptyState, SkeletonBlock } from "../components/primitives.jsx";
 
 /**
@@ -60,13 +60,7 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
             className="btn small"
             onClick={() => players.reload({ refresh: true })}
             disabled={players.refreshing || waitMs > 0}
-            title={
-              waitMs > 0
-                ? "Veri az önce güncellendi. " +
-                  Math.ceil(waitMs / 60000) +
-                  " dakika sonra tekrar yenilenebilir."
-                : "Veriyi kaynaktan yeniden çeker"
-            }
+            title={refreshTooltip(waitMs, players.refreshing)}
           >
             {players.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>

@@ -38,6 +38,33 @@ const FIT_LABELS = {
   poor: "Zayıf",
 };
 
+/**
+ * "Yenile" butonunun ipucu metni.
+ *
+ * Buton kapaliyken SEBEBI yazmasi onemli: onbellek tum ziyaretciler arasinda
+ * paylasildigi icin cok yeni veri yeniden cekilmez, ama bu disaridan
+ * "buton bozuk" gibi gorunuyor.
+ *
+ * @param {number} waitMs Yeni tazelemeye kalan sure
+ * @param {boolean} busy
+ * @returns {string}
+ */
+export function refreshTooltip(waitMs, busy) {
+  if (busy) {
+    return "Veri çekiliyor…";
+  }
+  if (waitMs <= 0) {
+    return "Veriyi kaynaktan yeniden çeker";
+  }
+  // Saniye kalmissa "0 dakika" yazmamak icin yukari yuvarlanir.
+  const minutes = Math.ceil(waitMs / 60000);
+  return (
+    "Veri az önce güncellendi — 5 dakika dolmadan tekrar istek atılamaz. " +
+    (minutes > 1 ? minutes + " dakika" : "Yaklaşık 1 dakika") +
+    " sonra tekrar yenilenebilir."
+  );
+}
+
 const ROLE_SOURCE_LABELS = {
   manual: "elle seçildi",
   provider: "maç verisinden",
@@ -169,13 +196,7 @@ export function PlayerDetail({ playerKey, onClose }) {
             className="btn ghost small"
             onClick={() => detail.reload({ refresh: true })}
             disabled={detail.refreshing || refreshWaitMs > 0}
-            title={
-              refreshWaitMs > 0
-                ? "Veri az önce güncellendi. " +
-                  Math.ceil(refreshWaitMs / 60000) +
-                  " dakika sonra tekrar yenilenebilir."
-                : "Veriyi kaynaktan yeniden çeker"
-            }
+            title={refreshTooltip(refreshWaitMs, detail.refreshing)}
           >
             {detail.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>
