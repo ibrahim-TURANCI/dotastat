@@ -8,7 +8,9 @@
 import {
   attributeMmrToMatches,
   findRosterPlayer,
+  latestMmr,
   listSynergiesForPlayer,
+  rankProgress,
 } from "@dotastat/core";
 import { getPlayerBundle } from "./_lib/player-data.mjs";
 import { readMatchRoles, sessionAccountId } from "./_lib/match-roles.mjs";
@@ -48,13 +50,15 @@ export default async (request) => {
 
     // MMR yalnizca KENDI profilinde gosterilir. Deger masaustu uygulamasinin
     // ilettigi okumalardan turer; baskasinin sayfasinda okunmaz.
-    const mmrByMatch = isOwnProfile
-      ? attributeMmrToMatches({
-          matches: bundle.matches,
-          samples:
-            (await mmrStore().get("mmr:" + viewerAccountId))?.samples || [],
-        })
-      : {};
+    const samples = isOwnProfile
+      ? (await mmrStore().get("mmr:" + viewerAccountId))?.samples || []
+      : [];
+    const mmrByMatch = attributeMmrToMatches({
+      matches: bundle.matches,
+      samples,
+    });
+    // Madalyanin yanindaki "kalan rank" bilgisi bundan hesaplanir.
+    const mmrProgress = rankProgress(latestMmr(samples));
     return json(
       {
         ok: true,
@@ -71,6 +75,7 @@ export default async (request) => {
         matchRoles: forcedRoles,
         historyUnavailable: bundle.historyUnavailable,
         mmrByMatch,
+        mmrProgress,
         refreshSkipped: bundle.refreshSkipped,
         refreshAvailableInMs: bundle.refreshAvailableInMs,
         fetchedAt: bundle.fetchedAt,

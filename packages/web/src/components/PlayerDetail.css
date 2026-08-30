@@ -284,3 +284,29 @@
 .data-table tr:last-child td {
   border-bottom: 0;
 }
+
+/* --- Rank ilerlemesi ve MMR ------------------------------------------------- */
+
+.rank-block {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.rank-progress {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.rank-progress strong {
+  font-size: 15px;
+}
+
+/* Maç satırında "3620 (+26)" gösterimi. */
+.mmr-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}

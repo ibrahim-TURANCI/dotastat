@@ -11,7 +11,10 @@ import test from "node:test";
 
 import {
   attributeMmrToMatches,
+  latestMmr,
   mergeMmrSamples,
+  MMR_PER_STAR,
+  rankProgress,
   toMmrChanges,
 } from "../src/players/mmr-history.js";
 
@@ -168,4 +171,47 @@ test("gercek veri: gozlemlenen degisimler dogru cikar", () => {
     toMmrChanges(samples).map((row) => row.delta),
     [32, 33, 30, 26],
   );
+});
+
+test("rank ilerlemesi gercek degerle dogrulanir", () => {
+  // Oyuncunun kendi verisi: MMR 3620, oyunda Legend 4 (rank_tier 54),
+  // oyun ici gostergede "bir sonraki rank icin 76 MMR".
+  const progress = rankProgress(3620);
+
+  assert.equal(progress.label, "Legend 4");
+  assert.equal(progress.medal, 5);
+  assert.equal(progress.stars, 4);
+  assert.equal(progress.remaining, 76);
+  assert.equal(progress.next, 3696);
+});
+
+test("yildiz sinirinda madalya dogru atlar", () => {
+  // 24 * 154 = 3696 -> Legend 5'in tabani
+  assert.equal(rankProgress(3696).label, "Legend 5");
+  // 25 * 154 = 3850 -> Ancient 1
+  assert.equal(rankProgress(3850).label, "Ancient 1");
+  // Tam tabandayken tum yildiz mesafesi kalir
+  assert.equal(rankProgress(3850).remaining, MMR_PER_STAR);
+});
+
+test("Immortal'da bir sonraki esik yoktur", () => {
+  const progress = rankProgress(6000);
+  assert.equal(progress.isTop, true);
+  assert.equal(progress.remaining, 0);
+  assert.equal(progress.label, "Immortal");
+});
+
+test("MMR bilinmiyorsa ilerleme uretilmez", () => {
+  assert.equal(rankProgress(0), null);
+  assert.equal(rankProgress(undefined), null);
+});
+
+test("en son MMR sirasiz veriden de dogru bulunur", () => {
+  const value = latestMmr([
+    sample("2026-08-29T10:00:00Z", 3560),
+    sample("2026-08-29T16:36:00Z", 3620),
+    sample("2026-08-29T12:00:00Z", 3594),
+  ]);
+  assert.equal(value, 3620);
+  assert.equal(latestMmr([]), 0);
 });

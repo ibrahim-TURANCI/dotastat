@@ -145,7 +145,25 @@ export function PlayerDetail({ playerKey, onClose }) {
         </div>
 
         <div className="row" style={{ gap: 10 }}>
-          <RankMedal rank={player.rank} size={44} />
+          <div className="rank-block">
+            <RankMedal rank={player.rank} size={44} />
+            {/*
+              MMR yalnizca kendi profilinde ve MMR kaynagi kuruluysa gelir.
+              Kalan mesafe yildiz genisliginden (154 MMR) hesaplanir.
+            */}
+            {detail.data.mmrProgress ? (
+              <div className="rank-progress">
+                <strong>{detail.data.mmrProgress.mmr}</strong>
+                {detail.data.mmrProgress.isTop ? (
+                  <span className="muted micro">Immortal</span>
+                ) : (
+                  <span className="muted micro">
+                    Kalan rank: {detail.data.mmrProgress.remaining}
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
           <button
             type="button"
             className="btn ghost small"
@@ -657,12 +675,14 @@ function MmrCell({ change }) {
   }
   const positive = change.delta > 0;
   return (
-    <span
-      className={"chip " + (positive ? "good" : "bad")}
-      title={"Maç sonrası MMR: " + change.mmr}
-    >
-      {positive ? "+" : ""}
-      {change.delta}
+    // Maçtan SONRAKİ MMR önde, parantez içinde o maçın farkı — oyuncunun
+    // alıştığı gösterim bu.
+    <span className="mmr-cell">
+      <strong>{change.mmr}</strong>
+      <span className={"chip " + (positive ? "good" : "bad")}>
+        {positive ? "+" : ""}
+        {change.delta}
+      </span>
     </span>
   );
 }

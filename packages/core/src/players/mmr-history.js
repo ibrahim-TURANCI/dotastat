@@ -30,6 +30,94 @@
 export const MMR_MATCH_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 /**
+ * Bir yildizin MMR genisligi.
+ *
+ * Dota'da her madalya 5 yildizdir ve yildizlar esit araliklidir. Deger
+ * gercek veriyle dogrulandi: MMR 3620 -> Legend 4 (rank_tier 54) ve bir
+ * sonraki yildiza 76 MMR — oyun ici gostergeyle birebir ayni.
+ */
+export const MMR_PER_STAR = 154;
+
+/** Madalya adlari (rank_tier'in ilk hanesi ile ayni sira). */
+const MEDAL_NAMES = [
+  "",
+  "Herald",
+  "Guardian",
+  "Crusader",
+  "Archon",
+  "Legend",
+  "Ancient",
+  "Divine",
+  "Immortal",
+];
+
+/** Immortal'da yildiz yoktur; ustunde esik de yoktur. */
+const IMMORTAL_INDEX = 35;
+
+/**
+ * MMR degerinden madalya, yildiz ve bir sonraki yildiza kalan mesafe.
+ *
+ * @param {number} mmr
+ * @returns {{
+ *   mmr: number, medal: number, stars: number, label: string,
+ *   floor: number, next: number, remaining: number, isTop: boolean
+ * }|null}
+ */
+export function rankProgress(mmr) {
+  const value = Number(mmr) || 0;
+  if (value <= 0) {
+    return null;
+  }
+
+  const index = Math.floor(value / MMR_PER_STAR);
+  if (index >= IMMORTAL_INDEX) {
+    // Immortal'in ustunde yildiz yok; ilerleme cubugu anlamsiz olur.
+    return {
+      mmr: value,
+      medal: 8,
+      stars: 0,
+      label: "Immortal",
+      floor: IMMORTAL_INDEX * MMR_PER_STAR,
+      next: 0,
+      remaining: 0,
+      isTop: true,
+    };
+  }
+
+  const medal = Math.floor(index / 5) + 1;
+  const stars = (index % 5) + 1;
+  const next = (index + 1) * MMR_PER_STAR;
+
+  return {
+    mmr: value,
+    medal,
+    stars,
+    label: (MEDAL_NAMES[medal] || "") + " " + stars,
+    floor: index * MMR_PER_STAR,
+    next,
+    remaining: next - value,
+    isTop: false,
+  };
+}
+
+/**
+ * Gecmisteki EN SON okunan MMR.
+ *
+ * @param {MmrSample[]} samples
+ * @returns {number} bilinmiyorsa 0
+ */
+export function latestMmr(samples) {
+  const rows = (Array.isArray(samples) ? samples : [])
+    .map((row) => ({
+      mmr: Number(row?.mmr) || 0,
+      time: new Date(row?.at || 0).getTime(),
+    }))
+    .filter((row) => row.mmr > 0 && Number.isFinite(row.time) && row.time > 0)
+    .sort((a, b) => b.time - a.time);
+  return rows[0]?.mmr || 0;
+}
+
+/**
  * @typedef {Object} MmrSample
  * @property {string} at   ISO tarih
  * @property {number} mmr

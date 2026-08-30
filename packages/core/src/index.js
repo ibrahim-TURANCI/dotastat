@@ -95,7 +95,10 @@ export {
 // --- MMR gecmisi (masaustu tarafindan beslenir) -----------------------------
 export {
   attributeMmrToMatches,
+  latestMmr,
   mergeMmrSamples,
+  MMR_PER_STAR,
+  rankProgress,
   MMR_MATCH_WINDOW_MS,
   toMmrChanges,
 } from "./players/mmr-history.js";

@@ -185,12 +185,13 @@ function createServerApp(options) {
 
       // MMR yalnizca KENDI profilinde gosterilir: okunan deger bu bilgisayarda
       // oturum acan oyuncuya aittir, baskasinin maclarina yazilamaz.
-      const mmrByMatch = isOwnProfile
-        ? core.attributeMmrToMatches({
-            matches: bundle.matches,
-            samples: await mmr.history(),
-          })
-        : {};
+      const samples = isOwnProfile ? await mmr.history() : [];
+      const mmrByMatch = core.attributeMmrToMatches({
+        matches: bundle.matches,
+        samples,
+      });
+      // Madalyanin yanindaki "kalan rank" bilgisi bundan hesaplanir.
+      const mmrProgress = core.rankProgress(core.latestMmr(samples));
       response.json({
         ok: true,
         player: bundle.player,
@@ -207,6 +208,7 @@ function createServerApp(options) {
         refreshSkipped: bundle.refreshSkipped,
         refreshAvailableInMs: bundle.refreshAvailableInMs,
         mmrByMatch,
+        mmrProgress,
         fetchedAt: bundle.fetchedAt,
         fromCache: bundle.fromCache,
         provider: bundle.provider,

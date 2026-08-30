@@ -483,3 +483,16 @@ Overwolf → MMR uygulaması → controller.html.log → DotaStat → maç liste
   geri kalanı etkilenmez
 
 Sitedeki **"⬇ MMR için Overwolf"** butonu gerekli kurulumu başlatır.
+
+### Rank ilerlemesi
+
+MMR bilindiğinde madalyanın yanında mevcut değer ve bir sonraki yıldıza kalan
+mesafe yazar ("Kalan rank: 76"). Hesap yıldız genişliğinden türer: her yıldız
+**154 MMR**, her madalya 5 yıldız.
+
+Değer gerçek veriyle doğrulandı: MMR 3620 → Legend 4 (oyundan gelen
+`rank_tier` 54 ile aynı) ve bir sonraki yıldıza 76 MMR — oyun içi
+göstergeyle birebir.
+
+Maç listesinde de maç sonrası MMR ve o maçın farkı birlikte görünür:
+`3620 (+26)`.
