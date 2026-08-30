@@ -195,6 +195,8 @@ function createServerApp(options) {
         canEditRoles: isOwnProfile,
         matchRoles: forcedRoles,
         historyUnavailable: bundle.historyUnavailable,
+        refreshSkipped: bundle.refreshSkipped,
+        refreshAvailableInMs: bundle.refreshAvailableInMs,
         fetchedAt: bundle.fetchedAt,
         fromCache: bundle.fromCache,
         provider: bundle.provider,

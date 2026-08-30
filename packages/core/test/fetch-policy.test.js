@@ -179,9 +179,69 @@ test("panel tazeleme olmadan yalnizca verisi olmayanlari ceker", async () => {
   await service.getRosterDashboard();
   assert.equal(fetchCount, 0, "veri tamamlandiktan sonra istek atilmamali");
 
-  // Kullanici acikca isterse yine cekilir.
-  await service.getRosterDashboard({ refresh: true });
-  assert.ok(fetchCount > 0, "acik tazelemede istek atilmali");
+  // Veri AZ ONCE cekildigi icin acik tazeleme de atlanir: onbellek tum
+  // ziyaretciler arasinda paylasildigindan ayni veriyi tekrar cekmek
+  // kimseye bir sey kazandirmaz, yalnizca gunluk kotayi harcar.
+  fetchCount = 0;
+  const blocked = await service.getRosterDashboard({ refresh: true });
+  assert.equal(fetchCount, 0, "cok taze veride tazeleme atlanmali");
+  assert.equal(blocked.refreshSkipped, true);
+  assert.ok(blocked.refreshAvailableInMs > 0, "kalan sure bildirilmeli");
+});
+
+test("veri eskidiginde acik tazeleme yeniden calisir", async () => {
+  // Bekleme suresinden daha eski bir kayit: tazeleme serbest olmali.
+  const old = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const storage = createMemoryStorage({
+    "matches:1:stale": {
+      value: { matches: [sampleMatch("900")], fetchedAt: old },
+      expiresAt: 0,
+    },
+  });
+
+  const service = createPlayerDataService({ storage });
+  let fetchCount = 0;
+  service.client.getRecentMatches = async () => {
+    fetchCount += 1;
+    return [sampleMatch("901")];
+  };
+  service.client.getPlayerProfile = async () => null;
+  service.client.getHeroPerformance = async () => [];
+
+  const bundle = await service.getPlayerBundle(player, { refresh: true });
+
+  assert.equal(fetchCount, 1, "eski veride tazeleme calismali");
+  assert.equal(bundle.refreshSkipped, false);
+  assert.equal(bundle.matches[0].matchId, "901");
+});
+
+test("cok yeni veride tazeleme atlanir ama veri yine doner", async () => {
+  const fresh = new Date(Date.now() - 60 * 1000).toISOString(); // 1 dakika
+  const storage = createMemoryStorage({
+    "matches:1:stale": {
+      value: { matches: [sampleMatch("910")], fetchedAt: fresh },
+      expiresAt: 0,
+    },
+  });
+
+  const service = createPlayerDataService({ storage });
+  let fetchCount = 0;
+  service.client.getRecentMatches = async () => {
+    fetchCount += 1;
+    return [sampleMatch("911")];
+  };
+  service.client.getPlayerProfile = async () => null;
+  service.client.getHeroPerformance = async () => [];
+
+  const bundle = await service.getPlayerBundle(player, { refresh: true });
+
+  assert.equal(fetchCount, 0, "1 dakikalik veri icin istek atilmamali");
+  assert.equal(bundle.refreshSkipped, true);
+  // Ekran bos kalmaz: mevcut veri yine gosterilir.
+  assert.equal(bundle.matches[0].matchId, "910");
+  // Kalan sure yaklasik 4 dakika olmali (5 dk pencere - 1 dk yas).
+  const minutes = bundle.refreshAvailableInMs / 60000;
+  assert.ok(minutes > 3.5 && minutes < 4.5, `beklenmeyen sure: ${minutes}`);
 });
 
 test("veri donmeyen oyuncu her acilista yeniden denenmez", async () => {

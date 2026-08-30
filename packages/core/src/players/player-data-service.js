@@ -55,6 +55,83 @@ const MATCH_SCHEMA = 2;
 export const EMPTY_RESULT_RETRY_MS = 6 * 60 * 60 * 1000;
 
 /**
+ * Iki ACIK tazeleme arasindaki en kisa sure.
+ *
+ * Onbellek TUM ziyaretciler arasinda paylasildigi icin tazeleme kisisel degil
+ * ORTAK bir eylemdir: biri iki dakika once tazelediyse, ikinci kisinin
+ * tazelemesi ayni veriyi bir kez daha cekmekten baska bir sey yapmaz.
+ *
+ * Bu yuzden sinir kisi basina sayac degil, VERININ YASI uzerinden isler.
+ * Ekstra bir depo gerekmez — onbellek zaten ne zaman doldugunu biliyor.
+ */
+export const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Kadrodaki EN TAZE verinin zamani.
+ *
+ * Panelde tek bir "son güncelleme" yazisi gosteriliyor; oyuncular ayri
+ * zamanlarda dolduğu icin en yenisi referans alinir.
+ *
+ * @param {Array<{ fetchedAt?: string }>} cards
+ * @returns {string} ISO tarih; hic veri yoksa bos dize
+ */
+function newestFetchedAt(cards) {
+  let newest = 0;
+  for (const card of cards) {
+    const at = new Date(card?.fetchedAt || 0).getTime();
+    if (Number.isFinite(at) && at > newest) {
+      newest = at;
+    }
+  }
+  return newest ? new Date(newest).toISOString() : "";
+}
+
+/**
+ * Panelde yeni tazelemeye ne kadar kaldi.
+ *
+ * Kadroda tazelenebilecek TEK BIR oyuncu bile varsa bekleme yoktur; hepsi
+ * cok taze ise en yeni verinin bekleme suresi doner.
+ *
+ * @param {Array<{ fetchedAt?: string }>} cards
+ * @returns {number} milisaniye
+ */
+function dashboardRefreshWait(cards) {
+  let shortest = Infinity;
+  for (const card of cards) {
+    const gate = refreshWindow(card?.fetchedAt || "");
+    if (gate.allowed) {
+      return 0;
+    }
+    shortest = Math.min(shortest, gate.availableInMs);
+  }
+  return Number.isFinite(shortest) ? shortest : 0;
+}
+
+/**
+ * Bu veri simdi tazelenebilir mi?
+ *
+ * @param {string} fetchedAt ISO tarih; bos ise veri hic cekilmemis demektir
+ * @param {number} [minIntervalMs]
+ * @returns {{ allowed: boolean, ageMs: number, availableInMs: number }}
+ */
+export function refreshWindow(
+  fetchedAt,
+  minIntervalMs = MIN_REFRESH_INTERVAL_MS,
+) {
+  const at = new Date(fetchedAt || 0).getTime();
+  if (!Number.isFinite(at) || at <= 0) {
+    // Hic veri yoksa tazelemeyi engellemenin anlami yok.
+    return { allowed: true, ageMs: Infinity, availableInMs: 0 };
+  }
+  const ageMs = Date.now() - at;
+  return {
+    allowed: ageMs >= minIntervalMs,
+    ageMs,
+    availableInMs: Math.max(0, minIntervalMs - ageMs),
+  };
+}
+
+/**
  * Eski sema ile yazilmis mac kayitlarini bugunku sozlesmeye tasir.
  *
  * @param {import("./player-types.js").PlayerMatch[]} matches
@@ -342,15 +419,30 @@ export function createPlayerDataService(options) {
    * @param {{ refresh?: boolean, allowFetch?: boolean, forcedRoles?: Record<string, string> }} [bundleOptions]
    */
   async function getPlayerBundle(player, bundleOptions = {}) {
+    // ACIK tazeleme istegi geldiyse once verinin yasina bakilir. Onbellek
+    // paylasildigi icin cok yeni veriyi yeniden cekmek kimseye bir sey
+    // kazandirmaz, yalnizca gunluk kotayi harcar.
+    let refreshGate = { allowed: true, ageMs: Infinity, availableInMs: 0 };
+    if (bundleOptions.refresh) {
+      const cached = await storage.get(
+        "matches:" + player.player_id + ":stale",
+      );
+      refreshGate = refreshWindow(cached?.fetchedAt || "");
+    }
+
+    const effectiveOptions = refreshGate.allowed
+      ? bundleOptions
+      : { ...bundleOptions, refresh: false };
+
     // Profil ONCE okunur: "Expose Public Match Data" kapali bir oyuncuda mac
     // ve hero uclarina gitmenin anlami yok, ikisi de her zaman bos doner.
     // Boyle bir oyuncu icin istek harcamiyoruz.
-    const profile = await getPlayerProfile(player, bundleOptions);
+    const profile = await getPlayerProfile(player, effectiveOptions);
     const historyBlocked = Boolean(profile?.historyUnavailable);
 
     const dataOptions = historyBlocked
-      ? { ...bundleOptions, allowFetch: false }
-      : bundleOptions;
+      ? { ...effectiveOptions, allowFetch: false }
+      : effectiveOptions;
 
     const [matchResult, heroResult] = await Promise.all([
       getPlayerMatches(player, dataOptions),
@@ -381,6 +473,13 @@ export function createPlayerDataService(options) {
        * acik bir aciklama olarak gostermeli.
        */
       historyUnavailable: historyBlocked,
+      /**
+       * Tazeleme istendi ama veri henuz cok taze oldugu icin atlandi mi?
+       * Arayuz butonu buna gore kapatip "son guncelleme: 2 dk once" yazar.
+       */
+      refreshSkipped: Boolean(bundleOptions.refresh) && !refreshGate.allowed,
+      /** Yeni tazelemeye ne kadar kaldi (ms). */
+      refreshAvailableInMs: refreshGate.availableInMs,
       // Onbellekten servis edildiginde bu istekte hicbir saglayici cagrilmaz,
       // dolayisiyla `lastUsedProvider` bos kalir. O durumda veriyi kimin
       // urettigi mac satirlarinin kendisinde yazar.
@@ -436,8 +535,24 @@ export function createPlayerDataService(options) {
     );
     const missing = candidates.filter(Boolean);
 
+    // Acik tazelemede verisi COK TAZE olanlar atlanir. Onbellek paylasildigi
+    // icin biri az once tazelediyse ikinci kisinin istegi ayni veriyi bir kez
+    // daha cekmekten baska bir sey yapmaz.
+    //
+    // Mac verisini gizleyen oyuncular hesaba KATILMAZ: onlarin `fetchedAt`i
+    // hicbir zaman dolmayacagi icin "tazelenebilir" gorunup butonu surekli
+    // acik tutuyorlardi.
+    const refreshable = cachedBundles.filter(
+      (row) => !row.bundle.historyUnavailable,
+    );
+    const stale = dashboardOptions.refresh
+      ? refreshable.filter(
+          (row) => refreshWindow(row.bundle.fetchedAt || "").allowed,
+        )
+      : [];
+
     const toRefresh = dashboardOptions.refresh
-      ? cachedBundles.slice(0, maxRefresh)
+      ? stale.slice(0, maxRefresh)
       : missing.slice(0, maxRefresh);
 
     const refreshed = new Map();
@@ -479,6 +594,16 @@ export function createPlayerDataService(options) {
         .map((row) => row.id),
       /** Bu istekte GERCEKTEN saglayiciya gidilen oyuncu sayisi. */
       refreshedCount: fetchedCount,
+      /**
+       * Kadrodaki en taze verinin zamani ve yeni tazelemeye kalan sure.
+       * Arayuz "son güncelleme: 2 dk önce" yazip butonu buna gore kapatir.
+       */
+      lastFetchedAt: newestFetchedAt(cards),
+      refreshAvailableInMs: dashboardRefreshWait(
+        cards.filter((row) => !row.historyUnavailable),
+      ),
+      /** Tazeleme istendi ama tum veriler cok taze oldugu icin atlandi mi? */
+      refreshSkipped: Boolean(dashboardOptions.refresh) && stale.length === 0,
     };
   }
 

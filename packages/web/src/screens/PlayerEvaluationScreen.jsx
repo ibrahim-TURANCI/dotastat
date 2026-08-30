@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api.js";
+import { formatRelativeTime } from "../lib/format.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { PlayerCard } from "../components/PlayerCard.jsx";
 import { PlayerDetail } from "../components/PlayerDetail.jsx";
@@ -23,17 +24,11 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
   // eder — orada tazelik gercekten gerekli.
   const players = useAsyncData((options) => api.players(options));
 
-  // Sunucu saatte 5 tazelemeye izin veriyor. Sinira takilinca butonu kapatip
-  // sebebini yaziyoruz; sessizce basarisiz olmasi kafa karistirirdi.
-  const [limitNotice, setLimitNotice] = useState("");
-
-  async function handleRefresh() {
-    setLimitNotice("");
-    const result = await players.reload({ refresh: true });
-    if (result?.error?.code === "cok-fazla-yenileme") {
-      setLimitNotice(result.error.message);
-    }
-  }
+  // Tazeleme kisisel degil ORTAK bir eylem: onbellek paylasildigi icin biri
+  // az once tazelediyse ayni veri yeniden cekilmez. Buton bu yuzden verinin
+  // yasina gore kapanir, kisi basina sayaca gerek yok.
+  const waitMs = players.data?.refreshAvailableInMs || 0;
+  const lastFetchedAt = players.data?.lastFetchedAt || "";
 
   const cards = players.data?.cards || [];
   const pending = players.data?.pendingPlayers || [];
@@ -55,17 +50,23 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
               {pending.length} oyuncu verisi bekleniyor
             </span>
           ) : null}
-          {limitNotice ? (
-            <span className="chip bad" role="alert">
-              {limitNotice}
+          {lastFetchedAt ? (
+            <span className="muted micro">
+              son güncelleme: {formatRelativeTime(lastFetchedAt)}
             </span>
           ) : null}
           <button
             type="button"
             className="btn small"
-            onClick={handleRefresh}
-            disabled={players.refreshing || Boolean(limitNotice)}
-            title="Veri kaynağının günlük kotası paylaşıldığı için saatte 5 kez"
+            onClick={() => players.reload({ refresh: true })}
+            disabled={players.refreshing || waitMs > 0}
+            title={
+              waitMs > 0
+                ? "Veri az önce güncellendi. " +
+                  Math.ceil(waitMs / 60000) +
+                  " dakika sonra tekrar yenilenebilir."
+                : "Veriyi kaynaktan yeniden çeker"
+            }
           >
             {players.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>

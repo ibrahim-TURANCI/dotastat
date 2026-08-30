@@ -61,16 +61,9 @@ export function PlayerDetail({ playerKey, onClose }) {
   // guncellenmesi icin. Sunucudan yeni veri gelince buradan tazelenir.
   const [matchRoles, setMatchRoles] = useState({});
   const [roleError, setRoleError] = useState("");
-  // Tazeleme hiz siniri (saatte 5) asilirsa buton kapanir ve sebep yazilir.
-  const [limitNotice, setLimitNotice] = useState("");
-
-  async function handleRefresh() {
-    setLimitNotice("");
-    const result = await detail.reload({ refresh: true });
-    if (result?.error?.code === "cok-fazla-yenileme") {
-      setLimitNotice(result.error.message);
-    }
-  }
+  // Onbellek paylasildigi icin cok yeni veri yeniden cekilmez; buton verinin
+  // yasina gore kapanir (bkz. player-data-service -> MIN_REFRESH_INTERVAL_MS).
+  const refreshWaitMs = detail.data?.refreshAvailableInMs || 0;
 
   useEffect(() => {
     setMatchRoles(detail.data?.matchRoles || {});
@@ -156,9 +149,15 @@ export function PlayerDetail({ playerKey, onClose }) {
           <button
             type="button"
             className="btn ghost small"
-            onClick={handleRefresh}
-            disabled={detail.refreshing || Boolean(limitNotice)}
-            title="Veri kaynağının günlük kotası paylaşıldığı için saatte 5 kez"
+            onClick={() => detail.reload({ refresh: true })}
+            disabled={detail.refreshing || refreshWaitMs > 0}
+            title={
+              refreshWaitMs > 0
+                ? "Veri az önce güncellendi. " +
+                  Math.ceil(refreshWaitMs / 60000) +
+                  " dakika sonra tekrar yenilenebilir."
+                : "Veriyi kaynaktan yeniden çeker"
+            }
           >
             {detail.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>
@@ -167,12 +166,6 @@ export function PlayerDetail({ playerKey, onClose }) {
           </button>
         </div>
       </div>
-
-      {limitNotice ? (
-        <p className="chip bad" role="alert">
-          {limitNotice}
-        </p>
-      ) : null}
 
       {detail.data.historyUnavailable ? (
         <p className="chip warn" role="status">

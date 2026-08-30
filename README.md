@@ -417,18 +417,25 @@ Oturum çereziyle kimlik imzalı gelir; yükleyicinin SteamID'si gövdeden deği
 Eski `x-dotastat-token` başlığı hâlâ kabul ediliyor — güncellemeyi geciktiren
 kurulumlar kırılmasın diye. Yeni kurulumlarda kullanılmamalı.
 
-## Yenile hız sınırı
+## Yenile: 5 dakikalık ortak bekleme
 
-"Yenile" butonu her basıldığında OpenDota'ya **gerçek istek** gider ve günlük
-kota tüm ziyaretçiler arasında paylaşılır. Bu yüzden tazeleme kişi başına
-**saatte 5** ile sınırlıdır.
+"Yenile" her basıldığında OpenDota'ya **gerçek istek** gider ve önbellek **tüm
+ziyaretçiler arasında paylaşılır**. Bu yüzden tazeleme kişisel değil **ortak**
+bir eylemdir: biri iki dakika önce tazelediyse, ikinci kişinin tazelemesi aynı
+veriyi bir kez daha çekmekten başka bir şey yapmaz — o veriyi zaten görüyor.
 
-- Sınır yalnızca `?refresh=1` isteklerine uygulanır; normal sayfa açılışı
-  önbellekten gelir ve dış kaynağa gitmez
-- Oyuncu Değerlendirme ve maç geçmişi ekranları **aynı sayacı paylaşır**
-- Kimlik önce Steam oturumundan, yoksa IP'den belirlenir
-- Sınıra takılınca sunucu `429` ve `retry-after` döner; arayüz butonu kapatıp
-  sebebini yazar
+Kural: bir oyuncunun verisi **5 dakikadan yeniyse** tazeleme atlanır. Kişi
+başına sayaç yoktur; kimlik çözmeye de gerek kalmaz, çünkü önbellek zaten ne
+zaman dolduğunu biliyor (`fetchedAt`).
 
-Değerler [rate-limit.mjs](netlify/functions/_lib/rate-limit.mjs) içinde
-(`REFRESH_LIMIT`, `REFRESH_WINDOW_MS`).
+- Buton "son güncelleme: 2 dk önce" yazar ve kalan süre boyunca kapalı durur
+- 10 dakika, 2 saat, 1 gün önce güncellenmişse serbesttir
+- Atlanan istekte de veri döner; ekran boş kalmaz
+- Maç verisini gizleyen oyuncular hesaba katılmaz (`fetchedAt`leri hiç
+  dolmadığı için butonu sürekli açık tutuyorlardı)
+
+Panel istek başına en fazla 4 oyuncu tazeler; kadro daha kalabalıksa birkaç
+tıkta tamamlanır, sonrasında bekleme devreye girer.
+
+Süre [player-data-service.js](packages/core/src/players/player-data-service.js)
+içinde `MIN_REFRESH_INTERVAL_MS`.
