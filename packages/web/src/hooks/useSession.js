@@ -13,6 +13,8 @@ export function useSession() {
   // "desktop" | "cloud" — masaustunde Steam OpenID akisi yoktur, arayuz buna
   // gore "Steam ile giris" yerine "Ayarlar" gosterir.
   const [mode, setMode] = useState("");
+  // Masaustunde: siteye giris yapilmis mi (canli mac yayini icin gerekli).
+  const [cloudSignedIn, setCloudSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -20,6 +22,7 @@ export function useSession() {
       const payload = await api.session();
       setUser(payload.signedIn ? payload.user : null);
       setMode(String(payload.mode || "cloud"));
+      setCloudSignedIn(Boolean(payload.cloudSignedIn));
     } catch {
       setUser(null);
     } finally {
@@ -54,5 +57,5 @@ export function useSession() {
     setUser(null);
   }, []);
 
-  return { user, mode, loading, reload: load, logout };
+  return { user, mode, cloudSignedIn, loading, reload: load, logout };
 }

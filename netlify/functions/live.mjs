@@ -17,6 +17,7 @@ import {
 } from "@dotastat/core";
 import { getCachedStatsByPlayerId } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
+import { readSession } from "./_lib/session.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
 /** Kayitlarin depoda tutulma suresi. */
@@ -27,18 +28,27 @@ const LIVE_TTL_MS = 10 * 60 * 1000;
  * @param {Request} request
  */
 async function ingest(request) {
+  // Yetkilendirme iki yoldan olabilir:
+  //
+  //   1. STEAM OTURUMU (tercih edilen) — masaustu uygulamasi siteye Steam ile
+  //      giris yapar, cerezle gonderir. Kimlik IMZALI gelir: kimse baskasi
+  //      adina veri gonderemez ve kimseyle paylasilan bir sir dolasmaz.
+  //
+  //   2. PAYLASILAN TOKEN (eski yol) — geriye donuk uyum icin duruyor.
+  //      Guncellemeyi geciktiren kurulumlar kirilmasin diye kabul ediliyor.
+  //      Token'i bilen herkes istedigi SteamID adina veri gonderebilir, bu
+  //      yuzden yeni kurulumlarda kullanilmamali.
+  const session = readSession(request);
   const expected = String(process.env.LIVE_INGEST_TOKEN || "").trim();
-  if (!expected) {
-    return fail("ingest-kapali", {
-      status: 503,
-      message:
-        "LIVE_INGEST_TOKEN ortam degiskeni tanimli degil; canli mac yayini kapali.",
-    });
-  }
-
   const provided = String(request.headers.get("x-dotastat-token") || "").trim();
-  if (provided !== expected) {
-    return fail("yetkisiz", { status: 401 });
+  const tokenOk = Boolean(expected) && provided === expected;
+
+  if (!session && !tokenOk) {
+    return fail("yetkisiz", {
+      status: 401,
+      message:
+        "Canli mac verisi gondermek icin masaustu uygulamasindan Steam ile giris yap.",
+    });
   }
 
   let body = null;
@@ -54,9 +64,12 @@ async function ingest(request) {
     return fail("durum-yok", { status: 400 });
   }
 
-  const uploader =
-    String(body?.uploaderSteamId || state.localSteamId || "").trim() ||
-    "anonim";
+  // Oturum varsa yukleyici kimligi CEREZDEN alinir; govdeye guvenilmez.
+  // Boylece biri baskasinin macini kendi adina yayinlayamaz.
+  const uploader = session
+    ? String(session.steamId || "")
+    : String(body?.uploaderSteamId || state.localSteamId || "").trim() ||
+      "anonim";
 
   const record = {
     ...state,

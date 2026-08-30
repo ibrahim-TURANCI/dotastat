@@ -124,7 +124,7 @@ git push -u origin main
    | Değişken | Zorunlu | Ne işe yarar |
    | --- | --- | --- |
    | `SESSION_SECRET` | evet | Steam oturum çerezini imzalar |
-   | `LIVE_INGEST_TOKEN` | canlı maç için | Masaüstü uygulamasının veri gönderebilmesi |
+   | `LIVE_INGEST_TOKEN` | hayır (eski yol) | Masaüstü artık Steam oturumu kullanıyor; bu yalnızca eski kurulumlar için |
    | `OPENDOTA_API_KEY` | hayır | OpenDota limitini yükseltir |
    | `STRATZ_API_KEY` | hayır | OpenDota limite takılınca yedek kaynak |
    | `GITHUB_REPO` | indirme butonu için | `kullanici/dotastat` |
@@ -393,3 +393,42 @@ sonra veriler bir süre içinde sağlayıcılara yansır.
 Uygulama bu durumu tanır: kartta "veri bekleniyor" yerine ayarı tarif eden bir
 açıklama gösterir, `pendingPlayers` yerine `hiddenPlayers` listesinde raporlar
 ve bu oyuncular için maç/hero uçlarına **hiç istek atmaz**.
+
+## Canlı maç yayını nasıl yetkilendirilir
+
+Masaüstü uygulaması maç verisini siteye gönderirken kimliğini **Steam oturum
+çereziyle** kanıtlar. Kullanıcı uygulamadaki **"Steam ile giriş"** butonuna
+basar, Electron ayrı bir pencerede sitenin OpenID akışını açar, dönüşte çerez
+uygulamanın oturumuna yazılır ve röle onu her istekte gönderir.
+
+Çerez ömrü 30 gündür, yani ayda bir kez giriş yapılır.
+
+**Neden böyle:** önceden `LIVE_INGEST_TOKEN` diye paylaşılan tek bir gizli
+anahtar vardı ve her arkadaşın onu ayarlara elle yapıştırması gerekiyordu. İki
+sorunu vardı:
+
+- Anahtarı bilen herkes **istediği SteamID adına** veri gönderebiliyordu
+- Dokuz kişide dolaşan bir sır artık sır değildir; biri sızdırsa iptal etmek
+  herkesi etkilerdi
+
+Oturum çereziyle kimlik imzalı gelir; yükleyicinin SteamID'si gövdeden değil
+çerezden okunur, dolayısıyla kimse başkası adına yayın yapamaz.
+
+Eski `x-dotastat-token` başlığı hâlâ kabul ediliyor — güncellemeyi geciktiren
+kurulumlar kırılmasın diye. Yeni kurulumlarda kullanılmamalı.
+
+## Yenile hız sınırı
+
+"Yenile" butonu her basıldığında OpenDota'ya **gerçek istek** gider ve günlük
+kota tüm ziyaretçiler arasında paylaşılır. Bu yüzden tazeleme kişi başına
+**saatte 5** ile sınırlıdır.
+
+- Sınır yalnızca `?refresh=1` isteklerine uygulanır; normal sayfa açılışı
+  önbellekten gelir ve dış kaynağa gitmez
+- Oyuncu Değerlendirme ve maç geçmişi ekranları **aynı sayacı paylaşır**
+- Kimlik önce Steam oturumundan, yoksa IP'den belirlenir
+- Sınıra takılınca sunucu `429` ve `retry-after` döner; arayüz butonu kapatıp
+  sebebini yazar
+
+Değerler [rate-limit.mjs](netlify/functions/_lib/rate-limit.mjs) içinde
+(`REFRESH_LIMIT`, `REFRESH_WINDOW_MS`).

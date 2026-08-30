@@ -14,6 +14,7 @@
 
 const path = require("node:path");
 const express = require("express");
+const { hasCloudSession } = require("../services/cloud-session.js");
 
 /**
  * @param {Object} options
@@ -236,7 +237,12 @@ function createServerApp(options) {
 
   // --- Kimlik -----------------------------------------------------------------
 
-  app.get("/api/auth/session", (request, response) => {
+  app.get("/api/auth/session", async (request, response) => {
+    // Siteye giris yapilmis mi? Canli mac yayini icin gereken tek sey bu;
+    // arayuz butonu buna gore "giris yap" ya da "cikis" gosterir.
+    const cloudSignedIn = await hasCloudSession(settings.get().cloudUrl || "");
+    response.locals.cloudSignedIn = cloudSignedIn;
+
     const steamId = settings.resolveSteamId();
     if (!steamId) {
       // `mode` arayuzun hangi ortamda oldugunu bilmesini saglar: masaustunde
@@ -246,6 +252,7 @@ function createServerApp(options) {
         ok: true,
         mode: "desktop",
         signedIn: false,
+        cloudSignedIn,
         user: null,
       });
       return;
@@ -257,6 +264,7 @@ function createServerApp(options) {
       ok: true,
       mode: "desktop",
       signedIn: true,
+      cloudSignedIn,
       user: {
         steamId,
         accountId,

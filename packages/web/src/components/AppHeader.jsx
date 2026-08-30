@@ -22,6 +22,7 @@ export function AppHeader({
   onLogout,
   detectedPlayer,
   mode,
+  cloudSignedIn,
   onOpenSettings,
 }) {
   const presence = useAsyncData(() => api.presence(), { intervalMs: 45000 });
@@ -76,6 +77,7 @@ export function AppHeader({
           onLogout={onLogout}
           detectedPlayer={detectedPlayer}
           mode={mode}
+          cloudSignedIn={cloudSignedIn}
         />
       </div>
     </header>
@@ -128,7 +130,14 @@ function OnlineStrip({ online, loading }) {
  * @param {() => void} props.onLogout
  * @param {{ name: string, hero: string }|null} props.detectedPlayer
  */
-function IdentityBox({ user, loading, onLogout, detectedPlayer, mode }) {
+function IdentityBox({
+  user,
+  loading,
+  onLogout,
+  detectedPlayer,
+  mode,
+  cloudSignedIn,
+}) {
   if (loading) {
     return <span className="muted">oturum kontrol ediliyor…</span>;
   }
@@ -158,21 +167,41 @@ function IdentityBox({ user, loading, onLogout, detectedPlayer, mode }) {
     );
   }
 
-  // Masaustunde Steam OpenID akisi YOKTUR: yerel sunucuda /api/auth/login
-  // diye bir uc yok, kimlik GSI'dan veya ayarlardaki SteamID'den gelir.
-  // Butonu yine de gostermek "Cannot GET /api/auth/login" hatasina goturuyordu.
+  // Masaustunde giris YEREL sunucuya degil SITEYE yapilir: Electron ayri bir
+  // pencerede sitenin Steam akisini acar, cerez uygulamanin oturumuna yazilir
+  // ve canli mac yayini onunla yetkilendirilir. Boylece kullanicinin ayarlara
+  // elle paylasilan bir gizli anahtar yapistirmasi gerekmez.
   if (mode === "desktop") {
     return (
       <div className="identity-box">
-        {detectedPlayer ? (
-          <div className="identity-text">
-            <strong>{detectedPlayer.name}</strong>
-            <span className="muted">oyundan tespit edildi</span>
-          </div>
-        ) : (
-          <div className="identity-text">
+        <div className="identity-text">
+          {detectedPlayer ? (
+            <>
+              <strong>{detectedPlayer.name}</strong>
+              <span className="muted">oyundan tespit edildi</span>
+            </>
+          ) : (
             <span className="muted">Kimlik oyundan okunur</span>
-          </div>
+          )}
+        </div>
+        {cloudSignedIn ? (
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => window.dotastat?.cloudLogout?.()}
+            title="Canlı maç yayını için site oturumu"
+          >
+            Site oturumu açık
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn primary small"
+            onClick={() => window.dotastat?.cloudLogin?.()}
+            title="Canlı maçını arkadaşlarının görebilmesi için gerekli"
+          >
+            <SteamMark /> Steam ile giriş
+          </button>
         )}
       </div>
     );

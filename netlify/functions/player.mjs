@@ -9,6 +9,11 @@ import { findRosterPlayer, listSynergiesForPlayer } from "@dotastat/core";
 import { getPlayerBundle } from "./_lib/player-data.mjs";
 import { readMatchRoles, sessionAccountId } from "./_lib/match-roles.mjs";
 import { readSession } from "./_lib/session.mjs";
+import {
+  consumeRefresh,
+  limitMessage,
+  requesterKey,
+} from "./_lib/rate-limit.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
 export default async (request) => {
@@ -28,6 +33,20 @@ export default async (request) => {
   }
 
   const refresh = url.searchParams.get("refresh") === "1";
+
+  // Maç geçmişi ekranindaki "Yenile" de ayni kotayi tuketir; iki ekran tek
+  // sayaci paylasir, cunku ikisi de ayni dis kaynaga gidiyor.
+  if (refresh) {
+    const gate = await consumeRefresh(requesterKey(request));
+    if (!gate.ok) {
+      const body = limitMessage(gate.retryAfterSeconds);
+      return fail(body.error, {
+        status: 429,
+        message: body.message,
+        headers: { "retry-after": String(gate.retryAfterSeconds) },
+      });
+    }
+  }
 
   // Bakilan oyuncu, giris yapmis kullanicinin KENDISI ise onun pozisyon
   // beyanlari degerlendirmeye katilir. Baskasinin sayfasinda bu kayitlar

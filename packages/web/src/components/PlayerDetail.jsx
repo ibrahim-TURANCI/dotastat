@@ -61,6 +61,16 @@ export function PlayerDetail({ playerKey, onClose }) {
   // guncellenmesi icin. Sunucudan yeni veri gelince buradan tazelenir.
   const [matchRoles, setMatchRoles] = useState({});
   const [roleError, setRoleError] = useState("");
+  // Tazeleme hiz siniri (saatte 5) asilirsa buton kapanir ve sebep yazilir.
+  const [limitNotice, setLimitNotice] = useState("");
+
+  async function handleRefresh() {
+    setLimitNotice("");
+    const result = await detail.reload({ refresh: true });
+    if (result?.error?.code === "cok-fazla-yenileme") {
+      setLimitNotice(result.error.message);
+    }
+  }
 
   useEffect(() => {
     setMatchRoles(detail.data?.matchRoles || {});
@@ -146,8 +156,9 @@ export function PlayerDetail({ playerKey, onClose }) {
           <button
             type="button"
             className="btn ghost small"
-            onClick={() => detail.reload({ refresh: true })}
-            disabled={detail.refreshing}
+            onClick={handleRefresh}
+            disabled={detail.refreshing || Boolean(limitNotice)}
+            title="Veri kaynağının günlük kotası paylaşıldığı için saatte 5 kez"
           >
             {detail.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>
@@ -156,6 +167,12 @@ export function PlayerDetail({ playerKey, onClose }) {
           </button>
         </div>
       </div>
+
+      {limitNotice ? (
+        <p className="chip bad" role="alert">
+          {limitNotice}
+        </p>
+      ) : null}
 
       {detail.data.historyUnavailable ? (
         <p className="chip warn" role="status">

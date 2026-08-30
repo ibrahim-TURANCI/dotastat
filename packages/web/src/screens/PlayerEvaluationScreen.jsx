@@ -23,6 +23,18 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
   // eder — orada tazelik gercekten gerekli.
   const players = useAsyncData((options) => api.players(options));
 
+  // Sunucu saatte 5 tazelemeye izin veriyor. Sinira takilinca butonu kapatip
+  // sebebini yaziyoruz; sessizce basarisiz olmasi kafa karistirirdi.
+  const [limitNotice, setLimitNotice] = useState("");
+
+  async function handleRefresh() {
+    setLimitNotice("");
+    const result = await players.reload({ refresh: true });
+    if (result?.error?.code === "cok-fazla-yenileme") {
+      setLimitNotice(result.error.message);
+    }
+  }
+
   const cards = players.data?.cards || [];
   const pending = players.data?.pendingPlayers || [];
   const liveIds = new Set(liveKnownPlayerIds);
@@ -43,11 +55,17 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
               {pending.length} oyuncu verisi bekleniyor
             </span>
           ) : null}
+          {limitNotice ? (
+            <span className="chip bad" role="alert">
+              {limitNotice}
+            </span>
+          ) : null}
           <button
             type="button"
             className="btn small"
-            onClick={() => players.reload({ refresh: true })}
-            disabled={players.refreshing}
+            onClick={handleRefresh}
+            disabled={players.refreshing || Boolean(limitNotice)}
+            title="Veri kaynağının günlük kotası paylaşıldığı için saatte 5 kez"
           >
             {players.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>

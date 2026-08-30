@@ -60,9 +60,13 @@
   to = "/.netlify/functions/players"
   status = 200
 
+# DIKKAT: `to` alanina sorgu dizesi YAZILMAZ. Yazildiginda Netlify gelen
+# sorguyu tasimiyor ve `?refresh=1` fonksiyona hic ulasmiyordu — yani maç
+# gecmisi ekranindaki "Yenile" sessizce onbellekten donuyordu.
+# Oyuncu anahtari zaten yoldan okunuyor (bkz. player.mjs).
 [[redirects]]
   from = "/api/players/:playerKey"
-  to = "/.netlify/functions/player?playerKey=:playerKey"
+  to = "/.netlify/functions/player/:playerKey"
   status = 200
 
 [[redirects]]

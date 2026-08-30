@@ -53,15 +53,20 @@ export function useAsyncData(loader, options = {}) {
           : undefined;
       const result = await loaderRef.current(safeOptions);
       if (!mountedRef.current) {
-        return;
+        return { ok: true, data: result, error: null };
       }
       setData(result);
       hasDataRef.current = true;
       setError(null);
+      // Sonuc DONDURULUR: cagiran taraf hatayi kendi ele almak isteyebilir
+      // (ornek: hiz siniri uyarisini butonun yanina yazmak). Hook yine de
+      // `error` durumunu tutar, iki kullanim birbirini engellemez.
+      return { ok: true, data: result, error: null };
     } catch (caught) {
       if (mountedRef.current) {
         setError(caught);
       }
+      return { ok: false, data: null, error: caught };
     } finally {
       if (mountedRef.current) {
         setLoading(false);

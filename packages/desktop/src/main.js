@@ -22,6 +22,7 @@ const { DEFAULT_PORT, startServer } = require("./server/index.js");
 const { createLogger } = require("./services/logger.js");
 const { createTray } = require("./services/tray.js");
 const { createUpdater } = require("./services/updater.js");
+const { clearCloudSession } = require("./services/cloud-session.js");
 const {
   findDotaCfgDir,
   installGsiConfig,
@@ -210,4 +211,78 @@ ipcMain.handle("dotastat:install-gsi", () => setupGsi());
 ipcMain.handle("dotastat:open-log", () => {
   shell.showItemInFolder(logger.filePath);
   return true;
+});
+
+/**
+ * Siteye Steam ile giris.
+ *
+ * Ayri bir pencerede sitenin OpenID akisi acilir. Steam donusu sitenin
+ * `/api/auth/return` ucuna gelir, cerez EKLENTISIZ paylasilan varsayilan
+ * Electron oturumuna yazilir ve role (cloud-relay) onu kullanir.
+ *
+ * Pencere, site `?login=` parametresiyle geri dondugunde kendiliginden
+ * kapanir; kullanicinin adres cubugunu takip etmesi gerekmez.
+ */
+ipcMain.handle("dotastat:cloud-login", async () => {
+  const cloudUrl = String(server?.settings.get().cloudUrl || "").trim();
+  if (!cloudUrl) {
+    return { ok: false, error: "site-adresi-yok" };
+  }
+
+  const base = cloudUrl.replace(/\/+$/, "");
+  const loginWindow = new BrowserWindow({
+    width: 980,
+    height: 760,
+    title: "Steam ile giriş",
+    autoHideMenuBar: true,
+    parent: mainWindow || undefined,
+    modal: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+
+  const finished = new Promise((resolve) => {
+    let settled = false;
+
+    /** @param {string} url */
+    const check = (url) => {
+      if (settled || !url.startsWith(base)) {
+        return;
+      }
+      // Site donuste `?login=ok` (veya `login=hata`) ekliyor.
+      if (!/[?&]login=/.test(url)) {
+        return;
+      }
+      settled = true;
+      const ok = /[?&]login=ok/.test(url);
+      loginWindow.close();
+      resolve({ ok, error: ok ? "" : "giris-basarisiz" });
+    };
+
+    loginWindow.webContents.on("did-navigate", (_event, url) => check(url));
+    loginWindow.webContents.on("did-navigate-in-page", (_event, url) =>
+      check(url),
+    );
+    loginWindow.on("closed", () => {
+      if (!settled) {
+        settled = true;
+        resolve({ ok: false, error: "iptal" });
+      }
+    });
+  });
+
+  await loginWindow.loadURL(base + "/api/auth/login");
+  const result = await finished;
+
+  // Giris basariliysa arayuz yeni durumu okusun.
+  if (result.ok) {
+    mainWindow?.webContents.reload();
+  }
+  return result;
+});
+
+ipcMain.handle("dotastat:cloud-logout", async () => {
+  const cloudUrl = String(server?.settings.get().cloudUrl || "").trim();
+  const ok = await clearCloudSession(cloudUrl);
+  mainWindow?.webContents.reload();
+  return { ok };
 });

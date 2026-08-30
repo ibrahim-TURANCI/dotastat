@@ -37,7 +37,8 @@ export function json(payload, options = {}) {
 export function fail(error, options = {}) {
   return json(
     { ok: false, error, message: options.message || "" },
-    { status: options.status || 400 },
+    // `headers` 429 yanitinda `retry-after` gonderebilmek icin gecirilir.
+    { status: options.status || 400, headers: options.headers },
   );
 }
 

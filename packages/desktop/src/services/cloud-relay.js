@@ -11,6 +11,8 @@
  *   - Hata durumunda sessizce gecilir; oyun ici deneyim etkilenmez.
  */
 
+const { readSessionCookie } = require("./cloud-session.js");
+
 /** Iki gonderim arasindaki en kisa sure. */
 const MIN_INTERVAL_MS = 2500;
 
@@ -61,24 +63,37 @@ function createCloudRelay(options) {
    */
   async function send(state) {
     const config = getConfig();
-    if (!config.shareLive || !config.cloudUrl || !config.ingestToken) {
+
+    // Yetkilendirme icin iki yol var; en az biri hazir olmali.
+    //   - Steam oturumu (tercih edilen): kullanici uygulamadan siteye giris
+    //     yapmis, cerez Electron oturumunda duruyor.
+    //   - Paylasilan token (eski yol): ayarlardan elle girilmis.
+    const cookie = await readSessionCookie(config.cloudUrl);
+    if (
+      !config.shareLive ||
+      !config.cloudUrl ||
+      !(cookie || config.ingestToken)
+    ) {
       lastResult = {
         ok: false,
         at: new Date().toISOString(),
-        error: "yapilandirilmadi",
+        error: cookie || config.ingestToken ? "yapilandirilmadi" : "giris-yok",
       };
       return;
     }
 
     const endpoint = config.cloudUrl.replace(/\/+$/, "") + "/api/live";
+    const headers = { "content-type": "application/json" };
+    if (cookie) {
+      headers.cookie = cookie;
+    } else {
+      headers["x-dotastat-token"] = config.ingestToken;
+    }
 
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-dotastat-token": config.ingestToken,
-        },
+        headers,
         body: JSON.stringify({
           state,
           uploaderSteamId: config.steamId || state?.localSteamId || "",

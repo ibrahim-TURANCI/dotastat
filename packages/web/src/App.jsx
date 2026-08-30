@@ -66,6 +66,7 @@ export default function App() {
         onLogout={session.logout}
         detectedPlayer={detectedPlayer}
         mode={session.mode}
+        cloudSignedIn={session.cloudSignedIn}
         onOpenSettings={() => setSettingsOpen((open) => !open)}
       />
 
