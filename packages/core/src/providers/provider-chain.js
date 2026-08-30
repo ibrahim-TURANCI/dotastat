@@ -127,5 +127,19 @@ export function createProviderChain(providers, options = {}) {
     client.findLiveMatch = (...args) => passthrough.findLiveMatch(...args);
   }
 
+  // Tarama istegi zincirlenmez: destekleyen TUM saglayicilara gonderilir ve
+  // sonuc beklenmez. Amac veriyi almak degil, kaynagi tetiklemek.
+  client.requestRefresh = async (...args) => {
+    await Promise.all(
+      chain
+        .filter(
+          (provider) =>
+            provider.isConfigured !== false &&
+            typeof provider.requestRefresh === "function",
+        )
+        .map((provider) => provider.requestRefresh(...args).catch(() => false)),
+    );
+  };
+
   return client;
 }

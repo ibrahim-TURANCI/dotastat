@@ -282,6 +282,37 @@ export function createOpenDotaClient(options = {}) {
     },
 
     /**
+     * OpenDota'dan oyuncunun verisini YENIDEN TARAMASINI ister.
+     *
+     * NEDEN GEREKLI: OpenDota yeni maclari kendi programina gore aliyor;
+     * mac bittikten sonra saatlerce gorunmeyebiliyor. Bu uc bir is kuyruga
+     * atar, boylece bekleme OpenDota'nin takvimine degil bizim istegimize
+     * bagli olur.
+     *
+     * SONUC HEMEN GELMEZ: istek kuyruga girer, mac birkac dakika sonra
+     * listede belirir. Bu yuzden cagiran taraf sonucu beklemez.
+     *
+     * @param {string} playerId
+     * @returns {Promise<boolean>} istek kabul edildiyse true
+     */
+    async requestRefresh(playerId) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(
+          `${API_BASE}/players/${playerId}/refresh`,
+          { method: "POST", signal: controller.signal },
+        );
+        return response.ok;
+      } catch {
+        // Basarisiz olsa da akis durmaz; yalnizca tarama tetiklenmemis olur.
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+
+    /**
      * TUM zamanlarin hero istatistigi (`/players/{id}/heroes`).
      *
      * Son maclarla karistirilmamali: imza kahraman secimi bu listeye bakar,

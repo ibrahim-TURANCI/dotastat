@@ -416,3 +416,33 @@ test("ward verisi yoksa rol cikarimi support'u core sanmaz", () => {
   });
   assert.equal(evaluation.roleGroup, "support");
 });
+
+test("acik tazelemede kaynaga tarama istegi gonderilir", async () => {
+  // OpenDota yeni maclari kendi programina gore aliyor; mac bittikten sonra
+  // saatlerce gorunmeyebiliyor. "Yenile" bu yuzden yalnizca veriyi CEKMEKLE
+  // kalmamali, kaynagi taramaya da zorlamali.
+  const old = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const storage = createMemoryStorage({
+    "matches:1:stale": {
+      value: { matches: [sampleMatch("800")], fetchedAt: old },
+      expiresAt: 0,
+    },
+  });
+
+  const service = createPlayerDataService({ storage });
+  let refreshRequests = 0;
+  service.client.requestRefresh = async () => {
+    refreshRequests += 1;
+  };
+  service.client.getRecentMatches = async () => [sampleMatch("801")];
+  service.client.getPlayerProfile = async () => null;
+  service.client.getHeroPerformance = async () => [];
+
+  await service.getPlayerBundle(player, { refresh: true });
+  assert.equal(refreshRequests, 1, "tazelemede tarama istegi atilmali");
+
+  // Normal acilista (tazeleme yok) kaynak rahatsiz edilmez.
+  refreshRequests = 0;
+  await service.getPlayerBundle(player);
+  assert.equal(refreshRequests, 0);
+});

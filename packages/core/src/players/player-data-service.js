@@ -255,6 +255,14 @@ export function createPlayerDataService(options) {
       };
     }
 
+    // Acik tazelemede once KAYNAGI TETIKLE: OpenDota yeni maclari kendi
+    // programina gore aliyor ve bir mac bittikten sonra saatlerce gorunmeyebi-
+    // liyor. Bu istek bir tarama isi kuyruga atar. Sonucu beklemeyiz — mac bu
+    // cagrida degil, birkac dakika sonrakinde gorunur.
+    if (matchOptions.refresh && typeof client.requestRefresh === "function") {
+      await client.requestRefresh(player.player_id);
+    }
+
     try {
       const matches = await client.getRecentMatches(player.player_id, {
         limit: MATCH_FETCH_SIZE,
