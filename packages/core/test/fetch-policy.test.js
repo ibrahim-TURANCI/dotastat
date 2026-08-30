@@ -69,6 +69,24 @@ const sampleMatch = (matchId) => ({
   provider: "opendota",
 });
 
+/**
+ * Servisin mac cekme yollarinin HEPSINI ayni sahte fonksiyona baglar.
+ *
+ * Uc giris noktasi var ve hangisinin kullanildigi cagriya gore degisiyor:
+ *   getRecentMatches          -> normal acilis
+ *   getRecentMatchesFreshest  -> elle tazeleme (tum kaynaklar yarisir)
+ *   getRecentMatchesExpecting -> belirli bir mac araniyor (mac bitisi)
+ * Testler "kac kez cekildi" olctugu icin ucunu de baglamak gerekir.
+ *
+ * @param {ReturnType<typeof createPlayerDataService>} service
+ * @param {() => Promise<unknown>} fn
+ */
+function stubMatchFetch(service, fn) {
+  service.client.getRecentMatches = fn;
+  service.client.getRecentMatchesFreshest = fn;
+  service.client.getRecentMatchesExpecting = fn;
+}
+
 const player = {
   id: "test",
   name: "Test",
@@ -95,10 +113,10 @@ test("eskimis veri varken kendiliginden ag istegi atilmaz", async () => {
   });
 
   const service = createPlayerDataService({ storage });
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [sampleMatch("200")];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -113,10 +131,10 @@ test("elde hic veri yoksa ilk acilista cekilir", async () => {
   const storage = createMemoryStorage();
 
   const service = createPlayerDataService({ storage });
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [sampleMatch("200")];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -136,10 +154,10 @@ test("acik tazeleme istegi eskimis veriyi yeniler", async () => {
   });
 
   const service = createPlayerDataService({ storage });
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [sampleMatch("200")];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -154,10 +172,10 @@ test("panel tazeleme olmadan yalnizca verisi olmayanlari ceker", async () => {
   const service = createPlayerDataService({ storage });
 
   let fetchCount = 0;
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [sampleMatch("300")];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -201,10 +219,10 @@ test("veri eskidiginde acik tazeleme yeniden calisir", async () => {
 
   const service = createPlayerDataService({ storage });
   let fetchCount = 0;
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [sampleMatch("901")];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -226,10 +244,10 @@ test("cok yeni veride tazeleme atlanir ama veri yine doner", async () => {
 
   const service = createPlayerDataService({ storage });
   let fetchCount = 0;
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [sampleMatch("911")];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -250,10 +268,10 @@ test("veri donmeyen oyuncu her acilista yeniden denenmez", async () => {
 
   let fetchCount = 0;
   // Profili gizli oyuncu: uc bos liste doner.
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     fetchCount += 1;
     return [];
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -287,10 +305,10 @@ test("mac verisi gizli oyuncuda mac/hero uclarina hic gidilmez", async () => {
     provider: "opendota",
     fetchedAt: new Date().toISOString(),
   });
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     matchCalls += 1;
     return [];
-  };
+  });
   service.client.getHeroPerformance = async () => {
     heroCalls += 1;
     return [];
@@ -320,7 +338,7 @@ test("gizli gecmisli oyuncu 'bekleyen' listesine girmez", async () => {
     provider: "opendota",
     fetchedAt: new Date().toISOString(),
   });
-  service.client.getRecentMatches = async () => [];
+  stubMatchFetch(service, async () => []);
   service.client.getHeroPerformance = async () => [];
 
   // Panel istek basina en fazla `maxRefresh` oyuncuya bakar; kadro daha
@@ -349,9 +367,9 @@ test("eski semayla yazilmis onbellekte ward sifirlari null'a cevrilir", async ()
   });
 
   const service = createPlayerDataService({ storage });
-  service.client.getRecentMatches = async () => {
+  stubMatchFetch(service, async () => {
     throw new Error("ag istegi atilmamaliydi");
-  };
+  });
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -434,7 +452,7 @@ test("acik tazelemede kaynaga tarama istegi gonderilir", async () => {
   service.client.requestRefresh = async () => {
     refreshRequests += 1;
   };
-  service.client.getRecentMatches = async () => [sampleMatch("801")];
+  stubMatchFetch(service, async () => [sampleMatch("801")]);
   service.client.getPlayerProfile = async () => null;
   service.client.getHeroPerformance = async () => [];
 
@@ -491,4 +509,46 @@ test("hicbir kaynakta yoksa eldeki en iyi sonuc doner", async () => {
   // Ekran bos kalmamali: aranan yoksa da mevcut maclar gosterilir.
   assert.equal(rows.length, 1);
   assert.equal(rows[0].matchId, "100");
+});
+
+test("elle tazelemede en taze kaynak secilir", async () => {
+  // Elle "Yenile"de hangi macin aranacagi bilinmez. Zincir sirasi korunsaydi
+  // OpenDota "basarili ama eski" cevabiyla yeni maci gizlerdi — olculen durum
+  // buydu: bir mac OpenDota'da 29 saat sonra bile yoktu, Stratz'ta vardi.
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+
+  const eski = { ...sampleMatch("100"), startedAt: "2026-08-29T10:00:00Z" };
+  const yeni = { ...sampleMatch("200"), startedAt: "2026-08-30T21:00:00Z" };
+
+  const chain = createProviderChain([
+    { name: "gecikmis", getRecentMatches: async () => [eski] },
+    { name: "guncel", getRecentMatches: async () => [yeni, eski] },
+  ]);
+
+  const rows = await chain.getRecentMatchesFreshest("1", {});
+
+  assert.equal(rows[0].matchId, "200", "en yeni maci iceren liste secilmeli");
+  assert.equal(chain.lastUsedProvider, "guncel");
+});
+
+test("en taze secimde erisilemeyen kaynak atlanir", async () => {
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+
+  const chain = createProviderChain([
+    {
+      name: "bozuk",
+      getRecentMatches: async () => {
+        throw new Error("erisilemedi");
+      },
+    },
+    { name: "calisan", getRecentMatches: async () => [sampleMatch("300")] },
+  ]);
+
+  const rows = await chain.getRecentMatchesFreshest("1", {});
+  assert.equal(rows[0].matchId, "300");
+  assert.equal(chain.lastUsedProvider, "calisan");
 });

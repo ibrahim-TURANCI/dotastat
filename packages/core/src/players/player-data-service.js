@@ -269,15 +269,30 @@ export function createPlayerDataService(options) {
       // zincir Stratz'a gecer. Olculdu: Stratz maci dakikalar icinde
       // gosterirken OpenDota'da 29 saat sonra bile yoktu.
       const wanted = String(matchOptions.expectMatchId || "");
-      const matches =
-        wanted && typeof client.getRecentMatchesExpecting === "function"
-          ? await client.getRecentMatchesExpecting(player.player_id, {
-              limit: MATCH_FETCH_SIZE,
-              expectMatchId: wanted,
-            })
-          : await client.getRecentMatches(player.player_id, {
-              limit: MATCH_FETCH_SIZE,
-            });
+      let matches;
+
+      if (wanted && typeof client.getRecentMatchesExpecting === "function") {
+        // Belirli bir mac araniyor (GSI bitis bildirdi).
+        matches = await client.getRecentMatchesExpecting(player.player_id, {
+          limit: MATCH_FETCH_SIZE,
+          expectMatchId: wanted,
+        });
+      } else if (
+        matchOptions.refresh &&
+        typeof client.getRecentMatchesFreshest === "function"
+      ) {
+        // Elle tazeleme: hangi macin aranacagi bilinmiyor, bu yuzden tum
+        // kaynaklar sorulup EN TAZE liste alinir. Sira korunsaydi OpenDota
+        // "basarili ama eski" cevabiyla yeni maci gizlerdi.
+        matches = await client.getRecentMatchesFreshest(player.player_id, {
+          limit: MATCH_FETCH_SIZE,
+        });
+      } else {
+        // Normal acilis: tek kaynak yeter, ekstra istek harcanmaz.
+        matches = await client.getRecentMatches(player.player_id, {
+          limit: MATCH_FETCH_SIZE,
+        });
+      }
       const fetchedAt = new Date().toISOString();
       if (matches.length) {
         const row = { matches, fetchedAt, schema: MATCH_SCHEMA };

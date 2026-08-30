@@ -178,6 +178,63 @@ export function createProviderChain(providers, options = {}) {
     );
   };
 
+  /**
+   * TUM kaynaklara sorar ve EN TAZE mac listesini doner.
+   *
+   * NEDEN GEREKLI: elle "Yenile"de hangi macin aranacagi bilinmez, dolayisiyla
+   * `getRecentMatchesExpecting` kullanilamaz. Zincir sirasi korunursa OpenDota
+   * "basarili ama eski" cevap verir ve yeni mac hic gorunmez — olculdu, bir
+   * mac OpenDota'da 29 saat sonra bile yoktu, Stratz'ta dakikalar icinde vardi.
+   *
+   * Yalnizca ACIK tazelemede cagrilir; normal acilis tek kaynakla yetinir.
+   *
+   * @param {string} playerId
+   * @param {{ limit?: number }} [options]
+   */
+  client.getRecentMatchesFreshest = async (playerId, options = {}) => {
+    const usable = chain.filter(
+      (provider) =>
+        provider.isConfigured !== false &&
+        typeof provider.getRecentMatches === "function",
+    );
+
+    const results = await Promise.all(
+      usable.map(async (provider) => {
+        try {
+          const rows = await provider.getRecentMatches(playerId, {
+            limit: options.limit,
+          });
+          return { provider, rows: Array.isArray(rows) ? rows : [] };
+        } catch (error) {
+          failures.push({
+            provider: String(provider.name || ""),
+            code: String(/** @type {any} */ (error)?.code || "unknown"),
+            message: String(/** @type {any} */ (error)?.message || error),
+          });
+          return null;
+        }
+      }),
+    );
+
+    /** En yeni macin bitis zamani. */
+    const newestAt = (rows) =>
+      rows.reduce((top, row) => {
+        const at = new Date(row?.startedAt || 0).getTime();
+        return Number.isFinite(at) && at > top ? at : top;
+      }, 0);
+
+    const best = results
+      .filter((row) => row && row.rows.length)
+      .sort((a, b) => newestAt(b.rows) - newestAt(a.rows))[0];
+
+    if (!best) {
+      throw new Error("provider-chain: hicbir kaynak mac veremedi");
+    }
+
+    lastUsedProvider = String(best.provider.name || "");
+    return best.rows;
+  };
+
   // Zincirlenmeyen uclar (ornek: OpenDota'ya ozel canli mac aramasi) ilk
   // destekleyen saglayicidan aynen gecirilir.
   const passthrough = chain.find(
