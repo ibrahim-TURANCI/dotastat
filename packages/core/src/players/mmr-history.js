@@ -111,6 +111,66 @@ export function rankProgress(mmr) {
 }
 
 /**
+ * Madalya + yildizdan YAKLASIK MMR.
+ *
+ * NEDEN GEREKLI: MMR degerini yalnizca masaustu uygulamasini kurmus oyuncular
+ * icin okuyabiliyoruz (bkz. services/mmr-watcher.js). Kadronun geri kalaninda
+ * elimizde sadece saglayicinin verdigi madalya var. Madalya bandinin ORTASI
+ * alinarak tahmini bir deger uretilir; boylece ayni ekranda herkes ayni
+ * olcekte gosterilir.
+ *
+ * Deger `rankProgress` ile TUTARLIDIR: uretilen MMR geri verildiginde ayni
+ * madalya ve yildiz cikar (band ortasi secildigi icin yuvarlama kaymasi yok).
+ * Ornek: Legend 4 -> 3619 -> rankProgress -> Legend 4, kalan 77.
+ *
+ * Bu bir TAHMINDIR; arayuzde her zaman "yaklasik" olarak isaretlenmelidir.
+ *
+ * @param {{ medal?: number, stars?: number }|null} rank
+ * @returns {number} bilinmiyorsa 0
+ */
+export function approximateMmrFromRank(rank) {
+  const medal = Number(rank?.medal) || 0;
+  if (medal < 1) {
+    return 0;
+  }
+  if (medal >= 8) {
+    // Immortal'da yildiz yok; tabani veririz, ustu bilinemez.
+    return IMMORTAL_INDEX * MMR_PER_STAR;
+  }
+  // Yildiz gelmediginde (bazi kayitlarda 0 yaziyor) madalyanin ilk yildizi
+  // varsayilir; band ortasi yine de madalyanin icinde kalir.
+  const stars = Math.min(5, Math.max(1, Number(rank?.stars) || 1));
+  const index = (medal - 1) * 5 + (stars - 1);
+  return Math.round(index * MMR_PER_STAR + MMR_PER_STAR / 2);
+}
+
+/**
+ * Madalyanin yaninda gosterilecek MMR ilerlemesi.
+ *
+ * OLCULEN deger her zaman kazanir; yoksa madalyadan tahmin uretilir. Iki
+ * durum `approximate` bayragiyla ayrilir — arayuz tahmini olani "~" ve
+ * "yaklasik" etiketiyle gosterir, aksi halde kurulum yapmis oyuncularin
+ * gercek degeriyle karisir.
+ *
+ * @param {{ samples?: MmrSample[], rank?: { medal?: number, stars?: number }|null }} input
+ * @returns {(ReturnType<typeof rankProgress> & { approximate: boolean })|null}
+ */
+export function resolveRankProgress(input) {
+  const measured = latestMmr(input?.samples || []);
+  if (measured > 0) {
+    const progress = rankProgress(measured);
+    return progress ? { ...progress, approximate: false } : null;
+  }
+
+  const estimated = approximateMmrFromRank(input?.rank || null);
+  if (!estimated) {
+    return null;
+  }
+  const progress = rankProgress(estimated);
+  return progress ? { ...progress, approximate: true } : null;
+}
+
+/**
  * Gecmisteki EN SON okunan MMR.
  *
  * @param {MmrSample[]} samples

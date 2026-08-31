@@ -52,6 +52,9 @@ export const api = {
         (options.refresh ? "?refresh=1" : ""),
     ),
 
+  /** Haftanin kazanani / kaybedeni tablosu (son 7 gun). */
+  weekly: () => request("/api/weekly"),
+
   /** Canli mac durumu (GSI). */
   live: (steamId = "") =>
     request(

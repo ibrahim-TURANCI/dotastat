@@ -70,6 +70,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/weekly"
+  to = "/.netlify/functions/weekly"
+  status = 200
+
+[[redirects]]
   from = "/api/live"
   to = "/.netlify/functions/live"
   status = 200

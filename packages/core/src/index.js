@@ -94,14 +94,25 @@ export {
 
 // --- MMR gecmisi (masaustu tarafindan beslenir) -----------------------------
 export {
+  approximateMmrFromRank,
   attributeMmrToMatches,
   latestMmr,
   mergeMmrSamples,
   MMR_PER_STAR,
   rankProgress,
+  resolveRankProgress,
   MMR_MATCH_WINDOW_MS,
   toMmrChanges,
 } from "./players/mmr-history.js";
+
+// --- Haftanin kazanani / kaybedeni -----------------------------------------
+export {
+  BASELINE_WINDOW_MS,
+  ESTIMATED_MMR_PER_MATCH,
+  WEEKLY_WINDOW_MS,
+  buildWeeklyEntry,
+  buildWeeklyScoreboard,
+} from "./players/weekly-score.js";
 
 export {
   HERO_PERFORMANCE_TTL_MS,

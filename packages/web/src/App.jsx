@@ -6,6 +6,7 @@ import { AppHeader } from "./components/AppHeader.jsx";
 import { LiveMatchPanel } from "./components/LiveMatchPanel.jsx";
 import { DebugPanel } from "./components/DebugPanel.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
+import { WeeklyLeaderboard } from "./components/WeeklyLeaderboard.jsx";
 import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
 
 /** Canli mac ne siklikta sorgulanir. */
@@ -16,9 +17,10 @@ const LIVE_POLL_MS = 5000;
  *
  * Ekran duzeni sabittir:
  *   1. Ust bar (kimlik, online, indirme)
- *   2. Oyuncu Degerlendirme
- *   3. Canli Mac (+ draft asistani)
- *   4. Debug Panel (kapali akordeon)
+ *   2. Haftanin Kazanani / Kaybedeni (son 7 gun)
+ *   3. Oyuncu Degerlendirme
+ *   4. Canli Mac (+ draft asistani)
+ *   5. Debug Panel (kapali akordeon)
  */
 export default function App() {
   const session = useSession();
@@ -73,6 +75,8 @@ export default function App() {
       {settingsOpen && session.mode === "desktop" ? (
         <SettingsPanel onClose={() => setSettingsOpen(false)} />
       ) : null}
+
+      <WeeklyLeaderboard />
 
       <PlayerEvaluationScreen
         liveKnownPlayerIds={live.data?.knownPlayerIds || []}

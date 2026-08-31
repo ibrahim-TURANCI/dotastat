@@ -226,7 +226,9 @@ function createServerApp(options) {
     const accountId = ownAccountId();
     const isOwnProfile =
       Boolean(accountId) && accountId === String(player.player_id);
-    const forcedRoles = isOwnProfile ? await readMatchRoles(accountId) : {};
+    // Pozisyon beyani BAKILAN oyuncuya aittir; kim bakiyor diye
+    // degerlendirme degismemeli. Kimlik yalnizca YAZMA yetkisini belirler.
+    const forcedRoles = await readMatchRoles(String(player.player_id));
 
     try {
       const bundle = await playerData.getPlayerBundle(player, {
@@ -234,15 +236,20 @@ function createServerApp(options) {
         forcedRoles,
       });
 
-      // MMR yalnizca KENDI profilinde gosterilir: okunan deger bu bilgisayarda
-      // oturum acan oyuncuya aittir, baskasinin maclarina yazilamaz.
+      // Masaustunde OLCULEN MMR yalnizca bu bilgisayarda oynayan oyuncu icin
+      // vardir; DotaPlus logu baskasinin degerini yazmaz. Diger oyuncularda
+      // deger madalyadan TURETILIR (`approximate: true`) — sitede ise ayni
+      // uc, herkesin buluta gonderdigi olculen degeri dondurur.
       const samples = isOwnProfile ? await mmr.history() : [];
       const mmrByMatch = core.attributeMmrToMatches({
         matches: bundle.matches,
         samples,
       });
-      // Madalyanin yanindaki "kalan rank" bilgisi bundan hesaplanir.
-      const mmrProgress = core.rankProgress(core.latestMmr(samples));
+      // Madalyanin yanindaki MMR ve "kalan rank".
+      const mmrProgress = core.resolveRankProgress({
+        samples,
+        rank: bundle.player?.rank || null,
+      });
       response.json({
         ok: true,
         player: bundle.player,
@@ -270,6 +277,47 @@ function createServerApp(options) {
       response.status(500).json({
         ok: false,
         error: "oyuncu-detayi-alinamadi",
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  // --- Haftanin kazanani / kaybedeni -------------------------------------------
+
+  app.get("/api/weekly", async (request, response) => {
+    try {
+      const own = ownAccountId();
+      const samples = own ? await mmr.history() : [];
+
+      const entries = await Promise.all(
+        core.listRoster().map(async (player) => {
+          const accountId = String(player.player_id);
+          const bundle = await playerData.getPlayerBundle(player, {
+            allowFetch: false,
+            forcedRoles: await readMatchRoles(accountId),
+          });
+          return {
+            player: bundle.player,
+            matches: bundle.matches,
+            evaluations: bundle.evaluations,
+            // Yerelde yalnizca bu bilgisayarin oyuncusunun okumasi var;
+            // digerlerinin MMR degisimi mac sonucundan tahmin edilir.
+            samples: accountId === own ? samples : [],
+          };
+        }),
+      );
+
+      response.json({
+        ok: true,
+        ...core.buildWeeklyScoreboard({ entries }),
+        disclaimer:
+          "Weekly Score gercek MMR degildir; MMR degisimi, galibiyet dengesi, " +
+          "Performance Rank degisimi ve oynanan mac sayisindan hesaplanir.",
+      });
+    } catch (error) {
+      response.status(500).json({
+        ok: false,
+        error: "haftalik-tablo-alinamadi",
         message: String(error?.message || error),
       });
     }

@@ -174,22 +174,7 @@ export function PlayerDetail({ playerKey, onClose }) {
         <div className="row" style={{ gap: 10 }}>
           <div className="rank-block">
             <RankMedal rank={player.rank} size={44} />
-            {/*
-              MMR yalnizca kendi profilinde ve MMR kaynagi kuruluysa gelir.
-              Kalan mesafe yildiz genisliginden (154 MMR) hesaplanir.
-            */}
-            {detail.data.mmrProgress ? (
-              <div className="rank-progress">
-                <strong>{detail.data.mmrProgress.mmr}</strong>
-                {detail.data.mmrProgress.isTop ? (
-                  <span className="muted micro">Immortal</span>
-                ) : (
-                  <span className="muted micro">
-                    Kalan rank: {detail.data.mmrProgress.remaining}
-                  </span>
-                )}
-              </div>
-            ) : null}
+            <RankProgress progress={detail.data.mmrProgress} />
           </div>
           <button
             type="button"
@@ -256,6 +241,7 @@ export function PlayerDetail({ playerKey, onClose }) {
             ) : null}
             <MatchesTab
               matches={matches}
+              evaluations={evaluations}
               canEditRoles={detail.data.canEditRoles}
               matchRoles={matchRoles}
               onRoleChange={handleRoleChange}
@@ -600,13 +586,19 @@ function HeroPoolTab({ player, stats, heroPool }) {
  */
 function MatchesTab({
   matches,
+  evaluations,
   canEditRoles,
   matchRoles,
   onRoleChange,
   mmrByMatch,
 }) {
-  // MMR yalnizca DotaPlus kuruluysa gelir; yoksa sutun hic gosterilmez.
+  // MMR sutunu, oyuncu icin kayit VARSA herkese gosterilir; kayit yalnizca
+  // masaustu uygulamasini kurmus oyuncularda birikir.
   const hasMmr = Object.keys(mmrByMatch || {}).length > 0;
+  // Performance Rank mac bazinda degerlendirmeden gelir (gercek MMR degil).
+  const rankByMatch = new Map(
+    (evaluations || []).map((row) => [row.matchId, row.performanceRank]),
+  );
   if (!matches?.length) {
     return <EmptyState title="Maç bulunamadı" />;
   }
@@ -626,6 +618,9 @@ function MatchesTab({
           <tr>
             <th>Hero</th>
             <th>Sonuç</th>
+            <th title="Bu maçtaki performansın hangi seviyeye denk düştüğü — gerçek MMR değil">
+              Perf. Rank
+            </th>
             {hasMmr ? <th>MMR</th> : null}
             <th>Pozisyon</th>
             <th>KDA</th>
@@ -649,6 +644,9 @@ function MatchesTab({
                 >
                   {row.result === "win" ? "G" : "M"}
                 </span>
+              </td>
+              <td>
+                <PerformanceRankCell value={rankByMatch.get(row.matchId)} />
               </td>
               {hasMmr ? (
                 <td>
@@ -679,6 +677,62 @@ function MatchesTab({
       </table>
     </div>
   );
+}
+
+/**
+ * Madalyanın yanındaki MMR ve bir sonraki yıldıza kalan mesafe.
+ *
+ * İKİ KAYNAK VAR ve ayrımı görünür olmalı:
+ *   - ÖLÇÜLEN: oyuncu masaüstü uygulamasını kurmuş, değer oyundan okunmuş.
+ *   - YAKLAŞIK: kurulum yok; değer madalya + yıldızdan türetilmiş, "~" ve
+ *     "yaklaşık" etiketiyle gösterilir (bkz. core → approximateMmrFromRank).
+ *
+ * @param {{ progress?: { mmr: number, remaining: number, isTop: boolean, approximate: boolean } }} props
+ */
+function RankProgress({ progress }) {
+  if (!progress) {
+    return null;
+  }
+  return (
+    <div className="rank-progress">
+      <strong>
+        {progress.approximate ? "~" : ""}
+        {progress.mmr}
+      </strong>
+      {progress.isTop ? (
+        <span className="muted micro">Immortal</span>
+      ) : (
+        <span className="muted micro">
+          Kalan rank: {progress.approximate ? "~" : ""}
+          {progress.remaining}
+        </span>
+      )}
+      {progress.approximate ? (
+        <span
+          className="muted micro"
+          title="Bu oyuncunun gerçek MMR'ı okunamıyor; değer madalyasından hesaplandı."
+        >
+          yaklaşık
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Maç satırındaki Performance Rank.
+ *
+ * GERÇEK MMR DEĞİLDİR: o maçtaki oyunun hangi seviyeye denk düştüğü
+ * tahminidir (bkz. performance-evaluation-engine).
+ *
+ * @param {{ value?: number }} props
+ */
+function PerformanceRankCell({ value }) {
+  const rank = Number(value) || 0;
+  if (!rank) {
+    return <span className="muted micro">—</span>;
+  }
+  return <span className="perf-rank-cell">{rank}</span>;
 }
 
 /**

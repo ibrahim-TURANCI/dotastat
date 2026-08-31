@@ -242,20 +242,42 @@
   align-items: flex-start;
 }
 
+/*
+ * Acilir liste NEDEN BEYAZ ACILIYORDU: Chromium, secim listesini <select>
+ * ogesinin KENDI arka planiyla boyuyor. Buraya yarı saydam bir renk
+ * (rgba(255,255,255,0.04)) yazilinca liste sayfanin koyu zemini uzerinde
+ * degil, tarayicinin beyaz varsayilani uzerinde birlesiyor ve beyaz cikiyordu.
+ *
+ * Cozum: SAYDAM OLMAYAN koyu bir zemin ver, secenekleri de acikca boya ve
+ * ogeye kendi `color-scheme`ini yaz (bazi Electron surumleri kok degeri
+ * form ogelerine tasimiyor).
+ */
 .role-select {
   padding: 3px 6px;
   border-radius: 7px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-2);
   color: var(--txt-0);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  color-scheme: dark;
+}
+
+.role-select option {
+  background: var(--bg-1);
+  color: var(--txt-0);
 }
 
 .role-select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* Maç satırındaki Performance Rank — gerçek MMR değil, seviye tahmini. */
+.perf-rank-cell {
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-0);
 }
 
 /* --- Tablolar --------------------------------------------------------------- */

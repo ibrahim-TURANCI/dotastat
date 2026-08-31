@@ -8,9 +8,8 @@
 import {
   attributeMmrToMatches,
   findRosterPlayer,
-  latestMmr,
   listSynergiesForPlayer,
-  rankProgress,
+  resolveRankProgress,
 } from "@dotastat/core";
 import { getPlayerBundle } from "./_lib/player-data.mjs";
 import { readMatchRoles, sessionAccountId } from "./_lib/match-roles.mjs";
@@ -36,29 +35,33 @@ export default async (request) => {
 
   const refresh = url.searchParams.get("refresh") === "1";
 
-  // Bakilan oyuncu, giris yapmis kullanicinin KENDISI ise onun pozisyon
-  // beyanlari degerlendirmeye katilir. Baskasinin sayfasinda bu kayitlar
-  // okunmaz; herkes yalnizca kendi beyanini etkiler.
+  // BAKILAN oyuncunun kendi pozisyon beyanlari her ziyaretcide okunur:
+  // degerlendirme kim bakiyor diye degismemeli. Steam girisi yalnizca YAZMA
+  // yetkisini belirler — kisi ancak kendi maclarina pozisyon isaretleyebilir.
   const session = readSession(request);
   const viewerAccountId = session ? sessionAccountId(session) : "";
   const isOwnProfile =
     Boolean(viewerAccountId) && viewerAccountId === String(player.player_id);
-  const forcedRoles = isOwnProfile ? await readMatchRoles(viewerAccountId) : {};
+  const forcedRoles = await readMatchRoles(String(player.player_id));
 
   try {
     const bundle = await getPlayerBundle(player, { refresh, forcedRoles });
 
-    // MMR yalnizca KENDI profilinde gosterilir. Deger masaustu uygulamasinin
-    // ilettigi okumalardan turer; baskasinin sayfasinda okunmaz.
-    const samples = isOwnProfile
-      ? (await mmrStore().get("mmr:" + viewerAccountId))?.samples || []
-      : [];
+    // MMR HERKESE gosterilir: kayit oyuncunun KENDI hesabina yazilmistir
+    // (bkz. mmr.mjs — anahtar oturum cerezinden gelir), okumak icin ayni
+    // kisi olmak gerekmez. Kimlik dogrulamasi yazma tarafinda durur.
+    const samples =
+      (await mmrStore().get("mmr:" + String(player.player_id)))?.samples || [];
     const mmrByMatch = attributeMmrToMatches({
       matches: bundle.matches,
       samples,
     });
-    // Madalyanin yanindaki "kalan rank" bilgisi bundan hesaplanir.
-    const mmrProgress = rankProgress(latestMmr(samples));
+    // Madalyanin yanindaki MMR ve "kalan rank". Kurulumu olmayan oyuncuda
+    // deger madalyadan TURETILIR ve `approximate` ile isaretlenir.
+    const mmrProgress = resolveRankProgress({
+      samples,
+      rank: bundle.player?.rank || null,
+    });
     return json(
       {
         ok: true,

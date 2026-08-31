@@ -1,0 +1,143 @@
+/**
+ * Haftanin Kazanani / Kaybedeni bolumu.
+ *
+ * Duzen: ustte iki vurgu karti (yesil = birinci, kirmizi = sonuncu), altta
+ * kadronun tamami tek tablo halinde.
+ */
+
+.weekly-podium {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.weekly-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  /* Cerceve kalin: kart listeden bakista ayrilmali. */
+  border: 2px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.weekly-card.winner {
+  border-color: var(--good);
+  background:
+    linear-gradient(160deg, rgba(41, 201, 122, 0.12), transparent 62%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.weekly-card.loser {
+  border-color: var(--bad);
+  background:
+    linear-gradient(160deg, rgba(255, 93, 108, 0.12), transparent 62%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.weekly-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weekly-score {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4px;
+}
+
+.weekly-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.weekly-card-name {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.weekly-card-name strong {
+  font-size: 17px;
+}
+
+.weekly-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.weekly-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(8, 15, 24, 0.45);
+}
+
+.weekly-metric strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Degisim degerleri ------------------------------------------------------ */
+
+.weekly-delta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.weekly-delta.up {
+  color: #8ff0bf;
+}
+
+.weekly-delta.down {
+  color: #ffb3ba;
+}
+
+/* --- Tam liste -------------------------------------------------------------- */
+
+/* Dar ekranda tablo KENDI icinde kaydirilir; sayfa yana kaymaz. */
+.weekly-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.weekly-table {
+  min-width: 640px;
+}
+
+.weekly-table td {
+  vertical-align: middle;
+}
+
+.weekly-table tr.first td {
+  background: rgba(41, 201, 122, 0.06);
+}
+
+/* Bu hafta maci olmayan oyuncu siralamaya girmez; soluk gosterilir. */
+.weekly-table tr.idle td {
+  opacity: 0.55;
+}
+
+.weekly-row-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.weekly-row-score {
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-note {
+  margin: 12px 0 0;
+  line-height: 1.6;
+}

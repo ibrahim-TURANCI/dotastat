@@ -352,6 +352,31 @@ Ayrıntılar [hero-pool.js](packages/core/src/players/hero-pool.js) içinde:
 - Sıralamadaki eşitlikler `draft.comboWithHeroes` verisiyle bozulur: adayın
   oyuncunun kendi havuzuyla combo yapıp yapmadığına bakılır.
 
+## Haftanın Kazananı / Kaybedeni
+
+Sayfanın en üstündeki bölüm son **7 günü** özetler: birinci yeşil, sonuncu
+kırmızı çerçeveli kartla gösterilir, altında kadronun tamamı sırayla listelenir.
+
+Sıralama **Weekly Score** ile yapılır ve tek bir ölçüte dayanmaz:
+
+| Ölçüt | Ağırlık | Not |
+| --- | --- | --- |
+| Gerçek MMR değişimi | 34 | Ölçülemeyen maçlar maç başına ±25 sayılır |
+| Galibiyet/mağlubiyet dengesi | 26 | Küçük örnekte ortalamaya çekilir (shrinkage) |
+| Performance Rank değişimi | 20 | Bu haftanın ortalaması vs. önceki 21 gün |
+| Oynanan maç sayısı | 12 | Doğrudan bonus/ceza |
+
+**Maç sayısı aynı zamanda çarpandır.** Başarı kısmı `maç / (maç + 4)` ile
+ağırlıklandırılır: 1 maçta 0,20 — 10 maçta 0,71. Bu yüzden bir maç oynayıp
+kazanan biri haftanın birincisi olamaz; istenen davranış budur.
+
+Bu hafta hiç maçı olmayan oyuncu sıralamaya girmez, listenin sonunda ayrıca
+gösterilir. Bölüm **hiçbir zaman kendi başına dış kaynağa gitmez**; yalnızca
+önbellekteki maç verisini okur, tazeleme kararı "Yenile" butonundadır.
+
+Hesap `packages/core/src/players/weekly-score.js` içindedir ve saftır (saat
+bile dışarıdan gelir), testleri `test/weekly-score.test.js`.
+
 ## Maç pozisyonu beyanı
 
 OpenDota pozisyonu `lane_role` + `is_roaming` üzerinden **tahmin eder** ve
@@ -365,6 +390,10 @@ yeniden puanlanır. Seçim kaldırılırsa otomatik tahmine geri dönülür.
 
 Kayıt anahtarı **her zaman oturum çerezindeki account id**'dir; istek
 gövdesinden gelen kimliğe güvenilmez. Kimse başkasının maçlarına rol yazamaz.
+
+Beyan **okumaya herkese açıktır**: bir oyuncunun sayfasına kim bakarsa baksın
+değerlendirme aynı pozisyonlarla hesaplanır. Steam girişi yalnızca *yazma*
+yetkisini belirler — açılır seçici sadece kendi profilinde çıkar.
 
 ## Kadroyu düzenleme
 
@@ -471,7 +500,9 @@ Overwolf → MMR uygulaması → controller.html.log → DotaStat → maç liste
 - Okunan değerler **kendi depomuza** yazılır; log dönse de geçmiş kalmaz
 - MMR değişimi, kendisinden **önce biten en yakın maça** bağlanır
 - Değer siteye de iletilir (Steam oturumuyla), böylece tarayıcıdan da görünür
-- MMR yalnızca **kendi profilinde** görünür
+- Kayıt bir kez oluştuktan sonra **herkes görebilir**: değer zaten oyuncunun
+  kendi hesabına yazılmıştır (anahtar oturum çerezinden gelir), okumak için
+  aynı kişi olmak gerekmez. Kimlik doğrulaması yazma tarafında durur.
 
 ### Sınırlar
 
@@ -510,3 +541,14 @@ göstergeyle birebir.
 
 Maç listesinde de maç sonrası MMR ve o maçın farkı birlikte görünür:
 `3620 (+26)`.
+
+#### Kurulumu olmayan oyuncular: yaklaşık MMR
+
+Kurulumu yapmamış oyuncuda okunacak bir değer yok; elimizde yalnızca
+sağlayıcının verdiği **madalya** var. Bu durumda madalya bandının **ortası**
+alınıp yaklaşık bir MMR üretilir ve `~` ile "yaklaşık" etiketiyle gösterilir.
+
+Üretilen değer ölçülen değerle **aynı ölçektedir**: geri çevrildiğinde aynı
+madalya ve yıldız çıkar (Legend 4 → ~3619 → Legend 4, kalan 77). Böylece
+haftalık tabloda kurulumu olan ve olmayan oyuncular yan yana kıyaslanabilir.
+Ölçülen değer her zaman tahminin önüne geçer.
