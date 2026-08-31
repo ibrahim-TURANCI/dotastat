@@ -165,3 +165,34 @@
     justify-content: space-between;
   }
 }
+
+/*
+ * Masaustu kimlik kutusu.
+ *
+ * Iki kimlik yan yana durur: oyundan okunan ad ve site oturumu durumu.
+ * Giris basarisiz olursa SEBEBI yazilir — onceden buton sessizce hicbir sey
+ * yapmiyordu (bkz. AppHeader.jsx -> DesktopIdentity).
+ */
+.identity-box.desktop .identity-text {
+  align-items: flex-end;
+}
+
+.identity-error {
+  margin-top: 4px;
+  max-width: 340px;
+  white-space: normal;
+  text-align: right;
+  line-height: 1.45;
+  gap: 6px;
+}
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

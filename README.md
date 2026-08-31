@@ -212,18 +212,37 @@ Dota bulunamazsa dosyayı elle şuraya koy:
 
 ### Canlı maçı siteyle paylaşma
 
-Uygulama ayarlarına (`%APPDATA%\DotaStat\settings.json`) şunları gir:
+Kurulumdan sonra yapılacak **tek şey var**: uygulamanın sağ üstünden
+**"Steam ile giriş"**. Site adresi pakete gömülüdür
+(`packages/desktop/package.json` → `dotastat.cloudUrl`) ve `shareLive`
+varsayılan olarak açıktır.
 
-```json
-{
-  "cloudUrl": "https://SITE-ADI.netlify.app",
-  "ingestToken": "Netlify'daki LIVE_INGEST_TOKEN ile aynı değer",
-  "shareLive": true
-}
-```
+Giriş neden gerekli: canlı maçı siteye gönderirken kimlik doğrulanmalı. Çerez
+30 gün geçerlidir, yani ayda bir giriş yeterli.
 
-Aynı değerler `DOTASTAT_CLOUD_URL` ve `DOTASTAT_INGEST_TOKEN` ortam
-değişkenleriyle de verilebilir.
+**`LIVE_INGEST_TOKEN` istemcide GEREKMEZ.** Sunucu iki yetkilendirmeden
+birini kabul eder (`live.mjs`: `if (!session && !tokenOk) return 401`) ve
+röle, oturum varsa token'ı hiç göndermez. Token eski yöntemdir; dokuz kişiye
+aynı sırrı dağıtmamak için oturumla değiştirildi. Geriye dönük uyum için
+duruyor — giriş yapamayan bir kurulum onu kullanabilir.
+
+Ayar önceliği: `DOTASTAT_CLOUD_URL` ortam değişkeni > kullanıcının kendi
+ayarı > pakete gömülü adres. Elle girilen değer gömülünün önüne geçer.
+
+#### İki ayrı kimlik var, karıştırılmamalı
+
+| | Nereden gelir | Otomatik mi |
+| --- | --- | --- |
+| **SteamID** | GSI her maçta `localSteamId` gönderir | **Evet**, oyuna girmek yeterli |
+| **Site oturumu** | Sitenin Steam OpenID akışı; çerez Electron oturumunda | **Hayır** |
+
+Site oturumu otomatik **olamaz**: Steam kimliği yalnızca sitenin OpenID
+yönlendirmesinden geçerek kanıtlanır. Oyun, sitenin güvenebileceği bir belge
+vermez — verseydi herkes istediği SteamID adına veri gönderebilirdi.
+
+Uygulamanın sağ üstü bu iki kimliği ayrı ayrı gösterir: oyundan okunan ad ve
+site oturumunun durumu. Site adresi bir şekilde boşsa buton, sebebini ve
+"Ayarları aç" bağlantısını yazar (eskiden sessizce hiçbir şey yapmıyordu).
 
 ### Tepsi ikonu
 
@@ -468,6 +487,36 @@ tıkta tamamlanır, sonrasında bekleme devreye girer.
 
 Süre [player-data-service.js](packages/core/src/players/player-data-service.js)
 içinde `MIN_REFRESH_INTERVAL_MS`.
+
+### Başarısız tazeleme veriyi SİLMEZ
+
+Kaynak hata verebilir ya da "başarılı" cevap verip **boş liste** dönebilir
+(günlük limit, geçici indeksleme sorunu). Bu durumda ekranda duran veri
+korunur; tazeleme yalnızca *yeni* veri getirmemiş olur.
+
+Bu bir kez kaybedildi: "Yenile"ye basmak dolu bir paneli **"9 oyuncu verisi
+bekleniyor"**a düşürüyordu, çünkü bayat kopya yalnızca tazeleme
+*istenmediğinde* okunuyordu. Aynı hata profil ucunda madalyayı da siliyordu —
+madalya gidince **yaklaşık MMR** de gidiyordu.
+
+- Maç listesi, madalya ve kariyer hero listesi ayrı ayrı korunur
+- Bayat kopyanın `fetchedAt`i korunur; boş sonuç "az önce güncellendi" yazmaz
+- Panel başlığında "N oyuncunun verisi tazelenemedi" yazar — bu **"veri yok"
+  değildir**, ekrandaki sayılar geçerli, yalnızca eski
+- Sözleşme [stale-preservation.test.js](packages/core/test/stale-preservation.test.js)
+  ile sabitlendi
+
+### Yerelde önbellek nerede durur
+
+`netlify dev` Blobs'u taklit eden bir sunucu çalıştırır ama o sunucu veriyi
+**yalnızca bellekte** tutar (`.netlify/blobs-serve` boş kalır). Dev sunucusu
+her yeniden başladığında kadronun tüm önbelleği uçuyordu ve dokuz oyuncu
+OpenDota'dan baştan çekiliyordu.
+
+Bu yüzden **yerelde** her yazma `%TEMP%dotastat-dev-store` altına da
+aynalanır; Blobs boş dönerse diskteki kopya okunur. Production'da bu kod yolu
+hiç çalışmaz (orada Blobs zaten kalıcıdır). Durum `/api/debug` içinde
+`mirroringToDisk` alanında görünür.
 
 ## Maç başına MMR değişimi
 

@@ -69,6 +69,7 @@ export default function App() {
         detectedPlayer={detectedPlayer}
         mode={session.mode}
         cloudSignedIn={session.cloudSignedIn}
+        cloudConfigured={session.cloudConfigured}
         onOpenSettings={() => setSettingsOpen((open) => !open)}
       />
 

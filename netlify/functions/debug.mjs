@@ -56,6 +56,12 @@ export default async (request) => {
         liveIngestToken: Boolean(process.env.LIVE_INGEST_TOKEN),
         githubRepo: process.env.GITHUB_REPO || "",
         blobsAvailable: live.usingBlobs,
+        /**
+         * Yerelde onbellek diske de yaziliyor mu? Yazmiyorsa `netlify dev`
+         * her yeniden basladiginda kadronun tum verisi ucar (CLI'nin Blobs
+         * taklidi yalnizca bellekte tutuyor). Bkz. _lib/store.mjs.
+         */
+        mirroringToDisk: live.mirroringToDisk,
       },
       roster: {
         count: roster.length,

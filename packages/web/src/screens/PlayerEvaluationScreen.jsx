@@ -32,6 +32,9 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
 
   const cards = players.data?.cards || [];
   const pending = players.data?.pendingPlayers || [];
+  // Verisi DURAN ama tazelenemeyen oyuncular. "Bekleyen"den ayri gosterilir:
+  // ekrandaki sayilar gecerli, yalnizca eski.
+  const stale = players.data?.stalePlayers || [];
   const liveIds = new Set(liveKnownPlayerIds);
 
   return (
@@ -48,6 +51,14 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
           {pending.length ? (
             <span className="chip warn">
               {pending.length} oyuncu verisi bekleniyor
+            </span>
+          ) : null}
+          {stale.length ? (
+            <span
+              className="chip"
+              title="Kaynak yeni veri döndürmedi (günlük limit ya da geçici sorun). Ekrandaki değerler geçerli, yalnızca eski."
+            >
+              {stale.length} oyuncunun verisi tazelenemedi
             </span>
           ) : null}
           {lastFetchedAt ? (

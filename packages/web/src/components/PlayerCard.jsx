@@ -102,10 +102,14 @@ export function PlayerCard({ card, selected, onSelect, live = false }) {
       ) : card.historyUnavailable ? (
         // Bekleyerek gelmeyecek bir durum: oyuncu Dota'da mac verisini
         // gizlemis. Ne OpenDota ne Stratz mac listesi verebiliyor.
+        //
+        // Ama KALICI da degil: ayar acilinca "Yenile" bunu yeniden sorar
+        // (bkz. player-data-service -> HISTORY_RECHECK_MS), bu yuzden ne
+        // yapilacagi burada yaziyor.
         <div className="player-card-pending muted">
           Maç geçmişi gizli. Dota 2 → Ayarlar → Seçenekler → Gelişmiş
           Seçenekler'den <strong>“Maç Verilerini Herkese Açık Yap”</strong> açık
-          olmalı.
+          olmalı. Açtıysan <strong>“Yenile”</strong>ye bas.
         </div>
       ) : (
         <div className="player-card-pending muted">

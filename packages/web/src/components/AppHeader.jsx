@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api, startSteamLogin } from "../lib/api.js";
 import { formatBytes } from "../lib/format.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
@@ -32,6 +33,7 @@ export function AppHeader({
   detectedPlayer,
   mode,
   cloudSignedIn,
+  cloudConfigured,
   onOpenSettings,
 }) {
   const presence = useAsyncData(() => api.presence(), { intervalMs: 45000 });
@@ -100,6 +102,8 @@ export function AppHeader({
           detectedPlayer={detectedPlayer}
           mode={mode}
           cloudSignedIn={cloudSignedIn}
+          cloudConfigured={cloudConfigured}
+          onOpenSettings={onOpenSettings}
         />
       </div>
     </header>
@@ -159,9 +163,31 @@ function IdentityBox({
   detectedPlayer,
   mode,
   cloudSignedIn,
+  cloudConfigured,
+  onOpenSettings,
 }) {
   if (loading) {
     return <span className="muted">oturum kontrol ediliyor…</span>;
+  }
+
+  // MASAUSTU DALI EN BASTA: kimlik oyundan okununca `user` doluyor ve bu
+  // kontrol asagida kalsaydi (kaldi da) asagidaki `if (user)` kazanip site
+  // giris butonunu hic cizmiyordu. Yani oyuna bir kez girmis olan kullanici
+  // "Steam ile giris"i BIR DAHA goremiyordu.
+  //
+  // Masaustunde iki ayri kimlik var ve ikisi de gosterilmeli:
+  //   - OYUNDAN okunan SteamID (otomatik, yerel kullanim icin)
+  //   - SITE oturumu (canli mac + MMR yayini icin; elle bir kez yapilir)
+  if (mode === "desktop") {
+    return (
+      <DesktopIdentity
+        user={user}
+        detectedPlayer={detectedPlayer}
+        cloudSignedIn={cloudSignedIn}
+        cloudConfigured={cloudConfigured}
+        onOpenSettings={onOpenSettings}
+      />
+    );
   }
 
   if (user) {
@@ -189,46 +215,6 @@ function IdentityBox({
     );
   }
 
-  // Masaustunde giris YEREL sunucuya degil SITEYE yapilir: Electron ayri bir
-  // pencerede sitenin Steam akisini acar, cerez uygulamanin oturumuna yazilir
-  // ve canli mac yayini onunla yetkilendirilir. Boylece kullanicinin ayarlara
-  // elle paylasilan bir gizli anahtar yapistirmasi gerekmez.
-  if (mode === "desktop") {
-    return (
-      <div className="identity-box">
-        <div className="identity-text">
-          {detectedPlayer ? (
-            <>
-              <strong>{detectedPlayer.name}</strong>
-              <span className="muted">oyundan tespit edildi</span>
-            </>
-          ) : (
-            <span className="muted">Kimlik oyundan okunur</span>
-          )}
-        </div>
-        {cloudSignedIn ? (
-          <button
-            type="button"
-            className="btn ghost small"
-            onClick={() => window.dotastat?.cloudLogout?.()}
-            title="Canlı maç yayını için site oturumu"
-          >
-            Site oturumu açık
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn primary small"
-            onClick={() => window.dotastat?.cloudLogin?.()}
-            title="Canlı maçını arkadaşlarının görebilmesi için gerekli"
-          >
-            <SteamMark /> Steam ile giriş
-          </button>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="identity-box">
       {detectedPlayer ? (
@@ -247,6 +233,127 @@ function IdentityBox({
     </div>
   );
 }
+
+/**
+ * Masaustundeki kimlik kutusu.
+ *
+ * IKI AYRI KIMLIK VAR, karistirilmamali:
+ *
+ *   1. OYUNDAN OKUNAN SteamID — GSI her maçta `localSteamId` gonderiyor,
+ *      uygulama onu ayarlara yaziyor. Bu OTOMATIKTIR, giris gerektirmez ve
+ *      kendi profilini/pozisyon secimini acan sey budur.
+ *
+ *   2. SITE OTURUMU — canli maci ve MMR'i siteye gonderebilmek icin gerekir.
+ *      Bu OTOMATIK OLAMAZ: Steam kimligi yalnizca sitenin OpenID akisindan
+ *      gecerek kanitlanir. Oyun, sitenin guvenebilecegi bir belge vermiyor;
+ *      verseydi herkes istedigi SteamID adina veri gonderebilirdi (eski
+ *      paylasilan-anahtar yonteminin terk edilme sebebi tam olarak buydu).
+ *      Cerez 30 gun gecerlidir, yani ayda bir giris yeterli.
+ *
+ * @param {{
+ *   user: Record<string, any>|null,
+ *   detectedPlayer: { name: string }|null,
+ *   cloudSignedIn: boolean,
+ *   onOpenSettings?: () => void
+ * }} props
+ */
+function DesktopIdentity({
+  user,
+  detectedPlayer,
+  cloudSignedIn,
+  cloudConfigured = true,
+  onOpenSettings,
+}) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const name = user?.name || detectedPlayer?.name || "";
+  // Site adresi yoksa giris penceresi acilamaz; bunu TIKLAMADAN once soyle.
+  const blocked = !cloudSignedIn && !cloudConfigured;
+
+  /**
+   * Giris penceresini acar ve SONUCU GOSTERIR.
+   *
+   * Onceden sonuc yok sayiliyordu: site adresi bos oldugunda ana surec
+   * `{ ok: false, error: "site-adresi-yok" }` donuyor ama arayuz bunu
+   * okumadigi icin butona basmak HICBIR SEY yapmiyor gibi gorunuyordu.
+   */
+  async function signIn() {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await window.dotastat?.cloudLogin?.();
+      if (!result) {
+        setError("Giriş başlatılamadı.");
+      } else if (!result.ok && result.error !== "iptal") {
+        setError(LOGIN_ERRORS[result.error] || "Giriş yapılamadı.");
+      }
+    } catch (caught) {
+      setError(String(caught?.message || caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="identity-box desktop">
+      <div className="identity-text">
+        {name ? (
+          <>
+            <strong>{name}</strong>
+            <span className="muted">oyundan tespit edildi</span>
+          </>
+        ) : (
+          <span className="muted">Kimlik oyundan okunur</span>
+        )}
+        {error || blocked ? (
+          <span
+            className={"chip identity-error " + (error ? "bad" : "warn")}
+            role={error ? "alert" : "status"}
+          >
+            {error || LOGIN_ERRORS["site-adresi-yok"]}
+            {onOpenSettings ? (
+              <button
+                type="button"
+                className="link-button"
+                onClick={onOpenSettings}
+              >
+                Ayarları aç
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+
+      {cloudSignedIn ? (
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => window.dotastat?.cloudLogout?.()}
+          title="Canlı maç ve MMR yayını için site oturumu açık. Kapatmak için tıkla."
+        >
+          ✓ Site oturumu açık
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={signIn}
+          disabled={busy}
+          title="Canlı maçını ve MMR'ını arkadaşlarının görebilmesi için gerekli"
+        >
+          <SteamMark /> {busy ? "Giriş açılıyor…" : "Steam ile giriş"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Ana surecin dondurdugu hata kodlarinin okunabilir karsiligi. */
+const LOGIN_ERRORS = {
+  "site-adresi-yok":
+    "Önce Ayarlar → Site adresi alanına sitenin adresini yaz (https://... ).",
+  "giris-basarisiz": "Steam girişi tamamlanmadı, tekrar dene.",
+};
 
 function SteamMark() {
   return (

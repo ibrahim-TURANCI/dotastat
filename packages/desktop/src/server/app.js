@@ -353,8 +353,12 @@ function createServerApp(options) {
   app.get("/api/auth/session", async (request, response) => {
     // Siteye giris yapilmis mi? Canli mac yayini icin gereken tek sey bu;
     // arayuz butonu buna gore "giris yap" ya da "cikis" gosterir.
-    const cloudSignedIn = await hasCloudSession(settings.get().cloudUrl || "");
+    const cloudUrl = String(settings.get().cloudUrl || "").trim();
+    const cloudSignedIn = await hasCloudSession(cloudUrl);
     response.locals.cloudSignedIn = cloudSignedIn;
+    // Site adresi bos ise Steam girisi ACILAMAZ (bkz. main.js ->
+    // "dotastat:cloud-login"). Arayuz bunu tiklamadan once soylesin.
+    const cloudConfigured = Boolean(cloudUrl);
 
     const steamId = settings.resolveSteamId();
     if (!steamId) {
@@ -366,6 +370,7 @@ function createServerApp(options) {
         mode: "desktop",
         signedIn: false,
         cloudSignedIn,
+        cloudConfigured,
         user: null,
       });
       return;
@@ -378,6 +383,7 @@ function createServerApp(options) {
       mode: "desktop",
       signedIn: true,
       cloudSignedIn,
+      cloudConfigured,
       user: {
         steamId,
         accountId,

@@ -67,6 +67,20 @@ export const EMPTY_RESULT_RETRY_MS = 6 * 60 * 60 * 1000;
 export const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
+ * "Mac gecmisi gizli" isaretinin yeniden sorulma araligi.
+ *
+ * `fh_unavailable` KALICI BIR OZELLIK DEGILDIR: oyuncu Dota'dan "Maç
+ * Verilerini Herkese Açık Yap"i her an acabilir ve bunu ogrenmenin tek yolu
+ * profili yeniden sormaktir. Isaret kalici sayildigi surece oyuncu ekranda
+ * sonsuza kadar "maç geçmişi gizli" olarak kaliyordu — ayari acmis olsa bile.
+ *
+ * Bu yuzden isaret ELLE tazelemede yeniden sorulur, ama profil verisi bu
+ * sureden eskiyse. Otomatik doldurma kuyruguna girmezler; oradaki amac her
+ * sayfa acilisinda kota harcamamak.
+ */
+export const HISTORY_RECHECK_MS = 30 * 60 * 1000;
+
+/**
  * Kadrodaki EN TAZE verinin zamani.
  *
  * Panelde tek bir "son güncelleme" yazisi gosteriliyor; oyuncular ayri
@@ -300,13 +314,41 @@ export function createPlayerDataService(options) {
           storage.set(key, row, { ttlMs: MATCH_TTL_MS }),
           storage.set(staleKey, row),
         ]);
-      } else {
-        // Bos sonuc: bir sure yeniden denenmesin.
-        await storage.set(
-          key + ":attempted",
-          { at: fetchedAt },
-          { ttlMs: EMPTY_RESULT_RETRY_MS },
-        );
+        return {
+          matches,
+          fetchedAt,
+          fromCache: false,
+          stale: false,
+          error: "",
+        };
+      }
+
+      // BOS SONUC — hata degil ama veri de yok.
+      //
+      // Kaynak "basarili" cevap verip bos liste dondurebiliyor (gunluk limit,
+      // gecici indeksleme sorunu, tarama kuyrugu). Onceden bu bos liste OLDUGU
+      // GIBI donuyordu: elle "Yenile"ye basan biri, ekranindaki dolu veriyi
+      // silip "veri bekleniyor"a dusuruyordu. Eski kopya duruyor olmasina
+      // ragmen okunmuyordu, cunku bayat kopya yalnizca tazeleme ISTENMEDIGINDE
+      // ve `catch` icinde okunuyordu.
+      //
+      // Artik elde ne varsa korunur; tazeleme yalnizca YENI veri getirmemis
+      // olur. Bayat kopyanin `fetchedAt`i da korunur — aksi halde arayuz
+      // bos veriyi "az once guncellendi" diye gosterip tazelemeyi kilitliyordu.
+      await storage.set(
+        key + ":attempted",
+        { at: fetchedAt },
+        { ttlMs: EMPTY_RESULT_RETRY_MS },
+      );
+      const kept = await storage.get(staleKey);
+      if (kept?.matches?.length) {
+        return {
+          matches: migrateCachedMatches(kept.matches, kept.schema),
+          fetchedAt: kept.fetchedAt || "",
+          fromCache: true,
+          stale: true,
+          error: "tazelenemedi-bos-sonuc",
+        };
       }
       return { matches, fetchedAt, fromCache: false, stale: false, error: "" };
     } catch (error) {
@@ -359,7 +401,12 @@ export function createPlayerDataService(options) {
     try {
       const snapshot = await client.getPlayerProfile(player.player_id);
       if (!snapshot) {
-        return null;
+        // Cevap geldi ama profil yok: elde bir kopya varsa ONU koru.
+        // Bu deger madalyayi tasiyor; madalya kaybolunca YAKLASIK MMR de
+        // kayboluyor (bkz. resolveRankProgress) — yani tek bir basarisiz
+        // tazeleme tum kadronun rank gosterimini siliyordu.
+        const stale = await storage.get(staleKey);
+        return stale ? { ...stale, fromCache: true, stale: true } : null;
       }
       const row = {
         name: snapshot.name,
@@ -379,7 +426,9 @@ export function createPlayerDataService(options) {
       ]);
       return { ...row, fromCache: false };
     } catch {
-      return null;
+      // Ag hatasi da madalyayi silmemeli.
+      const stale = await storage.get(staleKey);
+      return stale ? { ...stale, fromCache: true, stale: true } : null;
     }
   }
 
@@ -434,8 +483,16 @@ export function createPlayerDataService(options) {
           ),
           storage.set(staleKey, { heroes, fetchedAt }),
         ]);
+        return { heroes, fetchedAt, error: "" };
       }
-      return { heroes, fetchedAt, error: "" };
+
+      // Maclarla ayni kural: bos sonuc, elde duran listeyi silmez.
+      const kept = await storage.get(staleKey);
+      return {
+        heroes: kept?.heroes || [],
+        fetchedAt: kept?.fetchedAt || fetchedAt,
+        error: kept?.heroes?.length ? "tazelenemedi-bos-sonuc" : "",
+      };
     } catch (error) {
       // Bu uc olmadan da ekran calisir: hero havuzu son maclardan turetilir.
       const stale = await storage.get(staleKey);
@@ -518,11 +575,24 @@ export function createPlayerDataService(options) {
       providerError: matchResult.error,
       heroPerformanceError: heroResult.error,
       /**
+       * Gosterilen mac verisi bayat kopyadan geliyor: ya TTL doldu ve
+       * kendiliginden yenilenmedi, ya da tazeleme denendi fakat yeni veri
+       * getirmedi. Arayuz bunu "veri yok" ile karistirmamali — ekranda
+       * duran sayilar gecerli, sadece eski.
+       */
+      stale: Boolean(matchResult.stale),
+      /**
        * Oyuncu Dota'da mac verisini gizlemis. Rank ve profil gorunur ama mac
        * listesi hicbir kaynaktan gelmez; arayuz bunu "veri bekleniyor" yerine
        * acik bir aciklama olarak gostermeli.
        */
       historyUnavailable: historyBlocked,
+      /**
+       * Profilin (ve dolayisiyla `historyUnavailable` isaretinin) yasi.
+       * Panel, gizli gorunen oyuncuyu ne zaman yeniden soracagina buna
+       * bakarak karar verir.
+       */
+      profileFetchedAt: profile?.fetchedAt || "",
       /**
        * Tazeleme istendi ama veri henuz cok taze oldugu icin atlandi mi?
        * Arayuz butonu buna gore kapatip "son guncelleme: 2 dk once" yazar.
@@ -589,7 +659,7 @@ export function createPlayerDataService(options) {
     // icin biri az once tazelediyse ikinci kisinin istegi ayni veriyi bir kez
     // daha cekmekten baska bir sey yapmaz.
     //
-    // Mac verisini gizleyen oyuncular hesaba KATILMAZ: onlarin `fetchedAt`i
+    // Mac verisini gizleyen oyuncular bu hesaba KATILMAZ: onlarin `fetchedAt`i
     // hicbir zaman dolmayacagi icin "tazelenebilir" gorunup butonu surekli
     // acik tutuyorlardi.
     const refreshable = cachedBundles.filter(
@@ -601,8 +671,30 @@ export function createPlayerDataService(options) {
         )
       : [];
 
+    // GIZLI GORUNEN OYUNCULAR ELLE TAZELEMEDE YENIDEN SORULUR.
+    //
+    // Onceden hicbir yoldan sorulmuyorlardi: otomatik kuyruktan da, elle
+    // tazelemeden de eleniyorlardi. Sonuc: oyuncu Dota'da "Maç Verilerini
+    // Herkese Açık Yap"i actiginda site bunu HIC ogrenemiyor, kart sonsuza
+    // kadar "maç geçmişi gizli" kaliyordu (olculdu: OpenDota
+    // `fh_unavailable: false` ve 20 mac donerken bizim kart hala gizli
+    // diyordu). Tek cikis yolu o oyuncunun detay panelini acip oradan
+    // "Yenile" demekti — kimsenin bilemeyecegi bir hareket.
+    //
+    // Profil yasina gore kisiliyoruz ki arka arkaya tiklamak kota harcamasin.
+    const blocked = dashboardOptions.refresh
+      ? cachedBundles.filter(
+          (row) =>
+            row.bundle.historyUnavailable &&
+            refreshWindow(row.bundle.profileFetchedAt || "", HISTORY_RECHECK_MS)
+              .allowed,
+        )
+      : [];
+
     const toRefresh = dashboardOptions.refresh
-      ? stale.slice(0, maxRefresh)
+      ? // Gizli olanlar ONCE: sayilari az ve yalnizca 30 dakikada bir sorulur,
+        // yoksa kalabalik kadroda hic siraya giremezlerdi.
+        [...blocked, ...stale].slice(0, maxRefresh)
       : missing.slice(0, maxRefresh);
 
     const refreshed = new Map();
@@ -629,6 +721,7 @@ export function createPlayerDataService(options) {
         fetchedAt: bundle.fetchedAt,
         hasData: bundle.matches.length > 0,
         historyUnavailable: Boolean(bundle.historyUnavailable),
+        stale: Boolean(bundle.stale),
       };
     });
 
@@ -642,6 +735,14 @@ export function createPlayerDataService(options) {
       hiddenPlayers: cards
         .filter((row) => row.historyUnavailable)
         .map((row) => row.id),
+      /**
+       * Verisi duran ama tazelenemeyen oyuncular. "Bekleyen" DEGILLER —
+       * ekranda gecerli (yalnizca eski) veri var. Arayuz ikisini ayri
+       * gostermeli, aksi halde dolu bir ekran "veri bekleniyor" gibi okunur.
+       */
+      stalePlayers: cards
+        .filter((row) => row.hasData && row.stale)
+        .map((row) => row.id),
       /** Bu istekte GERCEKTEN saglayiciya gidilen oyuncu sayisi. */
       refreshedCount: fetchedCount,
       /**
@@ -653,7 +754,10 @@ export function createPlayerDataService(options) {
         cards.filter((row) => !row.historyUnavailable),
       ),
       /** Tazeleme istendi ama tum veriler cok taze oldugu icin atlandi mi? */
-      refreshSkipped: Boolean(dashboardOptions.refresh) && stale.length === 0,
+      refreshSkipped:
+        Boolean(dashboardOptions.refresh) &&
+        stale.length === 0 &&
+        blocked.length === 0,
     };
   }
 

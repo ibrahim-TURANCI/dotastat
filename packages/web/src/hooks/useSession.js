@@ -15,6 +15,9 @@ export function useSession() {
   const [mode, setMode] = useState("");
   // Masaustunde: siteye giris yapilmis mi (canli mac yayini icin gerekli).
   const [cloudSignedIn, setCloudSignedIn] = useState(false);
+  // Masaustunde: ayarlarda site adresi tanimli mi. Tanimli degilse Steam
+  // giris penceresi hic acilamaz, bu yuzden arayuz onden uyarir.
+  const [cloudConfigured, setCloudConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -23,6 +26,7 @@ export function useSession() {
       setUser(payload.signedIn ? payload.user : null);
       setMode(String(payload.mode || "cloud"));
       setCloudSignedIn(Boolean(payload.cloudSignedIn));
+      setCloudConfigured(payload.cloudConfigured !== false);
     } catch {
       setUser(null);
     } finally {
@@ -57,5 +61,13 @@ export function useSession() {
     setUser(null);
   }, []);
 
-  return { user, mode, cloudSignedIn, loading, reload: load, logout };
+  return {
+    user,
+    mode,
+    cloudSignedIn,
+    cloudConfigured,
+    loading,
+    reload: load,
+    logout,
+  };
 }
