@@ -116,6 +116,53 @@ button {
   font-weight: 400;
 }
 
+/* --- Katlanabilir bolum --------------------------------------------------- */
+
+/*
+ * Bolum basligi tiklanabilir hale gelir ama GORUNUMU degismez: aradaki tek
+ * fark soldaki ok. Boylece "kapatilabilir" olmak, ekranin duzenini bozmadan
+ * eklenir.
+ */
+.section-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.section-toggle:hover .section-title {
+  color: var(--txt-0);
+}
+
+.section-toggle:focus-visible {
+  outline: 2px solid var(--txt-2);
+  outline-offset: 4px;
+}
+
+.section-caret {
+  color: var(--txt-2);
+  font-size: 12px;
+  line-height: 24px;
+  transition: transform 160ms ease;
+}
+
+.collapsible-section[data-open="true"] .section-caret {
+  transform: rotate(90deg);
+}
+
+/* Kapaliyken basligin altindaki bosluk gereksiz kalir. */
+.collapsible-section[data-open="false"] .section-head {
+  margin-bottom: 0;
+}
+
 /* --- Kucuk parcalar ------------------------------------------------------- */
 
 .chip {

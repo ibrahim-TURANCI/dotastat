@@ -4,7 +4,11 @@ import { formatRelativeTime } from "../lib/format.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { PlayerCard } from "../components/PlayerCard.jsx";
 import { PlayerDetail, refreshTooltip } from "../components/PlayerDetail.jsx";
-import { EmptyState, SkeletonBlock } from "../components/primitives.jsx";
+import {
+  CollapsibleSection,
+  EmptyState,
+  SkeletonBlock,
+} from "../components/primitives.jsx";
 
 /**
  * Oyuncu Degerlendirme ekrani — sitenin ana ekrani.
@@ -12,9 +16,16 @@ import { EmptyState, SkeletonBlock } from "../components/primitives.jsx";
  * Kartlar acilista onbellekten gelir; verisi olmayan oyuncular arka planda
  * doldurulur, bu yuzden panel "beklemede" olanlari da gosterir.
  *
- * @param {{ liveKnownPlayerIds?: string[] }} props
+ * Katlanabilir ve VARSAYILAN OLARAK ACIKTIR; canli mac basladiginda uygulama
+ * kabugu bunu kapatir ki ekranda mac one ciksin (bkz. App.jsx).
+ *
+ * @param {{ liveKnownPlayerIds?: string[], open?: boolean, onToggle?: () => void }} props
  */
-export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
+export function PlayerEvaluationScreen({
+  liveKnownPlayerIds = [],
+  open = true,
+  onToggle = () => {},
+}) {
   const [selected, setSelected] = useState("");
 
   // Otomatik yoklama YOK. Oyuncu verisi yalnizca ilk acilista bir kez, sonra
@@ -38,16 +49,13 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
   const liveIds = new Set(liveKnownPlayerIds);
 
   return (
-    <section className="section">
-      <div className="section-head">
-        <div>
-          <h2 className="section-title">Oyuncu Değerlendirme</h2>
-          <p className="section-subtitle">
-            Performance Rank ve seviye tahminleri gerçek MMR değildir; oyun
-            verisinden çıkarılan tahminlerdir.
-          </p>
-        </div>
-        <div className="row" style={{ gap: 8 }}>
+    <CollapsibleSection
+      title="Oyuncu Değerlendirme"
+      subtitle="Performance Rank ve seviye tahminleri gerçek MMR değildir; oyun verisinden çıkarılan tahminlerdir."
+      open={open}
+      onToggle={onToggle}
+      right={
+        <>
           {pending.length ? (
             <span className="chip warn">
               {pending.length} oyuncu verisi bekleniyor
@@ -75,9 +83,9 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
           >
             {players.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {players.loading ? (
         <SkeletonBlock lines={4} height={92} />
       ) : players.error ? (
@@ -113,6 +121,6 @@ export function PlayerEvaluationScreen({ liveKnownPlayerIds = [] }) {
       {selected ? (
         <PlayerDetail playerKey={selected} onClose={() => setSelected("")} />
       ) : null}
-    </section>
+    </CollapsibleSection>
   );
 }

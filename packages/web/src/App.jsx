@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./lib/api.js";
 import { useAsyncData } from "./hooks/useAsyncData.js";
 import { useSession } from "./hooks/useSession.js";
@@ -12,25 +12,61 @@ import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
 /** Canli mac ne siklikta sorgulanir. */
 const LIVE_POLL_MS = 5000;
 
+/** Bolumlerin mac YOKKEN aldigi durum. */
+const IDLE_PANELS = { weekly: true, evaluation: true, live: false };
+
+/** Mac BASLADIGINDA aldigi durum: mac one cikar, digerleri katlanir. */
+const LIVE_PANELS = { weekly: false, evaluation: false, live: true };
+
 /**
  * Uygulama kabugu.
  *
- * Ekran duzeni sabittir:
- *   1. Ust bar (kimlik, online, indirme)
- *   2. Haftanin Kazanani / Kaybedeni (son 7 gun)
- *   3. Oyuncu Degerlendirme
- *   4. Canli Mac (+ draft asistani)
- *   5. Debug Panel (kapali akordeon)
+ * Bolumlerin acik/kapali durumu BURADA tutulur, cunku canli mac basladiginda
+ * hepsi birden yer degistirir: mac acilir, digerleri katlanir. Karar tek bir
+ * yerde olmazsa bolumler birbirinden habersiz kalir.
+ *
+ * SIRALAMA KURULUMA GORE DEGISIR
+ * ------------------------------
+ * Masaustu uygulamasi oyunun yaninda, oyun sirasinda acik durur; oraya
+ * bakmanin sebebi neredeyse her zaman o anki mactir. Bu yuzden masaustunde
+ * Canli Mac EN USTTEDIR.
+ *
+ * Site ise cogu zaman mac disinda aciliyor — kim nasil gidiyor diye bakmak
+ * icin. Orada ust sirayi haftalik tablo ve oyuncu kartlari hak ediyor, canli
+ * mac altta kaliyor (zaten mac basladiginda kendiliginden acilip ustundeki
+ * iki bolum katlaniyor).
+ *
+ *   Masaustu : Canli Mac → Haftanin Kazanani → Oyuncu Degerlendirme → Debug
+ *   Site     : Haftanin Kazanani → Oyuncu Degerlendirme → Canli Mac → Debug
  */
 export default function App() {
   const session = useSession();
   // Ayar ekrani yalnizca masaustunde vardir; sitede boyle bir uc yok.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [panels, setPanels] = useState(IDLE_PANELS);
 
   const live = useAsyncData(() => api.live(session.user?.steamId || ""), {
     intervalMs: LIVE_POLL_MS,
     deps: [session.user?.steamId || ""],
   });
+
+  const liveActive = Boolean(live.data?.active);
+  const previousLiveActive = useRef(liveActive);
+
+  // Yalnizca GECISTE mudahale edilir (mac basladi / bitti). Aksi halde her
+  // yoklamada duzen sifirlanir ve kullanicinin actigi bolum kapanirdi —
+  // "istenirse tekrar acilir" sartini bozardi.
+  useEffect(() => {
+    if (liveActive === previousLiveActive.current) {
+      return;
+    }
+    previousLiveActive.current = liveActive;
+    setPanels(liveActive ? LIVE_PANELS : IDLE_PANELS);
+  }, [liveActive]);
+
+  /** @param {"weekly"|"evaluation"|"live"} key */
+  const toggle = (key) =>
+    setPanels((current) => ({ ...current, [key]: !current[key] }));
 
   // Steam donusunden sonra adres cubugundaki ?login=... parametresi temizlenir.
   useEffect(() => {
@@ -60,6 +96,39 @@ export default function App() {
       : null;
   }, [session.user, live.data]);
 
+  // Masaustunde canli mac en uste alinir. `mode` oturum yaniti gelene kadar
+  // bos olur; o kisa anda site duzeni kullanilir, sonra tek seferde yerine
+  // oturur.
+  const liveFirst = session.mode === "desktop";
+
+  const weeklySection = (
+    <WeeklyLeaderboard
+      key="weekly"
+      open={panels.weekly}
+      onToggle={() => toggle("weekly")}
+    />
+  );
+
+  const evaluationSection = (
+    <PlayerEvaluationScreen
+      key="evaluation"
+      liveKnownPlayerIds={live.data?.knownPlayerIds || []}
+      open={panels.evaluation}
+      onToggle={() => toggle("evaluation")}
+    />
+  );
+
+  const liveSection = (
+    <LiveMatchPanel
+      key="live"
+      live={live.data}
+      loading={live.loading}
+      error={live.error}
+      open={panels.live}
+      onToggle={() => toggle("live")}
+    />
+  );
+
   return (
     <div className="app-shell">
       <AppHeader
@@ -77,17 +146,9 @@ export default function App() {
         <SettingsPanel onClose={() => setSettingsOpen(false)} />
       ) : null}
 
-      <WeeklyLeaderboard />
-
-      <PlayerEvaluationScreen
-        liveKnownPlayerIds={live.data?.knownPlayerIds || []}
-      />
-
-      <LiveMatchPanel
-        live={live.data}
-        loading={live.loading}
-        error={live.error}
-      />
+      {liveFirst
+        ? [liveSection, weeklySection, evaluationSection]
+        : [weeklySection, evaluationSection, liveSection]}
 
       <DebugPanel live={live.data} user={session.user} />
 

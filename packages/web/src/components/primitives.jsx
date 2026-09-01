@@ -46,6 +46,73 @@ export function Accordion({ title, hint, defaultOpen = false, children }) {
 }
 
 /**
+ * Katlanabilir ana bolum.
+ *
+ * `Accordion`dan farki: baslik, alt baslik ve sagdaki rozetlerle birlikte
+ * bolumun NORMAL gorunumunu korur — yalnizca basliga tiklanabilirlik ve bir
+ * ok eklenir. Boylece bolumler kapatilabilir hale gelirken ekran duzeni
+ * degismez.
+ *
+ * DENETIMLIDIR (`open` disaridan verilir): canli mac basladiginda uygulama
+ * kabugu bolumleri kendisi katlar. Kullanici sonra istedigini yine acabilir;
+ * bu yuzden durum tek bir yerde, App'te tutulur.
+ *
+ * Govde kapaliyken CIZILMEZ. Bu bilincli: kapali bir bolum veri cekmeye ya da
+ * yoklamaya devam etmemeli.
+ *
+ * @param {Object} props
+ * @param {string} props.title
+ * @param {React.ReactNode} [props.subtitle]
+ * @param {React.ReactNode} [props.right] Baslikta saga yaslanan icerik
+ * @param {boolean} props.open
+ * @param {() => void} props.onToggle
+ * @param {string} [props.className] Bolume eklenecek ek sinif
+ * @param {React.ReactNode} props.children
+ */
+export function CollapsibleSection({
+  title,
+  subtitle,
+  right,
+  open,
+  onToggle,
+  className = "",
+  children,
+}) {
+  const bodyId = useId();
+
+  return (
+    <section
+      className={("section collapsible-section " + className).trim()}
+      data-open={open ? "true" : "false"}
+    >
+      <div className="section-head">
+        <button
+          type="button"
+          className="section-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={onToggle}
+        >
+          <span className="section-caret" aria-hidden="true">
+            ▶
+          </span>
+          <span>
+            <h2 className="section-title">{title}</h2>
+            {subtitle ? <p className="section-subtitle">{subtitle}</p> : null}
+          </span>
+        </button>
+        {right ? (
+          <div className="row" style={{ gap: 8 }}>
+            {right}
+          </div>
+        ) : null}
+      </div>
+      {open ? <div id={bodyId}>{children}</div> : null}
+    </section>
+  );
+}
+
+/**
  * Hero ikonu. Gorsel yuklenmezse hero adinin bas harfleri gosterilir.
  *
  * @param {{ hero: string, size?: number, title?: string }} props

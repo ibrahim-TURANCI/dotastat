@@ -12,6 +12,7 @@ const { createFileStore } = require("./storage.js");
 const { createSettingsStore } = require("./settings.js");
 const { createCloudRelay } = require("../services/cloud-relay.js");
 const { createMmrWatcher } = require("../services/mmr-watcher.js");
+const { createOverwolfWatcher } = require("../services/overwolf-watcher.js");
 
 /** Varsayilan port. Dota GSI yapilandirmasi da bu portu kullanir. */
 const DEFAULT_PORT = 3044;
@@ -60,17 +61,35 @@ async function startServer(options) {
   });
   mmr.start();
 
-  const { app, getLiveState, playerData } = createServerApp({
+  // Overwolf/DotaPlus ISTEGE BAGLI ek kaynaktir: canli macta 10 slotun
+  // hero'sunu ve rank'ini verir. Kurulu degilse servis sessizce bos doner ve
+  // uygulama yalnizca GSI ile eskisi gibi calisir.
+  //
+  // Degisiklik geri cagrisi sunucu kurulduktan SONRA baglanir; bu yuzden
+  // burada bir tutamac uzerinden cagrilir.
+  let onOverwolfChange = () => {};
+  const overwolf = createOverwolfWatcher({
+    core,
+    logger,
+    isEnabled: () => settings.get().useOverwolf !== false,
+    onChange: () => onOverwolfChange(),
+  });
+
+  const app_ = createServerApp({
     core,
     settings,
     storage,
     relay,
     mmr,
+    overwolf,
     webDir: options.webDir || "",
     logger,
     version: options.version || "",
     port,
   });
+  const { app, getLiveState, playerData } = app_;
+  onOverwolfChange = app_.onOverwolfChange;
+  overwolf.start();
 
   const server = await new Promise((resolve, reject) => {
     const instance = app.listen(port, "127.0.0.1", () => resolve(instance));
@@ -86,11 +105,13 @@ async function startServer(options) {
     settings,
     relay,
     mmr,
+    overwolf,
     playerData,
     getLiveState,
     async stop() {
       relay.stop();
       mmr.stop();
+      overwolf.stop();
       await new Promise((resolve) => server.close(resolve));
     },
   };

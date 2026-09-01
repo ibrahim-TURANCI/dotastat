@@ -199,6 +199,10 @@ export function buildLiveMatchContext(input = {}) {
     },
     myTeam,
     updatedAt: liveState.updatedAt,
+    // Overwolf/DotaPlus'tan gelen ek baglam (kurulu degilse `null`):
+    // hangi tarafta oynadigimiz, parti, mac modu. Arayuz bununla "hero
+    // bilgisi Overwolf'tan geliyor" notunu gosterebilir.
+    overwolf: liveState.overwolf || null,
     radiantPlayers: decorated.filter((row) => row.team === "radiant"),
     direPlayers: decorated.filter((row) => row.team === "dire"),
     knownPlayerIds: knownPlayers.map((row) => row.player.id),

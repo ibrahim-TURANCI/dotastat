@@ -28,7 +28,7 @@ const { hasCloudSession } = require("../services/cloud-session.js");
  * @param {number} [options.port]
  */
 function createServerApp(options) {
-  const { core, settings, storage, relay, webDir, mmr } = options;
+  const { core, settings, storage, relay, webDir, mmr, overwolf } = options;
   const logger = options.logger || console;
 
   const playerData = core.createPlayerDataService({
@@ -37,9 +37,91 @@ function createServerApp(options) {
     stratzApiKey: settings.get().stratzApiKey,
   });
 
-  /** Bellekte tutulan son canli mac durumu. */
+  /** Bellekte tutulan son canli mac durumu (yalnizca GSI'dan gelen ham hali). */
   let liveState = null;
   let lastRawAt = "";
+
+  /**
+   * GSI durumunu, varsa Overwolf goruntusuyle zenginlestirir.
+   *
+   * Overwolf kurulu degilse `overwolf` servisi hic verilmemis ya da bos
+   * donuyor olur; o zaman durum OLDUGU GIBI kullanilir. Yani bu cagri
+   * Overwolf'suz kurulumda hicbir sey degistirmez.
+   *
+   * @param {Record<string, any>|null} state
+   * @returns {Record<string, any>|null}
+   */
+  function enrich(state) {
+    const snapshot = overwolf?.snapshot?.() || null;
+    if (!snapshot) {
+      return state;
+    }
+    try {
+      return core.applyOverwolfSnapshot(state, snapshot);
+    } catch (error) {
+      logger.warn?.(
+        "Overwolf verisi birlestirilemedi",
+        String(error?.message || error),
+      );
+      return state;
+    }
+  }
+
+  /**
+   * Overwolf goruntusunun "hala canli" sayilacagi sure.
+   *
+   * Bir mac icinde controller logu yalnizca draft sirasinda hareketlenir;
+   * oyun basladiktan sonra dakikalarca sessiz kalabilir. Bu yuzden pencere
+   * GSI'nin 3 dakikalik tazelik esiginden genistir. Yine de sinirsiz degil:
+   * Dota kapandiginda dunku macin ekranda kalmamasi gerekir.
+   */
+  const OVERWOLF_LIVE_WINDOW_MS = 10 * 60 * 1000;
+
+  /**
+   * GSI hic kurulmamissa canli maci YALNIZCA Overwolf'tan kurar.
+   *
+   * Bu ikincil yoldur: normalde GSI ana kaynaktir, Overwolf onu zenginlestirir.
+   * Burasi "arkadasta GSI yok ama Overwolf var" durumunda draftin yine de
+   * gorunmesini saglar.
+   *
+   * @returns {Record<string, any>|null}
+   */
+  function liveStateFromOverwolfOnly() {
+    const snapshot = overwolf?.snapshot?.() || null;
+    if (!snapshot?.matchId || snapshot.ended || !snapshot.activity) {
+      return null;
+    }
+    const at = new Date(snapshot.at || 0).getTime();
+    if (!Number.isFinite(at) || Date.now() - at > OVERWOLF_LIVE_WINDOW_MS) {
+      return null;
+    }
+
+    return enrich({
+      matchId: String(snapshot.matchId),
+      phase: snapshot.matchState || "",
+      gameTime: 0,
+      radiantScore: 0,
+      direScore: 0,
+      daytime: true,
+      radiantPlayers: [],
+      direPlayers: [],
+      draft: { picks: [], bans: [], activeTeam: "" },
+      localSteamId: settings.resolveSteamId(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Su an gosterilecek canli mac durumu.
+   * Once GSI (taze ise), yoksa yalnizca Overwolf.
+   * @returns {Record<string, any>|null}
+   */
+  function currentLiveState() {
+    if (liveState && core.isLiveMatchFresh(liveState)) {
+      return enrich(liveState);
+    }
+    return liveStateFromOverwolfOnly();
+  }
 
   const app = express();
   app.use(express.json({ limit: "2mb" }));
@@ -114,7 +196,9 @@ function createServerApp(options) {
         }
       }
 
-      relay.push(liveState);
+      // Buluta ZENGINLESTIRILMIS durum gider: Overwolf kuruluysa 10 slotun
+      // hero'su da yayina dahil olur, degilse GSI'nin verdigi kadari gider.
+      relay.push(enrich(liveState));
     } catch (error) {
       logger.error?.("GSI verisi islenemedi", String(error?.message || error));
     }
@@ -326,7 +410,8 @@ function createServerApp(options) {
   // --- Canli mac --------------------------------------------------------------
 
   app.get("/api/live", async (request, response) => {
-    if (!liveState || !core.isLiveMatchFresh(liveState)) {
+    const state = currentLiveState();
+    if (!state) {
       response.json({ ok: true, active: false, reason: "canli-mac-yok" });
       return;
     }
@@ -334,7 +419,7 @@ function createServerApp(options) {
     try {
       const statsByPlayerId = await playerData.getCachedStatsByPlayerId();
       const context = core.buildLiveMatchContext({
-        liveState,
+        liveState: state,
         statsByPlayerId,
         viewerSteamId: settings.resolveSteamId(),
       });
@@ -461,6 +546,7 @@ function createServerApp(options) {
       "openDotaApiKey",
       "stratzApiKey",
       "shareLive",
+      "useOverwolf",
       "startMinimized",
       "autoInstallGsi",
     ]) {
@@ -523,6 +609,12 @@ function createServerApp(options) {
           uploaderCount: liveState ? 1 : 0,
           lastPayloadAt: lastRawAt,
           relay: relay.status(),
+          // Overwolf kurulu degilse `available:false` doner; bu bir hata
+          // degildir, yalnizca ek kaynagin yoklugudur.
+          overwolf: overwolf?.status?.() || {
+            available: false,
+            error: "servis-yok",
+          },
         },
         presence: { userCount: settings.resolveSteamId() ? 1 : 0 },
       });
@@ -572,6 +664,18 @@ function createServerApp(options) {
     app,
     /** Testler ve tepsi menusu icin son durum. */
     getLiveState: () => liveState,
+    /** Overwolf ile zenginlestirilmis hali (yoksa GSI'nin aynisi). */
+    getEnrichedLiveState: currentLiveState,
+    /**
+     * Overwolf logunda bir sey degistiginde cagrilir: draft ilerlerken GSI
+     * sessiz kalsa bile yayin guncellensin.
+     */
+    onOverwolfChange() {
+      const state = currentLiveState();
+      if (state) {
+        relay.push(state);
+      }
+    },
     playerData,
   };
 }

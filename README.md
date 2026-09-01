@@ -14,12 +14,45 @@ canlı maç ve draft asistanı da aynı sayfada görünür.
 | Ekran | İçerik |
 | --- | --- |
 | **Oyuncu Değerlendirme** | Kadrodaki her oyuncu için kart: rank madalyası, tahmini seviye, form şeridi, en çok oynanan hero'lar. Karta tıklayınca sekmeli detay (genel, performans, hero havuzu, son maçlar, sinerji). |
-| **Canlı Maç** | GSI'dan gelen skor, süre, iki takımın oyuncuları. Kadrodaki oyuncular vurgulanır. |
+| **Canlı Maç** | GSI'dan gelen skor, süre, iki takımın oyuncuları. Kadrodaki oyuncular vurgulanır. Arkadaşlardan birinde Overwolf varsa rakip pickler de gelir. |
 | **Draft Asistanı** | Canlı maçın altında. Pick başlamadan tanınan oyuncuların havuzuna göre, pick sürerken kendi + rakip seçimlere göre öneri verir. **Pickler bitince tamamen gizlenir.** |
 | **Debug Panel** | Sayfanın altında **kapalı akordeon**; tıklanınca açılır ve o anda veri çeker. |
 
-Bu projede **Overwolf, ekran yakalama ve OCR yoktur.** Canlı veri yalnızca
-Dota'nın resmî Game State Integration arayüzünden gelir.
+Bu projede **ekran yakalama ve OCR yoktur**; oyuna, belleğe ya da başka bir
+sürece de dokunulmaz. Canlı veri Dota'nın resmî Game State Integration
+arayüzünden gelir. Kullanıcının makinesinde Overwolf zaten kuruluysa onun
+**düz metin logu okunur** (yalnızca dosya okuması) ve GSI'nın canlı maçta
+veremediği iki şey eklenir: rakip pickler ve maç başına MMR değişimi. Overwolf
+yoksa bu okuma hiç çalışmaz, uygulamanın geri kalanı etkilenmez.
+
+### Ekran düzeni
+
+Dört bölüm de **katlanabilir**. Varsayılan durum:
+
+| Bölüm | Varsayılan |
+| --- | --- |
+| Haftanın Kazananı / Kaybedeni | açık |
+| Oyuncu Değerlendirme | açık |
+| Canlı Maç | kapalı |
+| Debug Panel | kapalı |
+
+**Sıralama kuruluma göre değişir.** Masaüstü uygulaması oyunun yanında, oyun
+sırasında açık durur; oraya bakmanın sebebi neredeyse her zaman o anki maçtır:
+
+```
+Masaüstü : Canlı Maç → Haftanın Kazananı → Oyuncu Değerlendirme → Debug
+Site     : Haftanın Kazananı → Oyuncu Değerlendirme → Canlı Maç → Debug
+```
+
+Site çoğunlukla maç dışında açılıyor (kim nasıl gidiyor diye bakmak için), o
+yüzden orada üst sırayı haftalık tablo ve oyuncu kartları alır. Zaten maç
+başladığında Canlı Maç kendiliğinden açılıp üstündeki iki bölüm katlanıyor.
+
+**Canlı maç başladığında düzen kendiliğinden değişir:** Canlı Maç açılır,
+diğer ikisi katlanır — maç sürerken ekranda maç olsun diye. Maç bitince eski
+düzene dönülür. Aradaki her an istediğin bölümü elle açabilirsin; otomatik
+değişiklik yalnızca maç *başlarken* ve *biterken* olur, her yoklamada değil,
+yoksa senin açtığın bölüm sürekli kapanırdı.
 
 ## Klasör düzeni
 
@@ -243,6 +276,61 @@ vermez — verseydi herkes istediği SteamID adına veri gönderebilirdi.
 Uygulamanın sağ üstü bu iki kimliği ayrı ayrı gösterir: oyundan okunan ad ve
 site oturumunun durumu. Site adresi bir şekilde boşsa buton, sebebini ve
 "Ayarları aç" bağlantısını yazar (eskiden sessizce hiçbir şey yapmıyordu).
+
+### Canlı draft: Overwolf'lu arkadaş rakip pickleri de getirir
+
+GSI'nin canlı maçta bir sınırı var: **sen oynarken yalnızca senin oyuncu
+bloğunu gönderir.** Rakip takımın ne seçtiği orada yoktur. (Maç *izlerken*
+tam kadro gelir — panel o yüzden izlemede dolu görünüp canlı maçta boş
+kalıyordu.)
+
+Overwolf'un oyun-olay sağlayıcısı bu bilgiyi görüyor ve üstünde çalışan
+DotaPlus onu kendi düz metin loguna yazıyor — MMR'ı okuduğumuz logun aynısı.
+DotaStat o logdan **10 slotun hero'sunu, rank'ini ve banları** okur.
+
+```
+Overwolf → DotaPlus → controller.html.log ─┐
+                                           ├─→ DotaStat → /api/live → site
+Dota → GSI (yalnızca kendi oyuncun) ───────┘
+```
+
+**Overwolf isteğe bağlıdır.** Kurulu değilse klasör bulunamaz, servis
+`available: false` der ve hiçbir şey yapmaz; panel GSI'nin verdiği kadarıyla
+eskisi gibi çalışır. Kapatmak için: Ayarlar → "Overwolf'tan canlı draft oku".
+
+#### Farklı kurulumlar aynı maçta birleşir
+
+Kadrodan üç kişi aynı maçtaysa ve kurulumları farklıysa, her kaynağın
+gördüğü ekrana taşınır:
+
+| Kim | Ne gönderir | Panelde ne görünür |
+| --- | --- | --- |
+| DotaStat + Overwolf | 10 slotun hero'su + rank + banlar | Rakip takımın tamamı |
+| Yalnızca DotaStat | Kendi KDA / net worth / eşyaları | O kişinin satırı dolu |
+| Tarayıcıdan bakan | — | İkisinin birleşimi |
+
+Birleştirme **hero anahtarıyla** yapılır: bir maçta aynı hero iki kez
+seçilemez, bu yüzden Overwolf'un slot tablosuyla GSI'nin kimlikli satırı
+güvenle eşleşir. Overwolf iskeleti kurar, GSI üstüne detayı yazar; çakışmada
+GSI kazanır — o, oyunun kendi çıkışıdır. Panel başlığında kaç kaynaktan
+beslendiği yazar.
+
+#### Sınırlar
+
+- **Ranked maçta isim ve SteamID gizlidir** (`anonymous=true`). Canlı maçta
+  rakiplerin kimliği alınamaz; hero, rank ve rol alınır. Kimlikler maç
+  bitince açılır.
+- Rank bilgisi controller logunda değil `DotaPlusObject_*.log` içindedir; iki
+  log **farklı maçları** anlatıyorsa rank hiç yazılmaz (yanlış maça ait rank
+  göstermek, hiç göstermemekten kötüdür).
+- `isTraversal: true` satırı "hero'nun üstünde geziniyor" demektir, seçim
+  değil. Kilitlenmiş bir seçim sonradan gelen gezinme satırıyla **bozulmaz**.
+- Kaynak uygulamanın log biçimi değişirse okuma sessizce durur; GSI tarafı
+  etkilenmez. Sözleşme
+  [overwolf-live.test.js](packages/core/test/overwolf-live.test.js) ile
+  sabitlendi — satırlar gerçek loglardan alındı.
+- Durum Debug Panel → "Overwolf / DotaPlus" kartında görünür (okunan pick ve
+  rank sayısı, son satırın zamanı).
 
 ### Tepsi ikonu
 

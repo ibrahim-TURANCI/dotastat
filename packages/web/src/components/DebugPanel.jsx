@@ -88,6 +88,43 @@ function DebugBody({ live, user }) {
         />
       </DebugCard>
 
+      {/*
+        Overwolf ISTEGE BAGLI ek kaynaktir. Kurulu degilse burasi "yok" der;
+        bu bir hata degildir, uygulama GSI ile tam calisir. Kart yalnizca
+        masaustunde doludur (sitede boyle bir okuma yapilmaz).
+      */}
+      <DebugCard title="Overwolf / DotaPlus">
+        <DebugFlag
+          label="Log okunuyor"
+          on={Boolean(data.live?.overwolf?.available)}
+        />
+        <DebugRow
+          label="Durum"
+          value={data.live?.overwolf?.error || "çalışıyor"}
+        />
+        <DebugRow label="Maç" value={data.live?.overwolf?.matchId || "-"} />
+        <DebugRow
+          label="Etkinlik"
+          value={data.live?.overwolf?.activity || "-"}
+        />
+        <DebugRow
+          label="Okunan pick"
+          value={String(data.live?.overwolf?.picks ?? 0) + " / 10"}
+        />
+        <DebugRow
+          label="Okunan rank"
+          value={String(data.live?.overwolf?.ranks ?? 0) + " / 10"}
+        />
+        <DebugRow
+          label="Son satır"
+          value={
+            data.live?.overwolf?.at
+              ? formatRelativeTime(data.live.overwolf.at)
+              : "-"
+          }
+        />
+      </DebugCard>
+
       <DebugCard
         title={"Önbellek (" + (data.roster?.count ?? 0) + " oyuncu)"}
         wide

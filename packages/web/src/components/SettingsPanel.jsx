@@ -133,6 +133,17 @@ export function SettingsPanel({ onClose }) {
           checked={form.shareLive !== false}
           onChange={(v) => change("shareLive", v)}
         />
+
+        <Toggle
+          label="Overwolf'tan canlı draft oku"
+          checked={form.useOverwolf !== false}
+          onChange={(v) => change("useOverwolf", v)}
+        />
+        <p className="muted micro">
+          Overwolf + DotaPlus kuruluysa rakip takımın pickleri ve rank bilgisi
+          de yayına eklenir; GSI canlı maçta yalnızca kendi oyuncunu verir.
+          Kurulu değilse bu ayarın hiçbir etkisi olmaz.
+        </p>
       </section>
 
       <section className="settings-group">

@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { formatPercent } from "../lib/format.js";
 import {
+  CollapsibleSection,
   EmptyState,
   FormStrip,
   RankMedal,
@@ -20,33 +21,41 @@ import "./WeeklyLeaderboard.css";
  *
  * Veri onbellekten uretilir; bu bolum hicbir zaman kendi basina dis kaynaga
  * gitmez. Tazeleme "Oyuncu Degerlendirme" ekranindaki Yenile'dedir.
+ *
+ * Katlanabilir ve VARSAYILAN OLARAK ACIKTIR; canli mac basladiginda uygulama
+ * kabugu bunu kapatir ki ekranda mac one ciksin (bkz. App.jsx).
+ *
+ * @param {{ open?: boolean, onToggle?: () => void }} props
  */
-export function WeeklyLeaderboard() {
+export function WeeklyLeaderboard({ open = true, onToggle = () => {} }) {
   const board = useAsyncData(() => api.weekly());
 
+  const frame = (children) => (
+    <CollapsibleSection
+      title="Haftanın Kazananı / Kaybedeni"
+      subtitle="Son 7 gün · MMR değişimi, galibiyet dengesi, Performance Rank değişimi ve maç sayısına göre"
+      open={open}
+      onToggle={onToggle}
+    >
+      {children}
+    </CollapsibleSection>
+  );
+
   if (board.loading) {
-    return (
-      <section className="section">
-        <SectionHead />
-        <SkeletonBlock lines={3} height={72} />
-      </section>
-    );
+    return frame(<SkeletonBlock lines={3} height={72} />);
   }
 
   if (board.error) {
-    return (
-      <section className="section">
-        <SectionHead />
-        <EmptyState
-          title="Haftalık tablo alınamadı"
-          detail={board.error.message}
-          action={
-            <button type="button" className="btn small" onClick={board.reload}>
-              Tekrar dene
-            </button>
-          }
-        />
-      </section>
+    return frame(
+      <EmptyState
+        title="Haftalık tablo alınamadı"
+        detail={board.error.message}
+        action={
+          <button type="button" className="btn small" onClick={board.reload}>
+            Tekrar dene
+          </button>
+        }
+      />,
     );
   }
 
@@ -54,10 +63,8 @@ export function WeeklyLeaderboard() {
   const winner = board.data?.winner;
   const loser = board.data?.loser;
 
-  return (
-    <section className="section">
-      <SectionHead />
-
+  return frame(
+    <>
       {winner && loser ? (
         <div className="weekly-podium">
           <HighlightCard row={winner} tone="winner" />
@@ -77,21 +84,7 @@ export function WeeklyLeaderboard() {
         Rank değişimi; hepsi oynanan maç sayısıyla ağırlıklandırılır. Az maç
         oynayan oyuncunun sonucu tam ağırlık almaz.
       </p>
-    </section>
-  );
-}
-
-function SectionHead() {
-  return (
-    <div className="section-head">
-      <div>
-        <h2 className="section-title">Haftanın Kazananı / Kaybedeni</h2>
-        <p className="section-subtitle">
-          Son 7 gün · MMR değişimi, galibiyet dengesi, Performance Rank değişimi
-          ve maç sayısına göre
-        </p>
-      </div>
-    </div>
+    </>,
   );
 }
 

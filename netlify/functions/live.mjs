@@ -12,6 +12,7 @@
 import {
   buildLiveMatchContext,
   isLiveMatchFresh,
+  mergeLiveStatesByMatch,
   normalizeGsiPayload,
   selectLiveStateForViewer,
 } from "@dotastat/core";
@@ -109,9 +110,19 @@ export default async (request) => {
     const viewerSteamId = url.searchParams.get("steamId") || "";
 
     const states = await readFreshStates();
-    // Birden fazla arkadas ayni anda ayri maclardaysa hangisinin gosterilecegi
+
+    // AYNI MACTAKI kayitlar once tek bir tabloda birlestirilir.
+    //
+    // Bir macta kadrodan birkac kisi olabilir ve kurulumlari farklidir:
+    // Overwolf'lu olan 10 slotun hero'sunu gorur ama kimlikler gizlidir;
+    // yalnizca GSI'li olan kendi KDA'sini ve kimligini bilir. Eskiden tek bir
+    // kayit secilip digerleri atiliyordu, yani her izleyici eksik bir tablo
+    // goruyordu. Birlestirme ikisini de ekrana tasir.
+    const merged = mergeLiveStatesByMatch(states);
+
+    // Birden fazla arkadas ayni anda AYRI maclardaysa hangisinin gosterilecegi
     // izleyiciye gore secilir; yoksa panel surekli maclar arasinda zipliyordu.
-    const liveState = selectLiveStateForViewer(states, { viewerSteamId });
+    const liveState = selectLiveStateForViewer(merged, { viewerSteamId });
     if (!liveState) {
       return json({ ok: true, active: false, reason: "canli-mac-yok" });
     }
@@ -127,7 +138,11 @@ export default async (request) => {
       ok: true,
       ...context,
       // Ayni anda baska maclar da varsa arayuz bunu belirtebilsin.
-      liveMatchCount: states.length,
+      liveMatchCount: merged.length,
+      // Bu macin verisi kac ayri kurulumdan besleniyor.
+      contributorCount: (
+        liveState.uploaders || [liveState.uploaderSteamId]
+      ).filter(Boolean).length,
     });
   } catch (error) {
     return fail("canli-mac-alinamadi", {

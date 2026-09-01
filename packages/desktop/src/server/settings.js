@@ -8,6 +8,7 @@
  *   - openDotaApiKey : opsiyonel
  *   - stratzApiKey   : opsiyonel; OpenDota limitine takilinca yedek kaynak
  *   - shareLive      : canli mac yayini acik mi
+ *   - useOverwolf    : Overwolf/DotaPlus loglarindan canli draft okunsun mu
  */
 
 const fs = require("node:fs");
@@ -37,6 +38,9 @@ const DEFAULTS = {
   openDotaApiKey: "",
   stratzApiKey: "",
   shareLive: true,
+  // Overwolf kurulu degilse zaten hicbir sey okunmaz; kurulu olanda ek
+  // veriden vazgecmek icin sebep yok, bu yuzden varsayilan aciktir.
+  useOverwolf: true,
   startMinimized: false,
   autoInstallGsi: true,
 };

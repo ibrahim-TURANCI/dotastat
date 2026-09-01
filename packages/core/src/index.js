@@ -157,3 +157,20 @@ export {
   selectLiveStateForViewer,
   LIVE_MATCH_TTL_MS,
 } from "./gsi/match-context.js";
+export {
+  applyOverwolfSnapshot,
+  isSnapshotForLiveState,
+  mergeLiveStateGroup,
+  mergeLiveStatesByMatch,
+  mergePlayerLists,
+} from "./gsi/merge-live.js";
+
+// --- Overwolf / DotaPlus (istege bagli ek kaynak) ---------------------------
+export {
+  buildOverwolfSnapshot,
+  parseDotaPlusControllerLog,
+  parseDotaPlusObjectLog,
+  parseLogTimestamp,
+  teamFromPlayerIndex,
+  teamSlotFromPlayerIndex,
+} from "./overwolf/parse-live-log.js";
