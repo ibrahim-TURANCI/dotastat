@@ -10,6 +10,7 @@
 import { findRosterPlayer, toAccountId } from "../players/roster.js";
 import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { buildDraftAdvice, resolveDraftStage } from "../draft/draft-advisor.js";
+import { buildLiveItemAdvice } from "../live/item-advice.js";
 
 /** Bu suredir guncellenmemis canli mac "bitmis" sayilir. */
 export const LIVE_MATCH_TTL_MS = 3 * 60 * 1000;
@@ -106,10 +107,81 @@ export function selectLiveStateForViewer(states, options = {}) {
 }
 
 /**
+ * "Bizim taraf" hangisi?
+ *
+ * ONCELIK SIRASI, sinyalin ne kadar DOGRUDAN oldugu ile belirlenir:
+ *
+ *   1. Sayfayi acan kisi macin icindeyse kendi tarafi. Tartisma yok.
+ *   2. Overwolf'un bildirdigi taraf. Veriyi yollayan istemci kendi tarafini
+ *      oyundan OKUYOR; bu bir tahmin degil, olcum.
+ *   3. Veriyi yollayan kisinin (uploader) mac icindeki satiri. Overwolf yoksa
+ *      GSI'nin `localSteamId` degeri hala kimin gonderdigini soyler.
+ *   4. Kadrodan taninan oyuncularin cogunlukta oldugu taraf.
+ *   5. Radiant.
+ *
+ * ESKIDEN 4. ADIM ILK SIRADAYDI ve digerleri yalnizca kadrodan HIC KIMSE
+ * bulunamadiginda devreye giriyordu. Bu, tek bir kadro oyuncusunun bile
+ * yanlis eslesmesi (ya da rakip tarafta bir kadro oyuncusunun bulunmasi)
+ * halinde paneli yanlis tarafa kilitliyordu: MABOSS radiant'ta oynarken
+ * panel dire'yi "bizim taraf" gosteriyordu. Dogrudan olculmus bir sinyal
+ * varken sayim heuristigine bakmak yanlisti.
+ *
+ * @param {Object} args
+ * @param {Record<string, any>} args.liveState
+ * @param {Array<Record<string, any>>} args.allPlayers
+ * @param {Array<{ team: string }>} args.knownPlayers
+ * @param {{ viewerSteamId?: string }} args.input
+ * @returns {"radiant"|"dire"}
+ */
+function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
+  const teamOfSteamId = (steamId) => {
+    const id = String(steamId || "").trim();
+    if (!id) {
+      return "";
+    }
+    const row = allPlayers.find((player) => String(player.steamId) === id);
+    return row?.team || "";
+  };
+
+  const viewerTeam = teamOfSteamId(input.viewerSteamId);
+  if (viewerTeam) {
+    return viewerTeam;
+  }
+
+  const overwolfTeam = String(liveState.overwolf?.myTeam || "");
+  if (overwolfTeam === "radiant" || overwolfTeam === "dire") {
+    return overwolfTeam;
+  }
+
+  // Birden fazla yayinci olabilir; ilk eslesen yeterlidir, hepsi ayni macta.
+  const uploaders = liveState.uploaders?.length
+    ? liveState.uploaders
+    : [liveState.uploaderSteamId, liveState.localSteamId];
+  for (const uploader of uploaders) {
+    const team = teamOfSteamId(uploader);
+    if (team) {
+      return team;
+    }
+  }
+
+  const radiantKnown = knownPlayers.filter(
+    (row) => row.team === "radiant",
+  ).length;
+  const direKnown = knownPlayers.filter((row) => row.team === "dire").length;
+  if (radiantKnown !== direKnown) {
+    return radiantKnown > direKnown ? "radiant" : "dire";
+  }
+
+  return "radiant";
+}
+
+/**
  * @param {Object} input
  * @param {Record<string, any>|null} input.liveState normalizeGsiPayload ciktisi
  * @param {Record<string, Object>} [input.statsByPlayerId] roster id -> PlayerStats
  * @param {string} [input.viewerSteamId] Sayfayi acan kisinin SteamID64'u
+ * @param {Record<string, { add?: string[], remove?: string[] }>} [input.itemPlanOverrides]
+ *   Hero basina elle duzenlenmis item tavsiyesi ("Tavsiyeleri yonet").
  */
 export function buildLiveMatchContext(input = {}) {
   const liveState = input.liveState || null;
@@ -158,28 +230,14 @@ export function buildLiveMatchContext(input = {}) {
     return row;
   });
 
-  // Arkadaslarin cogunlukta oldugu taraf "bizim takim" sayilir. Hicbiri yoksa
-  // sayfayi acan kisinin takimina, o da yoksa radiant'a dusulur.
-  const radiantKnown = knownPlayers.filter(
-    (row) => row.team === "radiant",
-  ).length;
-  const direKnown = knownPlayers.filter((row) => row.team === "dire").length;
-  let myTeam = radiantKnown >= direKnown ? "radiant" : "dire";
-  if (radiantKnown === 0 && direKnown === 0) {
-    const viewer = input.viewerSteamId
-      ? allPlayers.find(
-          (row) => String(row.steamId) === String(input.viewerSteamId),
-        )
-      : null;
-    if (viewer) {
-      myTeam = viewer.team;
-    } else if (liveState.overwolf?.myTeam) {
-      // Kadrodan kimse yoksa ve izleyici de macin icinde degilse, Overwolf'un
-      // bildirdigi taraf kullanilir: mac izlerken/kocluk yaparken "bizim
-      // taraf" izlenen taraftir. Yoksa panel her zaman Radiant'i isaretliyor.
-      myTeam = liveState.overwolf.myTeam;
-    }
-  }
+  const myTeam = resolveMyTeam({ liveState, allPlayers, knownPlayers, input });
+
+  const itemAdvice = buildLiveItemAdvice({
+    radiantPlayers: decorated.filter((row) => row.team === "radiant"),
+    direPlayers: decorated.filter((row) => row.team === "dire"),
+    myTeam,
+    overrides: input.itemPlanOverrides || {},
+  });
 
   const draftStage = resolveDraftStage({
     picks: liveState.draft?.picks || [],
@@ -210,8 +268,13 @@ export function buildLiveMatchContext(input = {}) {
     // hangi tarafta oynadigimiz, parti, mac modu. Arayuz bununla "hero
     // bilgisi Overwolf'tan geliyor" notunu gosterebilir.
     overwolf: liveState.overwolf || null,
-    radiantPlayers: decorated.filter((row) => row.team === "radiant"),
-    direPlayers: decorated.filter((row) => row.team === "dire"),
+    radiantPlayers: itemAdvice.radiantPlayers,
+    direPlayers: itemAdvice.direPlayers,
+    // Item tavsiyesi ve takim analizi. Ikisi de ELDEKI VERIYE gore olceklenir
+    // (bkz. live/item-advice.js): Overwolf yoksa rakip hero gorunmez ve
+    // yalnizca hero planindan birkac oneri cikar.
+    itemAdviceLevel: itemAdvice.dataLevel,
+    teamAnalysis: itemAdvice.teamAnalysis,
     knownPlayerIds: knownPlayers.map((row) => row.player.id),
     draft: {
       stage: draftStage,

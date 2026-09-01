@@ -1,0 +1,107 @@
+/* "Tavsiyeleri yonet" penceresi. */
+
+.plan-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 9, 15, 0.72);
+}
+
+.plan-dialog {
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+.plan-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plan-dialog-head > div {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-section h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.plan-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 3px;
+  font-size: 12px;
+  color: var(--txt-0);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(148, 175, 212, 0.06);
+  cursor: pointer;
+}
+
+.plan-chip:hover {
+  border-color: var(--line-strong);
+}
+
+.plan-chip img {
+  width: 26px;
+  height: 20px;
+  border-radius: 3px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Durum RENKLE degil, renk + ustu cizili ile anlatilir: yalnizca renge
+   dayanmak renk ayrimi zor olan kullanicilar icin bilgiyi yok eder. */
+.plan-chip.removed {
+  border-color: rgba(255, 93, 108, 0.55);
+  color: var(--txt-2);
+  text-decoration: line-through;
+}
+
+.plan-chip.added {
+  border-color: rgba(41, 201, 122, 0.55);
+}
+
+.plan-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.plan-add-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}

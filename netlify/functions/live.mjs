@@ -19,10 +19,30 @@ import {
 import { getCachedStatsByPlayerId } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
 import { readSession } from "./_lib/session.mjs";
+import { readItemPlans, sessionAccountId } from "./_lib/item-plans.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
 /** Kayitlarin depoda tutulma suresi. */
 const LIVE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Yanitin CDN'de bekletilecegi sure.
+ *
+ * Panel bu ucu surekli yokluyor (bkz. App.jsx: mac varken 5 sn, yokken 20 sn)
+ * ve her yoklama ayri bir fonksiyon cagrisi demek.
+ *
+ * KAZANCIN SINIRI: adres izleyicinin SteamID'sini tasidigi icin onbellek kisi
+ * bazlidir. Giris yapmis iki izleyici ayni maca baksa bile farkli adres
+ * kullanir ve onbellegi paylasmaz. Asil kazanc GIRIS YAPMAMIS ziyaretcilerde:
+ * hepsi ayni adresi cagirir, es zamanli bakan N kisi tek cagriya toplanir.
+ *
+ * Sureler yoklama araliginin ALTINDA tutuldu ki tek bir izleyicinin gordugu
+ * veri bir yoklama periyodundan fazla eskimesin. Bekleme halinde deger ozellikle
+ * kisa: o yol zaten ucuz (fan-out yok) ve buyuk bir omur, "mac basladi"
+ * bilgisini yoklama araliginin USTUNE gecikme eklerdi.
+ */
+const CACHE_SECONDS_ACTIVE = 4;
+const CACHE_SECONDS_IDLE = 5;
 
 /**
  * Masaustu istemcisinin gonderdigi durumu kaydeder.
@@ -84,6 +104,38 @@ async function ingest(request) {
 }
 
 /**
+ * Item duzenlemelerinin surec ici hafizasi.
+ *
+ * Panel 5 saniyede bir yokluyor; her yoklamada depoya gitmek, kredi icin
+ * kistigimiz Blobs okumasini geri getirirdi (bkz. _lib/player-data.mjs'teki
+ * ayni gerekce). Kullanicinin kendi duzenlemesi zaten nadiren degisir ve
+ * degistiginde dialog kaydi kapatirken hafiza temizlenir.
+ *
+ * @type {Map<string, { at: number, plans: Record<string, any> }>}
+ */
+const itemPlanMemo = new Map();
+const ITEM_PLAN_MEMO_MS = 60 * 1000;
+
+/**
+ * @param {string} accountId
+ * @param {{ fresh?: boolean }} [options]  hafizayi atlar
+ * @returns {Promise<Record<string, any>>}
+ */
+async function cachedItemPlans(accountId, options = {}) {
+  const key = String(accountId || "");
+  if (!key) {
+    return {};
+  }
+  const hit = itemPlanMemo.get(key);
+  if (!options.fresh && hit && Date.now() - hit.at < ITEM_PLAN_MEMO_MS) {
+    return hit.plans;
+  }
+  const plans = await readItemPlans(key);
+  itemPlanMemo.set(key, { at: Date.now(), plans });
+  return plans;
+}
+
+/**
  * Su an yayinda olan TUM taze canli mac kayitlari.
  *
  * Masaustu uygulamasini kuran herkes kendi macini ayri bir anahtara yazar
@@ -123,27 +175,57 @@ export default async (request) => {
     // Birden fazla arkadas ayni anda AYRI maclardaysa hangisinin gosterilecegi
     // izleyiciye gore secilir; yoksa panel surekli maclar arasinda zipliyordu.
     const liveState = selectLiveStateForViewer(merged, { viewerSteamId });
+
+    // Item tavsiyesi duzenlemeleri KISIYE OZELDIR. Oturum varsa yanit o kisiye
+    // gore sekillenir, dolayisiyla CDN'de PAYLASILAMAZ; yoksa bir kullanicinin
+    // duzenlemesi baskasinin ekranina dusebilir. Oturum yoksa duzenleme de yok
+    // ve yanit herkes icin ayni — asil onbellek kazanci zaten orada
+    // (bkz. CACHE_SECONDS_ACTIVE aciklamasi).
+    //
+    // `readSession` yalnizca cerez cozer, depoya gitmez; bu yuzden erken
+    // donusten ONCE cagrilabilir.
+    const viewerSession = readSession(request);
     if (!liveState) {
-      return json({ ok: true, active: false, reason: "canli-mac-yok" });
+      return json(
+        { ok: true, active: false, reason: "canli-mac-yok" },
+        { cacheSeconds: viewerSession ? 0 : CACHE_SECONDS_IDLE },
+      );
     }
+
+    // Duzenlemeler yalnizca ORTADA MAC VARKEN okunur ve kisa sureli
+    // hafizadan gelir: aksi halde giris yapmis her izleyici, her 5 saniyede
+    // bir fazladan Blobs okumasi ekleyecekti.
+    const overrides = viewerSession
+      ? await cachedItemPlans(sessionAccountId(viewerSession), {
+          // Kullanici az once kaydettiyse arayuz bunu isaretler ve hafiza
+          // atlanir; aksi halde degisiklik bir dakika gorunmezdi.
+          fresh: url.searchParams.get("plans") === "fresh",
+        })
+      : {};
 
     const statsByPlayerId = await getCachedStatsByPlayerId();
     const context = buildLiveMatchContext({
       liveState,
       statsByPlayerId,
       viewerSteamId,
+      itemPlanOverrides: overrides,
     });
 
-    return json({
-      ok: true,
-      ...context,
-      // Ayni anda baska maclar da varsa arayuz bunu belirtebilsin.
-      liveMatchCount: merged.length,
-      // Bu macin verisi kac ayri kurulumdan besleniyor.
-      contributorCount: (
-        liveState.uploaders || [liveState.uploaderSteamId]
-      ).filter(Boolean).length,
-    });
+    return json(
+      {
+        ok: true,
+        ...context,
+        // Arayuz "Tavsiyeleri yonet" butonunu buna bakarak acar.
+        canEditItemPlans: Boolean(viewerSession),
+        // Ayni anda baska maclar da varsa arayuz bunu belirtebilsin.
+        liveMatchCount: merged.length,
+        // Bu macin verisi kac ayri kurulumdan besleniyor.
+        contributorCount: (
+          liveState.uploaders || [liveState.uploaderSteamId]
+        ).filter(Boolean).length,
+      },
+      { cacheSeconds: viewerSession ? 0 : CACHE_SECONDS_ACTIVE },
+    );
   } catch (error) {
     return fail("canli-mac-alinamadi", {
       status: 500,

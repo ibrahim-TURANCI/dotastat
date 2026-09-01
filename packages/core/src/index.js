@@ -165,6 +165,20 @@ export {
   mergePlayerLists,
 } from "./gsi/merge-live.js";
 
+// --- Canli mac item tavsiyesi ve takim analizi -------------------------------
+export {
+  buildLiveItemAdvice,
+  buildPlayerItemAdvice,
+  buildTeamAnalysis,
+  itemDisplayName,
+  itemIconUrl,
+  ownedItems,
+  resolveDataLevel,
+  ADVICE_QUOTA,
+  GROUP_LABELS,
+  TEAM_ATTRIBUTES,
+} from "./live/item-advice.js";
+
 // --- Overwolf / DotaPlus (istege bagli ek kaynak) ---------------------------
 export {
   buildOverwolfSnapshot,

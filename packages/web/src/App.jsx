@@ -9,8 +9,20 @@ import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { WeeklyLeaderboard } from "./components/WeeklyLeaderboard.jsx";
 import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
 
-/** Canli mac ne siklikta sorgulanir. */
+/**
+ * Canli mac ne siklikta sorgulanir.
+ *
+ * Iki hiz var cunku bekleme halinin bedeli gorunmuyordu: acik duran her sekme,
+ * ortada mac olmasa bile dakikada 12 fonksiyon cagrisi uretiyordu. Gunun
+ * neredeyse tamami bu halde geciyor.
+ *
+ * Mac BASLADIGINDA hiz 5 saniyeye cikar; skorun gecikmesinin onemli oldugu tek
+ * an orasi. Bekleme halinde 20 saniye, "mac basladi" bilgisinin en gec 20
+ * saniyede gorunmesi demek — panel zaten kendiliginden acilip one geliyor,
+ * kullanicinin ekrana bakiyor olmasi gerekmiyor.
+ */
 const LIVE_POLL_MS = 5000;
+const LIVE_POLL_IDLE_MS = 20000;
 
 /** Bolumlerin mac YOKKEN aldigi durum. */
 const IDLE_PANELS = { weekly: true, evaluation: true, live: false };
@@ -44,11 +56,17 @@ export default function App() {
   // Ayar ekrani yalnizca masaustunde vardir; sitede boyle bir uc yok.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [panels, setPanels] = useState(IDLE_PANELS);
+  // Yoklama hizi durum olarak tutulur cunku `live` hook'u asagida kuruluyor:
+  // sonucu, kendisini besleyen araligi belirliyor.
+  const [livePollMs, setLivePollMs] = useState(LIVE_POLL_IDLE_MS);
 
-  const live = useAsyncData(() => api.live(session.user?.steamId || ""), {
-    intervalMs: LIVE_POLL_MS,
-    deps: [session.user?.steamId || ""],
-  });
+  const live = useAsyncData(
+    (options) => api.live(session.user?.steamId || "", options),
+    {
+      intervalMs: livePollMs,
+      deps: [session.user?.steamId || ""],
+    },
+  );
 
   const liveActive = Boolean(live.data?.active);
   const previousLiveActive = useRef(liveActive);
@@ -62,6 +80,9 @@ export default function App() {
     }
     previousLiveActive.current = liveActive;
     setPanels(liveActive ? LIVE_PANELS : IDLE_PANELS);
+    // Aralik degisince hook zamanlayiciyi kurup HEMEN bir istek atar; mac
+    // basladiginda ilk hizli yoklama boylece 20 saniye beklemez.
+    setLivePollMs(liveActive ? LIVE_POLL_MS : LIVE_POLL_IDLE_MS);
   }, [liveActive]);
 
   /** @param {"weekly"|"evaluation"|"live"} key */
@@ -126,6 +147,9 @@ export default function App() {
       error={live.error}
       open={panels.live}
       onToggle={() => toggle("live")}
+      // Tavsiye duzenlemesi kaydedildiginde panel hemen tazelenir; yoksa
+      // degisiklik bir sonraki yoklamaya kadar gorunmezdi.
+      onReload={() => live.reload({ freshPlans: true })}
     />
   );
 

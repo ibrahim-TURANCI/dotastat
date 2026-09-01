@@ -14,9 +14,26 @@ canlı maç ve draft asistanı da aynı sayfada görünür.
 | Ekran | İçerik |
 | --- | --- |
 | **Oyuncu Değerlendirme** | Kadrodaki her oyuncu için kart: rank madalyası, tahmini seviye, form şeridi, en çok oynanan hero'lar. Karta tıklayınca sekmeli detay (genel, performans, hero havuzu, son maçlar, sinerji). |
-| **Canlı Maç** | GSI'dan gelen skor, süre, iki takımın oyuncuları. Kadrodaki oyuncular vurgulanır. Arkadaşlardan birinde Overwolf varsa rakip pickler de gelir. |
+| **Canlı Maç** | GSI'dan gelen skor, süre, iki takımın oyuncuları. Her satırda **envanter** ve **item tavsiyesi**. Kadrodaki oyuncular vurgulanır. Arkadaşlardan birinde Overwolf varsa rakip pickler de gelir. |
+| **Takım Analizi** | Canlı maçın altında: iki kompozisyonun karşılaştırması (üstünlükler, eksikler) ve eksiklerden türeyen takım item önerileri. |
 | **Draft Asistanı** | Canlı maçın altında. Pick başlamadan tanınan oyuncuların havuzuna göre, pick sürerken kendi + rakip seçimlere göre öneri verir. **Pickler bitince tamamen gizlenir.** |
 | **Debug Panel** | Sayfanın altında **kapalı akordeon**; tıklanınca açılır ve o anda veri çeker. |
+
+### Item tavsiyesi ne kadar konuşur
+
+Tavsiye ve takım analizi **eldeki veriye göre ölçeklenir**; eksik veriyle kesin
+konuşmak, hiç konuşmamaktan kötüdür.
+
+| Elde ne var | Ne üretilir |
+| --- | --- |
+| Yalnızca kendi satırımız (düz GSI) | Hero planından 2 öneri |
+| 10 hero biliniyor (Overwolf / izleme) | Rakip hero'lara karşı item'lar açılır, 4 öneri |
+| Rakip envanteri de görünüyor | Item-counter kuralları açılır, 6 öneri |
+
+**Tavsiyeleri yönet** butonu bir hero için "her zaman öner" / "hiç önerme"
+listeleri tutar ve otomatik öneriyi ezer. Buton yalnızca **Steam ile giriş
+yapmış** kullanıcıya görünür; kayıt anahtarı sunucuda oturum çerezinden alınır,
+tıpkı son maçlardaki pozisyon seçiminde olduğu gibi.
 
 Bu projede **ekran yakalama ve OCR yoktur**; oyuna, belleğe ya da başka bir
 sürece de dokunulmaz. Canlı veri Dota'nın resmî Game State Integration
@@ -228,6 +245,8 @@ npm run desktop:dist       # packages/desktop/release/DotaStat-Setup-1.0.0.exe
 - Dota'nın GSI çıkışını `POST /gsi` ucunda karşılar.
 - Maç durumunu siteye iletir; böylece arkadaşlar canlı maçı görebilir.
 - Sistem tepsisinde kalır, pencere kapansa da çalışmaya devam eder.
+- **Açılışta pencere açılmaz, doğrudan tepsiye iner.** Tepsi menüsünden
+  **"Aç"** ile getirilir. Ayarlar → Uygulama altından kapatılabilir.
 
 ### GSI kurulumu
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { heroDisplayName } from "@dotastat/core";
 import {
   formatClock,
@@ -11,6 +12,9 @@ import {
   RankMedal,
 } from "./primitives.jsx";
 import { DraftAssistant } from "./DraftAssistant.jsx";
+import { LiveAdvice, LiveInventory } from "./LiveInventory.jsx";
+import { TeamAnalysis } from "./TeamAnalysis.jsx";
+import { ItemPlanDialog } from "./ItemPlanDialog.jsx";
 import "./LiveMatchPanel.css";
 
 /**
@@ -35,6 +39,7 @@ import "./LiveMatchPanel.css";
  * @param {Error|null} props.error
  * @param {boolean} [props.open]
  * @param {() => void} [props.onToggle]
+ * @param {() => void} [props.onReload] Tavsiye duzenlemesinden sonra tazeleme
  */
 export function LiveMatchPanel({
   live,
@@ -42,7 +47,14 @@ export function LiveMatchPanel({
   error,
   open = false,
   onToggle = () => {},
+  onReload = () => {},
 }) {
+  // Hangi hero'nun tavsiyeleri duzenleniyor ("" = dialog kapali).
+  const [planHero, setPlanHero] = useState("");
+  // Duzenleme YALNIZCA Steam ile giris yapmis kullaniciya acilir; sunucu da
+  // ayni sarti uyguluyor (bkz. netlify/functions/item-plans.mjs). Bu, son
+  // maclardaki pozisyon secimiyle ayni kural.
+  const canEdit = Boolean(live?.canEditItemPlans);
   const frame = (children, right, className = "") => (
     <CollapsibleSection
       title="Canlı Maç"
@@ -79,6 +91,14 @@ export function LiveMatchPanel({
 
   return frame(
     <>
+      {planHero ? (
+        <ItemPlanDialog
+          hero={planHero}
+          suggested={adviceOfHero(live, planHero)}
+          onClose={() => setPlanHero("")}
+          onSaved={onReload}
+        />
+      ) : null}
       <div className="live-scoreboard">
         <TeamScore
           side="radiant"
@@ -102,14 +122,24 @@ export function LiveMatchPanel({
           side="radiant"
           players={live.radiantPlayers}
           mine={live.myTeam === "radiant"}
+          canEdit={canEdit}
+          onManage={setPlanHero}
         />
         <TeamColumn
           title="Dire"
           side="dire"
           players={live.direPlayers}
           mine={live.myTeam === "dire"}
+          canEdit={canEdit}
+          onManage={setPlanHero}
         />
       </div>
+
+      <TeamAnalysis
+        analysis={live.teamAnalysis}
+        adviceLevel={live.itemAdviceLevel}
+        myTeam={live.myTeam}
+      />
 
       {advice?.visible ? (
         <DraftAssistant advice={advice} />
@@ -163,7 +193,7 @@ function TeamScore({ side, score, mine }) {
 /**
  * @param {{ title: string, side: string, players: Array<Record<string, any>>, mine: boolean }} props
  */
-function TeamColumn({ title, side, players, mine }) {
+function TeamColumn({ title, side, players, mine, canEdit, onManage }) {
   // Slot sirasi sabit tutulur: kaynaklar farkli siralarda gelebiliyor ve
   // satirlar her yoklamada yer degistirirse liste okunamaz hale geliyor.
   const rows = [...(players || [])].sort(
@@ -180,7 +210,12 @@ function TeamColumn({ title, side, players, mine }) {
       {rows.length ? (
         <ul className="live-player-list">
           {rows.map((player, index) => (
-            <LivePlayerRow key={rowKey(player, index)} player={player} />
+            <LivePlayerRow
+              key={rowKey(player, index)}
+              player={player}
+              canEdit={canEdit}
+              onManage={onManage}
+            />
           ))}
         </ul>
       ) : (
@@ -220,9 +255,13 @@ function rowKey(player, index) {
  * Bu yuzden olmayan alanlar "0" olarak degil, HIC cizilmez — yoksa rakip
  * takimin tamami 0/0/0 gorunur ve gercek bir bilgiymis gibi okunur.
  *
- * @param {{ player: Record<string, any> }} props
+ * @param {{
+ *   player: Record<string, any>,
+ *   canEdit?: boolean,
+ *   onManage?: (hero: string) => void
+ * }} props
  */
-function LivePlayerRow({ player }) {
+function LivePlayerRow({ player, canEdit = false, onManage = () => {} }) {
   const hasStats =
     Number.isFinite(Number(player.kills)) &&
     Number.isFinite(Number(player.deaths)) &&
@@ -264,8 +303,41 @@ function LivePlayerRow({ player }) {
           <span className="muted micro">veri yok</span>
         )}
       </div>
+
+      <div className="live-player-col" data-label="Envanter">
+        <LiveInventory player={player} />
+      </div>
+
+      <div className="live-player-col" data-label="Tavsiye">
+        <LiveAdvice advice={player.itemAdvice} />
+        {canEdit && player.hero ? (
+          <button
+            type="button"
+            className="btn ghost micro plan-manage-btn"
+            onClick={() => onManage(player.hero)}
+            title="Bu hero için tavsiyeleri yönet"
+          >
+            Tavsiyeleri yönet
+          </button>
+        ) : null}
+      </div>
     </li>
   );
+}
+
+/**
+ * Panelde gorunen satirlardan bir hero'nun guncel onerisini bulur.
+ *
+ * Dialog, motorun O ANKI onerisini gostermek zorunda: kullanici neyi
+ * cikardigini gormeden karar veremez.
+ *
+ * @param {Record<string, any>} live
+ * @param {string} hero
+ * @returns {Array<Record<string, any>>}
+ */
+function adviceOfHero(live, hero) {
+  const rows = [...(live?.radiantPlayers || []), ...(live?.direPlayers || [])];
+  return rows.find((row) => row.hero === hero)?.itemAdvice || [];
 }
 
 /**

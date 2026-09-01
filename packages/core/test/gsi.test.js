@@ -241,3 +241,87 @@ test("izleyici hicbir macta yoksa kadrodan en cok oyuncu olan mac secilir", () =
     "arkadas-maci",
   );
 });
+
+/**
+ * "Bizim taraf" secimi.
+ *
+ * Gercek hata: MABOSS radiant'ta oynarken panel dire'yi bizim taraf
+ * gosteriyordu. Eski kod once kadro sayimina bakiyor, dogrudan olculmus
+ * sinyalleri (izleyicinin kendisi, Overwolf'un bildirdigi taraf, veriyi
+ * yollayanin satiri) yalnizca kadrodan HIC KIMSE bulunamayinca kullaniyordu.
+ */
+function sideState(overrides = {}) {
+  const roster = listRoster();
+  const maboss = roster.find((row) => row.id === "maboss");
+  const janissary = roster[0];
+  return {
+    matchId: "8100",
+    phase: "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+    updatedAt: new Date().toISOString(),
+    radiantPlayers: [
+      {
+        steamId: toSteamId64(maboss.player_id),
+        team: "radiant",
+        slot: 2,
+        hero: "invoker",
+      },
+    ],
+    direPlayers: [
+      {
+        steamId: toSteamId64(janissary.player_id),
+        team: "dire",
+        slot: 3,
+        hero: "dark_seer",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+test("bizim taraf: veriyi yollayanin tarafi kadro sayimini yener", () => {
+  const roster = listRoster();
+  const maboss = roster.find((row) => row.id === "maboss");
+
+  // Iki tarafta da birer kadro oyuncusu var; eski kod esitlikte radiant'a
+  // dusuyordu ama burada belirleyici olan, veriyi KIMIN yolladigi.
+  const context = buildLiveMatchContext({
+    liveState: sideState({ uploaders: [toSteamId64(maboss.player_id)] }),
+  });
+
+  assert.equal(context.myTeam, "radiant");
+});
+
+test("bizim taraf: Overwolf'un bildirdigi taraf kadro sayimini yener", () => {
+  const context = buildLiveMatchContext({
+    liveState: sideState({ overwolf: { myTeam: "dire" } }),
+  });
+
+  assert.equal(context.myTeam, "dire");
+});
+
+test("bizim taraf: sayfayi acan kisi mactaysa kendi tarafi kazanir", () => {
+  const roster = listRoster();
+  const janissary = roster[0];
+
+  // Overwolf baska bir tarafi bildirse bile izleyicinin kendi tarafi onde.
+  const context = buildLiveMatchContext({
+    liveState: sideState({ overwolf: { myTeam: "radiant" } }),
+    viewerSteamId: toSteamId64(janissary.player_id),
+  });
+
+  assert.equal(context.myTeam, "dire");
+});
+
+test("bizim taraf: hicbir dogrudan sinyal yoksa kadro cogunlugu kullanilir", () => {
+  const state = sideState();
+  // Dire tarafina ikinci bir kadro oyuncusu eklenir: cogunluk oraya kayar.
+  const roster = listRoster();
+  state.direPlayers.push({
+    steamId: toSteamId64(roster[1].player_id),
+    team: "dire",
+    slot: 4,
+    hero: "lion",
+  });
+
+  assert.equal(buildLiveMatchContext({ liveState: state }).myTeam, "dire");
+});

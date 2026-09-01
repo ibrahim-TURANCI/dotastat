@@ -1,11 +1,12 @@
 /**
  * Kalici depolama katmani (Netlify Blobs).
  *
- * Bes kova kullanilir:
+ * Alti kova kullanilir:
  *   - `players`     : OpenDota mac onbellegi (oyuncu basina, TTL'li)
  *   - `live`        : masaustu istemcisinin gonderdigi canli mac durumu
  *   - `presence`    : online kullanicilar (heartbeat)
  *   - `match-roles` : oyuncunun elle sectigi pozisyonlar
+ *   - `item-plans`  : oyuncunun elle duzenledigi item tavsiyeleri
  *   - `mmr`         : masaustunden gelen MMR okumalari
  *
  * YERELDE NEDEN AYRI BIR KOPYA VAR
@@ -109,6 +110,16 @@ function persistLocal(name) {
 }
 
 /**
+ * Kaydin omru dolmus mu?
+ *
+ * @param {{ expiresAt?: number }|null} row
+ * @returns {boolean}
+ */
+function isExpired(row) {
+  return Boolean(row?.expiresAt) && Date.now() > Number(row.expiresAt);
+}
+
+/**
  * Saklanan sarmaldan degeri cikarir; suresi dolmussa null doner.
  *
  * @param {{ value?: unknown, expiresAt?: number }|null} row
@@ -118,7 +129,7 @@ function unwrap(row) {
   if (!row) {
     return null;
   }
-  if (row.expiresAt && Date.now() > row.expiresAt) {
+  if (isExpired(row)) {
     return null;
   }
   // Eski kayitlar dogrudan degerin kendisi olabilir.
@@ -167,9 +178,22 @@ export function createStore(name) {
     async get(key) {
       if (blobs) {
         try {
-          const value = unwrap(await blobs.get(key, { type: "json" }));
+          const row = await blobs.get(key, { type: "json" });
+          const value = unwrap(row);
           if (value !== null) {
             return value;
+          }
+          // Omru dolmus kayit SILINIR. TTL burada yazilimla uygulaniyor;
+          // silinmezse anahtar kovada sonsuza kadar kalir ve `keys()` her
+          // cagrildiginda listelenip tek tek okunur. Canli mac kovasi bunu
+          // dogrudan hissediyor: masaustu uygulamasini bir kez calistirmis
+          // herkes icin bir `state:` anahtari birikiyordu.
+          if (isExpired(row)) {
+            try {
+              await blobs.delete(key);
+            } catch {
+              // Silinemezse zarari yok; deger yine "yok" sayiliyor.
+            }
           }
         } catch {
           // Blobs okunamadi; asagidaki yerel kopyaya dusulur.
@@ -265,6 +289,13 @@ export const presenceStore = () => createStore("dotastat-presence");
  * TTL yoktur; bu veri kullanicinin kendi beyanidir, eskimez.
  */
 export const matchRoleStore = () => createStore("dotastat-match-roles");
+/**
+ * Hero basina elle duzenlenmis item tavsiyesi.
+ *
+ * Anahtar: `plans:<accountId>`. TTL yoktur; mac pozisyonlarinda oldugu gibi
+ * bu da kullanicinin kendi beyanidir ve eskimez.
+ */
+export const itemPlanStore = () => createStore("dotastat-item-plans");
 /**
  * Masaustu uygulamasinin ilettigi MMR okumalari.
  *

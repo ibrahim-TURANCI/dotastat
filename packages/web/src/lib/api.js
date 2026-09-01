@@ -55,11 +55,27 @@ export const api = {
   /** Haftanin kazanani / kaybedeni tablosu (son 7 gun). */
   weekly: () => request("/api/weekly"),
 
-  /** Canli mac durumu (GSI). */
-  live: (steamId = "") =>
-    request(
-      "/api/live" + (steamId ? "?steamId=" + encodeURIComponent(steamId) : ""),
-    ),
+  /**
+   * Canli mac durumu (GSI).
+   *
+   * `freshPlans`: sunucu, item tavsiyesi duzenlemelerini 60 saniye hafizada
+   * tutuyor (her yoklamada depoya gitmemek icin). Kullanici az once kaydettiyse
+   * o hafiza atlanmali, yoksa degisiklik bir dakika gorunmezdi.
+   *
+   * @param {string} [steamId]
+   * @param {{ freshPlans?: boolean }} [options]
+   */
+  live: (steamId = "", options = {}) => {
+    const params = new URLSearchParams();
+    if (steamId) {
+      params.set("steamId", steamId);
+    }
+    if (options?.freshPlans) {
+      params.set("plans", "fresh");
+    }
+    const query = params.toString();
+    return request("/api/live" + (query ? "?" + query : ""));
+  },
 
   /** Oturum bilgisi. */
   session: () => request("/api/auth/session"),
@@ -81,6 +97,26 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ matchId, role }),
+    }),
+
+  /** Kullanicinin hero basina elle duzenledigi item tavsiyeleri. */
+  itemPlans: () => request("/api/me/item-plans"),
+
+  /**
+   * Bir hero'nun tavsiye duzenlemesini kaydeder. Iki liste de bos verilirse
+   * kayit silinir ve tavsiye otomatik motora geri doner.
+   * @param {string} hero
+   * @param {{ add?: string[], remove?: string[] }} plan
+   */
+  setItemPlan: (hero, plan) =>
+    request("/api/me/item-plans", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        hero,
+        add: plan?.add || [],
+        remove: plan?.remove || [],
+      }),
     }),
 
   /** Online listesi. */

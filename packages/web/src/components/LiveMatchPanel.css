@@ -143,3 +143,130 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Envanter ve tavsiye kolonlari -------------------------------------- */
+
+/*
+  Satir artik dort bolumden olusuyor (kimlik, KDA, envanter, tavsiye) ve iki
+  takim yan yana duruyor. Sabit genislik vermek yerine sarmasina izin veriliyor:
+  dar ekranda kolonlar alt alta gecip okunur kaliyor, genis ekranda tek satir.
+*/
+.live-player {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.live-player-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1 1 100%;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+}
+
+/* Kolonun ne oldugu her satirda yaziyor: baslik satiri yok, olmali da degil
+   (iki takim yan yana, basliklar tekrar ederdi). */
+.live-player-col::before {
+  content: attr(data-label);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txt-2);
+}
+
+.inv-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.inv-main {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  gap: 2px;
+}
+
+.inv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inv-backpack {
+  display: grid;
+  grid-template-columns: repeat(3, 16px);
+  gap: 2px;
+}
+
+.inv-slot {
+  width: 24px;
+  height: 18px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(148, 175, 212, 0.08);
+  border: 1px solid var(--line);
+}
+
+.inv-backpack .inv-slot {
+  width: 16px;
+  height: 12px;
+}
+
+.inv-slot.circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.inv-slot.empty {
+  background: rgba(148, 175, 212, 0.05);
+}
+
+.inv-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.advice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.advice-slot {
+  width: 26px;
+  height: 20px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: rgba(148, 175, 212, 0.08);
+}
+
+/* Grup rengi tavsiyenin TURUNU aninda okutur: karsi hamle mi, plan mi. */
+.advice-slot.counter {
+  border-color: rgba(255, 93, 108, 0.55);
+}
+
+.advice-slot.core {
+  border-color: rgba(46, 167, 255, 0.5);
+}
+
+.advice-slot.situational {
+  border-color: rgba(255, 182, 72, 0.45);
+}
+
+.advice-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.plan-manage-btn {
+  align-self: flex-start;
+  margin-top: 2px;
+}

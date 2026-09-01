@@ -212,7 +212,7 @@ export function SettingsPanel({ onClose }) {
         <h4>Uygulama</h4>
         <Toggle
           label="Açılışta simge durumunda başlat"
-          checked={Boolean(form.startMinimized)}
+          checked={form.startMinimized !== false}
           onChange={(v) => change("startMinimized", v)}
         />
         <Toggle

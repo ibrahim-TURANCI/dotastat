@@ -95,6 +95,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/me/item-plans"
+  to = "/.netlify/functions/item-plans"
+  status = 200
+
+[[redirects]]
   from = "/api/release"
   to = "/.netlify/functions/release"
   status = 200
