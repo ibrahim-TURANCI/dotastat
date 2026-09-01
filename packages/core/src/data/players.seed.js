@@ -654,5 +654,79 @@ export default {
         actualRank: 2500,
       },
     },
+    {
+      id: "maboss",
+      name: "MABOSS",
+      player_id: "240808986",
+      active: true,
+      dotaProfile: {
+        primaryRole: "pos2",
+        secondaryRoles: ["pos1", "pos3"],
+        signatureHeroes: ["invoker", "obsidian_destroyer", "ursa"],
+        preferredHeroes: [
+          "furion",
+          "warlock",
+          "life_stealer",
+          "viper",
+          "ember_spirit",
+        ],
+        weakHeroes: [],
+        experimentalHeroes: [],
+      },
+      character: {
+        generalPlaystyle:
+          "Cok genis havuza sahip, mid odakli deneyimli oyuncu: 8700+ mac ve oynanmamis hero yok. Invoker basta olmak uzere kontrol mid herolarinda belirgin ustunluk kuruyor; havuzun genisligi sayesinde takimin acigi hangi rolde olursa olsun doldurabiliyor.",
+        strengths: [
+          "Invoker",
+          "Mid lane kontrolu",
+          "Genis hero havuzu",
+          "Mac deneyimi",
+        ],
+        weaknesses: [
+          "Initiator offlane herolari (Beastmaster, Sand King, Mars)",
+          "Support oynadigi maclarda verim dususu",
+          "Genis havuzun getirdigi odak dagilmasi",
+        ],
+        developmentAreas: [
+          "Kazanamadigi initiator herolarini havuzdan cikarmak ya da uzerine calismak",
+          "Support oynanan maclarda vision rutinini oturtmak",
+        ],
+        laneBehavior:
+          "Mid'de kontrol ve son vurus odakli; lane'i kaynak ustunlugune cevirir.",
+        teamfightBehavior:
+          "Uzaktan buyu hasari ve kontrol; Invoker / Obsidian Destroyer gibi herolarda fight'i sekillendirir.",
+        mapTempoVisionBehavior:
+          "Tempoyu mid uzerinden kurar; rol degistiginde vision rutini zayiflar.",
+        bestTeamUsage: "Pos 2 kontrol mid; gerektiginde Pos 1'e kayabilir.",
+        synergyNotes: [
+          "Mid'in actigi alani kullanabilecek bir Pos 3 ile birlikte tempo avantaji buyur.",
+        ],
+        funnyAdvice:
+          "127 heronun hepsini oynamissin, 128.'yi bekleme. Invoker zaten sirada.",
+      },
+      performanceProfile: {
+        strongHeroPerformance: {
+          min: 4500,
+          max: 5000,
+        },
+        gameKnowledgeLevel: {
+          min: 4500,
+          max: 5000,
+        },
+        averageHeroPerformance: {
+          min: 4200,
+          max: 4700,
+        },
+        weakHeroPerformance: {
+          min: 2800,
+          max: 3200,
+        },
+        unplayableHeroCount: {
+          min: 5,
+          max: 10,
+        },
+        actualRank: 3800,
+      },
+    },
   ],
 };
