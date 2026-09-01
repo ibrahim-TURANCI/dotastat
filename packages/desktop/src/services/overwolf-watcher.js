@@ -26,6 +26,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { StringDecoder } = require("node:string_decoder");
 
 /** DotaPlus loglarinin bulundugu klasor. */
 const LOG_DIR = path.join(
@@ -107,6 +108,13 @@ function createTailReader(options) {
   let filePath = "";
   let offset = 0;
   let buffer = "";
+  /**
+   * Loglar UTF-8'dir ve oyuncu adlari Kiril/Japon karakteri icerebiliyor.
+   * Artimli okumada bir karakterin baytlari iki okuma arasinda BOLUNEBILIR;
+   * duz `toString("utf8")` bunu bozuk karaktere cevirir. `StringDecoder`
+   * yarim kalan baytlari saklayip bir sonraki parcayla birlestirir.
+   */
+  let decoder = new StringDecoder("utf8");
 
   return {
     /** @returns {{ text: string, path: string, changed: boolean }} */
@@ -131,6 +139,7 @@ function createTailReader(options) {
       if (next !== filePath || size < offset) {
         filePath = next;
         buffer = "";
+        decoder = new StringDecoder("utf8");
         offset = Math.max(0, size - INITIAL_TAIL_BYTES);
       }
 
@@ -145,9 +154,7 @@ function createTailReader(options) {
         const length = size - offset;
         const bytes = Buffer.alloc(length);
         const read = fs.readSync(handle, bytes, 0, length, offset);
-        // DotaPlus loglari tek bayt kodlamalidir; `latin1` hicbir baytta
-        // patlamaz ve aradigimiz ASCII anahtar kelimeleri bozmaz.
-        chunk = bytes.subarray(0, read).toString("latin1");
+        chunk = decoder.write(bytes.subarray(0, read));
         offset += read;
       } catch {
         return { text: buffer, path: filePath, changed: false };

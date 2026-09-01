@@ -325,6 +325,14 @@ beslendiği yazar.
   göstermek, hiç göstermemekten kötüdür).
 - `isTraversal: true` satırı "hero'nun üstünde geziniyor" demektir, seçim
   değil. Kilitlenmiş bir seçim sonradan gelen gezinme satırıyla **bozulmaz**.
+- **Maç izlerken / koçluk yaparken GSI'ın düz `player` bloğu SENSİN, maçtaki
+  biri değil** — `hero` bloğu ise o an izlenen kahramanı gösterir. Ölçüldü
+  (maç 8977224253): birleştirme hero anahtarıyla çalıştığı için izleyenin adı
+  Anti-Mage oynayan yabancıya yapışmıştı. İki koruma kondu: (1) iki satırın da
+  kimliği belliyse ve **farklıysa** eşleşme reddedilir, (2) izleme/koçluk
+  modunda tabloyu Overwolf'un roster'ı belirler, eşleşmeyen GSI satırı
+  masaya alınmaz. Oynarken bu ayıklama yapılmaz — orada GSI satırı gerçek
+  oyuncudur ve tek detay kaynağıdır.
 - Kaynak uygulamanın log biçimi değişirse okuma sessizce durur; GSI tarafı
   etkilenmez. Sözleşme
   [overwolf-live.test.js](packages/core/test/overwolf-live.test.js) ile

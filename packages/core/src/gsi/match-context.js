@@ -165,12 +165,19 @@ export function buildLiveMatchContext(input = {}) {
   ).length;
   const direKnown = knownPlayers.filter((row) => row.team === "dire").length;
   let myTeam = radiantKnown >= direKnown ? "radiant" : "dire";
-  if (radiantKnown === 0 && direKnown === 0 && input.viewerSteamId) {
-    const viewer = allPlayers.find(
-      (row) => String(row.steamId) === String(input.viewerSteamId),
-    );
+  if (radiantKnown === 0 && direKnown === 0) {
+    const viewer = input.viewerSteamId
+      ? allPlayers.find(
+          (row) => String(row.steamId) === String(input.viewerSteamId),
+        )
+      : null;
     if (viewer) {
       myTeam = viewer.team;
+    } else if (liveState.overwolf?.myTeam) {
+      // Kadrodan kimse yoksa ve izleyici de macin icinde degilse, Overwolf'un
+      // bildirdigi taraf kullanilir: mac izlerken/kocluk yaparken "bizim
+      // taraf" izlenen taraftir. Yoksa panel her zaman Radiant'i isaretliyor.
+      myTeam = liveState.overwolf.myTeam;
     }
   }
 

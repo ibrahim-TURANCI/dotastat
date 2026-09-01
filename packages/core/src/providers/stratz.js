@@ -214,6 +214,11 @@ export function createStratzClient(options = {}) {
       campsStacked: null,
       teamKills: 0,
       teamDeaths: 0,
+      // Stratz mac ortalamasini bu sorguda istemiyoruz: yedek kaynagin
+      // sorgusuna dogrulanmamis bir alan eklemek, alan yoksa TUM sorguyu
+      // GraphQL hatasina dusurur. Motor null gorunce ortalamayi oyuncunun
+      // kendi rankindan tahmin eder.
+      averageRankTier: null,
       laneResult: "",
       provider: PROVIDER_NAME,
     };

@@ -108,6 +108,8 @@
  * @property {number} teamKills
  * @property {number} teamDeaths
  * @property {LaneResult|""} laneResult
+ * @property {number|null} [averageRankTier] Maçın ortalama rank kademesi
+ *   (ör. 54 = Legend 4). null = sağlayıcı vermedi.
  * @property {string} provider      Veriyi üreten provider adı
  */
 
@@ -168,6 +170,9 @@
  * @property {FitLevel} [heroFit]
  * @property {FitLevel} [roleFit]
  * @property {EvaluationContext} context
+ * @property {number} [rawPerformanceRank] Maç ortalamasına çekilmeden önceki tahmin
+ * @property {number} [matchAverageRank]   Maçın ortalama seviyesi (0 = bilinmiyor)
+ * @property {"match"|"player"|""} [matchAverageRankSource] Ortalamanın kaynağı
  * @property {string} createdAt
  * @property {Array<{ key: string, label: string, score: number, weight: number, note: string }>} [breakdown]
  */

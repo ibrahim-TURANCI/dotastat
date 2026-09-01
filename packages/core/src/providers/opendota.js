@@ -44,6 +44,11 @@ const MATCH_PROJECTION = [
   "is_roaming",
   "player_slot",
   "radiant_win",
+  // Macin ortalama rank kademesi. Degerlendirme motoru sonucu bu seviyeye
+  // dogru ceker (bkz. performance-evaluation-engine.js -> MATCH_AVERAGE_PULL).
+  // Bu uc alani dusurse bile zarari yok: alan gelmezse motor oyuncunun kendi
+  // rankindan tahmin uretir.
+  "average_rank",
 ]
   .map((field) => `project=${field}`)
   .join("&");
@@ -196,6 +201,10 @@ export function createOpenDotaClient(options = {}) {
       campsStacked: optionalNumber(row?.camps_stacked),
       teamKills: Number(row?.team_kills || 0),
       teamDeaths: 0,
+      // Macin ortalama rank kademesi (ornek 54 = Legend 4). `/recentMatches`
+      // her zaman verir; `/matches` projeksiyonunda gelmeyebilir. Yoksa null:
+      // "bilinmiyor" ile "dusuk seviye mac" ayni sey degil.
+      averageRankTier: optionalNumber(row?.average_rank),
       laneResult: "",
       provider: PROVIDER_NAME,
     };

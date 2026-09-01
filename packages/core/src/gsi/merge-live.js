@@ -70,6 +70,50 @@ function identityKeys(row) {
   return keys;
 }
 
+/**
+ * Satirin bilinen kimligi (32-bit account id). Yoksa bos metin.
+ * @param {Record<string, any>} row
+ */
+function accountIdOf(row) {
+  const accountId = String(row?.accountId || "").trim();
+  if (accountId && accountId !== "0") {
+    return accountId;
+  }
+  const steamId = String(row?.steamId || "").trim();
+  if (/^\d{17}$/.test(steamId)) {
+    // SteamID64 -> account id. Iki kaynak ayni kisiyi farkli bicimde yaziyor.
+    return String(BigInt(steamId) - 76561197960265728n);
+  }
+  return "";
+}
+
+/**
+ * Iki satir AYNI KISI olabilir mi?
+ *
+ * NEDEN GEREKLI: satirlar hero uzerinden de eslesebiliyor ve bu normalde
+ * guvenli — bir macta ayni hero iki kez secilemez. Ama mac IZLERKEN (ozellikle
+ * koclukta) Dota'nin GSI'i duz `player` blogunda IZLEYENIN kimligini, `hero`
+ * blogunda ise O AN IZLENEN hero'yu gonderiyor. Ikisi ayni kisi degil. Boyle
+ * bir satir hero uzerinden eslesirse izleyicinin adi yabanci bir oyuncunun
+ * uzerine yapisiyordu (olculdu: mac 8977224253, "Janissary" adi Anti-Mage
+ * oynayan yabanciya yazildi).
+ *
+ * Bu yuzden IKI TARAF DA kimligini biliyorsa ve kimlikler FARKLIYSA eslesme
+ * reddedilir. Anonim ranked macta taraflardan biri kimliksizdir; orada bu
+ * kontrol devreye girmez ve hero eslesmesi eskisi gibi calisir.
+ *
+ * @param {Record<string, any>} a
+ * @param {Record<string, any>} b
+ */
+function couldBeSamePerson(a, b) {
+  const left = accountIdOf(a);
+  const right = accountIdOf(b);
+  if (!left || !right) {
+    return true;
+  }
+  return left === right;
+}
+
 /** GSI'dan gelen, Overwolf'un veremedigi olcum alanlari. */
 const STAT_FIELDS = [
   "level",
@@ -171,10 +215,16 @@ export function mergePlayerLists(lists) {
     const keys = identityKeys(row);
     let found = -1;
     for (const key of keys) {
-      if (index.has(key)) {
-        found = index.get(key);
-        break;
+      if (!index.has(key)) {
+        continue;
       }
+      const candidate = index.get(key);
+      // Kimlikleri celisiyorsa bu eslesme yanlistir; sonraki anahtara bak.
+      if (!couldBeSamePerson(rows[candidate], row)) {
+        continue;
+      }
+      found = candidate;
+      break;
     }
 
     if (found < 0) {
@@ -298,7 +348,20 @@ export function applyOverwolfSnapshot(liveState, snapshot) {
   ].map((row) => ({ ...row, source: "gsi", sources: ["gsi"] }));
 
   // Once Overwolf iskeleti (10 slot), sonra GSI detayi — GSI catismada kazanir.
-  const players = mergePlayerLists([overwolfPlayerRows(snapshot), gsiPlayers]);
+  const merged = mergePlayerLists([overwolfPlayerRows(snapshot), gsiPlayers]);
+
+  // MAC IZLERKEN (ya da koclukta) OYNAMIYORUZ: GSI'nin duz `player` blogu
+  // maca giren biri degil, EKRANA BAKAN kisidir. Overwolf'un roster'i bu
+  // durumda 10 slotun tamamini zaten veriyor, yani eslesmeyen bir GSI satiri
+  // masaya ait degildir — icerideymis gibi gosterilirse tabloda 11. oyuncu
+  // olarak beliriyor. Bu yuzden yalnizca Overwolf'ta karsiligi olan satirlar
+  // kalir. Oynarken (activity "playing") boyle bir ayiklama YAPILMAZ: orada
+  // GSI satiri gercek bir oyuncudur ve tek detay kaynagidir.
+  const observing =
+    snapshot.activity === "spectating" || snapshot.activity === "coaching";
+  const players = observing
+    ? merged.filter((row) => (row.sources || []).includes("overwolf"))
+    : merged;
 
   const picks = (snapshot.picks || [])
     .filter((row) => row.hero)

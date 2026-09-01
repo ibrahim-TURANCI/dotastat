@@ -6,10 +6,11 @@
  *
  * Calisma mantigi:
  *
- *   1. Beklenti tabani (baseline), oyuncunun performanceProfile'indan ve
- *      oynadigi heronun onun havuzundaki yerinden turetilir.
- *      Signature hero -> strongHeroPerformance, bilinmeyen hero ->
- *      averageHeroPerformance, weak hero -> weakHeroPerformance.
+ *   1. Beklenti tabani (baseline) oyuncunun GENEL seviyesidir
+ *      (averageHeroPerformance). Oynanan heronun havuzdaki yeri bu tabani
+ *      yalnizca HERO_TIER_MAX_SHIFT kadar kaydirabilir ve bu kaydirma
+ *      gozlemle celisiyorsa erir: zayif bir heroda iyi oynayan oyuncu
+ *      "hero zayif" diye asagi cekilmez (bkz. resolveBaseline).
  *
  *   2. Rol grubuna gore (core / support) farkli faktorler ve agirliklar
  *      kullanilir. Support icin vision ve fight katkisi agir basar, core icin
@@ -21,6 +22,12 @@
  *
  *   4. Mac baglami (takim onde/geride, lane sonucu) sonucu yumusatir.
  *
+ *   5. Son adimda sonuc, MACIN ORTALAMA RANKINA dogru cekilir. Tek bir mac
+ *      "bu oyuncu 5500 seviyesinde" demeye yetmez; 3500 ortalamali bir macta
+ *      gorulen mukemmel performans, 5500 ortalamali bir macta gorulenle ayni
+ *      kaniti tasimaz. Cekme iki yonludur: cok yuksek tahminler asagi, cok
+ *      dusuk tahminler yukari gelir.
+ *
  * Tum esik degerleri BENCHMARKS / WEIGHTS tablolarindadir; fonksiyon icinde
  * magic number yoktur ve oyuncuya ozel dallanma bulunmaz.
  */
@@ -31,6 +38,7 @@ import {
   normalizeRoleKey,
 } from "./player-types.js";
 import { normalizeHeroKey } from "./player-normalizer.js";
+import { approximateMmrFromRank } from "./mmr-history.js";
 
 /** Faktor toplaminin rank'e cevrilmesindeki genlik. */
 const SCORE_SPREAD = 1400;
@@ -38,6 +46,39 @@ const MIN_PERFORMANCE_RANK = 200;
 const MAX_PERFORMANCE_RANK = 9000;
 const DEFAULT_BASELINE = { min: 2000, max: 3000 };
 const REFERENCE_MATCH_MINUTES = 38;
+
+/**
+ * Hero kademesinin beklenti tabanini kaydirabilecegi EN BUYUK miktar.
+ *
+ * Eskiden taban dogrudan kademe araligindan aliniyordu; profildeki zayif ve
+ * guclu bantlar arasinda 1300+ MMR fark oldugu icin tek basina hero secimi
+ * sonucu belirliyordu. Olculen ornek: zayif isaretli bir heroda ortalama
+ * ustu oynanan mac 2084 cikti, cunku taban 1900'du ve faktorler bunun
+ * uzerine yalnizca +184 ekleyebildi. Kademe artik bir ipucu; olcum degil.
+ */
+const HERO_TIER_MAX_SHIFT = 400;
+
+/**
+ * Sonucun macin ortalama rankina cekilme orani (0 = cekme yok, 1 = tamamen
+ * ortalamaya esitle).
+ *
+ * NEDEN: tek mac, oyuncunun seviyesi hakkinda zayif bir kanittir; macin
+ * seviyesi ise dogrudan olculmus bir gercektir. 3500 ortalamali bir macta
+ * 5500 uretmek, o macta 5500'luk bir rakip/muttefik havuzu olmadigi icin
+ * fazla iddiali olur. 0.25 ile 5500 -> 5000, 1800 -> 2225 olur; siralama
+ * korunur, uc degerler makullesir.
+ */
+const MATCH_AVERAGE_PULL = 0.25;
+
+/**
+ * Ortalama rank saglayicidan gelmediginde oyuncunun KENDI rankindan tahmin
+ * edilir (matchmaking oyuncuyu kendi seviyesine yakin maclara koyar). Bu bir
+ * olcum degil cikarim oldugu icin cekme daha yumusaktir.
+ */
+const MATCH_AVERAGE_PULL_ESTIMATED = 0.15;
+
+/** Cekmenin ozet cumlesinde anilmasi icin gereken en kucuk fark. */
+const NARRATIVE_PULL_MIN_DELTA = 150;
 
 /**
  * Rol grubuna gore "orta seviye" referans degerleri.
@@ -246,41 +287,135 @@ function resolveRoleFit(player, role) {
 }
 
 /**
- * Baseline araliginin ortasi.
+ * Oyuncunun hero'dan BAGIMSIZ beklenen seviyesi.
+ *
+ * Hero kademesi bunun uzerine kucuk bir duzeltme olarak biner; taban her
+ * zaman "bu oyuncu genelde nerede oynuyor" sorusunun cevabidir.
+ *
  * @param {import("./player-types").Player|null} player
- * @param {"signature"|"preferred"|"experimental"|"weak"|"unknown"} heroTier
- * @returns {{ center: number, range: { min: number, max: number }, source: string }}
+ * @returns {{ center: number, source: string }}
  */
-function resolveBaseline(player, heroTier) {
-  const key = HERO_TIER_BASELINE[heroTier] || "averageHeroPerformance";
-  const range = player?.performanceProfile?.[key];
-  const usable =
-    range && Number(range.max) > 0
-      ? { min: Number(range.min), max: Number(range.max) }
-      : null;
-
-  if (usable) {
+function resolvePlayerCenter(player) {
+  const range = player?.performanceProfile?.averageHeroPerformance;
+  if (range && Number(range.max) > 0) {
     return {
-      center: (usable.min + usable.max) / 2,
-      range: usable,
-      source: key,
+      center: (Number(range.min) + Number(range.max)) / 2,
+      source: "averageHeroPerformance",
     };
   }
 
   const actualRank = Number(player?.performanceProfile?.actualRank || 0);
   if (actualRank > 0) {
-    return {
-      center: actualRank,
-      range: { min: actualRank, max: actualRank },
-      source: "actualRank",
-    };
+    return { center: actualRank, source: "actualRank" };
   }
 
   return {
     center: (DEFAULT_BASELINE.min + DEFAULT_BASELINE.max) / 2,
-    range: DEFAULT_BASELINE,
     source: "default",
   };
+}
+
+/**
+ * Beklenti tabani: oyuncunun genel seviyesi + hero kademesi duzeltmesi.
+ *
+ * Kademe duzeltmesi iki kez sinirlanir:
+ *
+ *   1. Buyuklugu HERO_TIER_MAX_SHIFT ile kirpilir. Profildeki bantlar cok
+ *      genis (ornek: zayif 1800-2000, guclu 3000-3500); ham fark birakilirsa
+ *      hero secimi tek basina sonucu belirler.
+ *
+ *   2. GOZLEMLE CELISIYORSA erir. Kademe bir ONCELIKTIR (prior), olcum
+ *      degildir: macta gorulen sayilar tersini soyluyorsa oncelik yanilmis
+ *      demektir. Zayif isaretli bir heroda ortalama ustu oynayan oyuncuya
+ *      ceza kalmaz; imza heroda kotu oynayana da bonus kalmaz.
+ *
+ * @param {import("./player-types").Player|null} player
+ * @param {"signature"|"preferred"|"experimental"|"weak"|"unknown"} heroTier
+ * @param {number} observedScore Faktorlerin agirlikli toplami (-1..+1)
+ * @returns {{ center: number, source: string }}
+ */
+function resolveBaseline(player, heroTier, observedScore) {
+  const base = resolvePlayerCenter(player);
+  const key = HERO_TIER_BASELINE[heroTier] || "averageHeroPerformance";
+  const tierRange = player?.performanceProfile?.[key];
+  const tierCenter =
+    tierRange && Number(tierRange.max) > 0
+      ? (Number(tierRange.min) + Number(tierRange.max)) / 2
+      : base.center;
+
+  const rawShift = clamp(
+    tierCenter - base.center,
+    -HERO_TIER_MAX_SHIFT,
+    HERO_TIER_MAX_SHIFT,
+  );
+  // Celiski miktari: kaydirma asagi bakiyorken gozlem yukari (ya da tersi).
+  const contradiction =
+    rawShift === 0
+      ? 0
+      : clamp(rawShift < 0 ? observedScore : -observedScore, 0, 1);
+  const shift = rawShift * (1 - contradiction);
+
+  return {
+    center: base.center + shift,
+    source: shift === 0 ? base.source : `${base.source}+${key}`,
+  };
+}
+
+/**
+ * Macin ortalama rankinin MMR karsiligi.
+ *
+ * Sirayla:
+ *   1. Saglayicinin verdigi mac ortalamasi (rank_tier kodu; OpenDota
+ *      `average_rank`). Olculmus degerdir, tercih edilir.
+ *   2. Oyuncunun kendi rank madalyasi -> matchmaking oyuncuyu kendi
+ *      seviyesine yakin maclara koydugu icin makul bir tahmindir.
+ *   3. Profildeki `actualRank`.
+ *
+ * @param {import("./player-types").PlayerMatch} match
+ * @param {import("./player-types").Player|null} player
+ * @returns {{ value: number, source: "match"|"player"|"" }}
+ */
+function resolveMatchAverageRank(match, player) {
+  const tier = Number(match?.averageRankTier);
+  if (Number.isFinite(tier) && tier > 0) {
+    const medal = Math.floor(tier / 10);
+    const stars = tier % 10;
+    // Cozulemeyen madalya 0 doner; 0 "Herald" degil "bilinmiyor" demektir.
+    const fromMatch = approximateMmrFromRank({ medal, stars });
+    if (fromMatch > 0) {
+      return { value: fromMatch, source: "match" };
+    }
+  }
+
+  const fromPlayerRank = approximateMmrFromRank(player?.rank || null);
+  if (fromPlayerRank > 0) {
+    return { value: fromPlayerRank, source: "player" };
+  }
+
+  const actualRank = Number(player?.performanceProfile?.actualRank || 0);
+  if (actualRank > 0) {
+    return { value: actualRank, source: "player" };
+  }
+
+  return { value: 0, source: "" };
+}
+
+/**
+ * Ham tahmini macin ortalama rankina dogru ceker.
+ *
+ * @param {number} rawRank
+ * @param {{ value: number, source: "match"|"player"|"" }} average
+ * @returns {number}
+ */
+function pullTowardMatchAverage(rawRank, average) {
+  if (!average.value) {
+    return rawRank;
+  }
+  const pull =
+    average.source === "match"
+      ? MATCH_AVERAGE_PULL
+      : MATCH_AVERAGE_PULL_ESTIMATED;
+  return rawRank + (average.value - rawRank) * pull;
 }
 
 /**
@@ -566,6 +701,10 @@ function inferGameState(match) {
  * @param {number} input.baselineCenter
  * @param {import("./player-types").RoleKey} input.role
  * @param {"manual"|"provider"|"inferred"|"profile"} input.roleSource
+ * @param {number} [input.matchAverageRank] Macin ortalama seviyesi (0 = yok)
+ * @param {"match"|"player"|""} [input.matchAverageRankSource]
+ * @param {number} [input.rawRank] Ortalamaya cekilmeden onceki tahmin
+ * @param {number} [input.observedScore] Faktorlerin agirlikli toplami (-1..+1)
  * @returns {{ summary: string, strengths: string[], mistakes: string[] }}
  */
 function buildNarrative(input) {
@@ -606,7 +745,13 @@ function buildNarrative(input) {
       "Signature herolarindan birini oynadi ve tanidik plani uyguladi.",
     );
   } else if (input.heroFit === "poor") {
-    parts.push("Hero secimi kendi guclu havuzunun disindaydi.");
+    // Zayif havuz bir BEKLENTIDIR; mac onu yalanladiysa cumle de degismeli.
+    // Aksi halde iyi oynanan bir macin ozeti hala hero'yu suclu gosterir.
+    parts.push(
+      Number(input.observedScore) > 0
+        ? "Havuzunun disindaki bir hero'yu aldi ama beklentinin uzerinde oynadi; kademe cezasi buyuk olcude kalkti."
+        : "Hero secimi kendi guclu havuzunun disindaydi.",
+    );
   }
 
   if (input.roleFit === "poor") {
@@ -648,6 +793,23 @@ function buildNarrative(input) {
     }
   }
 
+  // Tahmin macin seviyesine dogru cekildiyse bunu SOYLERIZ; aksi halde
+  // arayuzde "neden 5500 degil de 5000" sorusunun cevabi hicbir yerde yok.
+  const averageRank = Number(input.matchAverageRank || 0);
+  const rawRank = Number(input.rawRank || 0);
+  if (averageRank > 0 && rawRank > 0) {
+    const pulled = Math.abs(rawRank - input.performanceRank);
+    if (pulled >= NARRATIVE_PULL_MIN_DELTA) {
+      parts.push(
+        `Macin ortalama seviyesi ~${averageRank}${
+          input.matchAverageRankSource === "player" ? " (tahmini)" : ""
+        }; tek mac bundan cok uzak bir seviyeyi kanitlamaya yetmedigi icin ${rawRank} yerine ${
+          input.performanceRank
+        } yazildi.`,
+      );
+    }
+  }
+
   return {
     summary: parts.join(" "),
     strengths,
@@ -681,7 +843,6 @@ function evaluateMatchPlayer(input) {
     HERO_TIER_FIT[heroTier]
   );
   const roleFit = resolveRoleFit(player, role);
-  const baseline = resolveBaseline(player, heroTier);
 
   const factors = buildFactors(match, group);
   const weightedScore = factors.reduce(
@@ -704,9 +865,20 @@ function evaluateMatchPlayer(input) {
   const contextModifier = GAME_STATE_MODIFIER[context.gameState] || 0;
   const adjustedScore = clamp(weightedScore + contextModifier, -1, 1);
 
+  // Taban SKORDAN SONRA cozulur: hero kademesinin beklenti duzeltmesi, macta
+  // gorulen performansla celisiyorsa geri cekilir (bkz. resolveBaseline).
+  const baseline = resolveBaseline(player, heroTier, adjustedScore);
+
+  const rawRank = clamp(
+    baseline.center + adjustedScore * SCORE_SPREAD,
+    MIN_PERFORMANCE_RANK,
+    MAX_PERFORMANCE_RANK,
+  );
+
+  const matchAverage = resolveMatchAverageRank(match, player);
   const performanceRank = Math.round(
     clamp(
-      baseline.center + adjustedScore * SCORE_SPREAD,
+      pullTowardMatchAverage(rawRank, matchAverage),
       MIN_PERFORMANCE_RANK,
       MAX_PERFORMANCE_RANK,
     ),
@@ -722,6 +894,10 @@ function evaluateMatchPlayer(input) {
     baselineCenter: baseline.center,
     roleSource: resolvedRole.source,
     role,
+    matchAverageRank: matchAverage.value,
+    matchAverageRankSource: matchAverage.source,
+    rawRank: Math.round(rawRank),
+    observedScore: adjustedScore,
   });
 
   return {
@@ -738,6 +914,15 @@ function evaluateMatchPlayer(input) {
     heroFit,
     roleFit,
     context,
+    /**
+     * Cekmeden ONCEKI ham tahmin. Arayuz ve testler, macin ortalamasinin
+     * sonucu ne kadar kaydirdigini bu ikisinin farkindan okuyabilir.
+     */
+    rawPerformanceRank: Math.round(rawRank),
+    /** Macin ortalama seviyesinin MMR karsiligi (0 = bilinmiyor). */
+    matchAverageRank: Math.round(matchAverage.value),
+    /** "match" = saglayicidan olculdu, "player" = oyuncunun rankindan tahmin. */
+    matchAverageRankSource: matchAverage.source,
     createdAt: new Date().toISOString(),
     breakdown: factors.map((factor) => ({
       key: factor.key,

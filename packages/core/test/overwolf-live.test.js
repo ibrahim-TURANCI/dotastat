@@ -10,6 +10,7 @@ import test from "node:test";
 
 import {
   applyOverwolfSnapshot,
+  buildLiveMatchContext,
   buildOverwolfSnapshot,
   isSnapshotForLiveState,
   mergeLiveStatesByMatch,
@@ -274,6 +275,97 @@ test("GSI'nin uydurdugu slot numarasi Overwolf'un gercek slotunu ezmez", () => {
   // Ayni takimda iki oyuncu ayni slota dusmemeli.
   const slots = merged.direPlayers.map((row) => row.slot);
   assert.equal(new Set(slots).size, slots.length);
+});
+
+// --- Mac izleme / kocluk ----------------------------------------------------
+
+/**
+ * Gercek bir olay (mac 8977224253, 1 Eylul 2026): kullanici maci KOCLUK
+ * modunda izlerken GSI duz `player` blogunda IZLEYENIN kimligini, `hero`
+ * blogunda ise O AN IZLENEN hero'yu gonderdi. Birlestirme hero uzerinden
+ * calistigi icin izleyicinin adi Anti-Mage oynayan yabancinin uzerine yapisti.
+ */
+function watchingSnapshot() {
+  const controllerText = controllerLog([
+    "matchStore: [DD] Detected coaching: 8977224253",
+    "matchStore: Detecting match 8977224253 - AllDraft - coaching - ranked",
+    'matchStore: Roster: [{"steamId":"1824720807","name":"DANISITOROROSKII","pickConfirmed":true,"hero":"skywrath_mage","team":2,"role":16,"rank":54,"medal_name":"legend","medal_stars":4,"team_slot":0,"player_index":0,"position":5},{"steamId":"1041705551","name":"041muhamad","pickConfirmed":true,"hero":"antimage","team":2,"role":1,"rank":54,"medal_name":"","medal_stars":0,"team_slot":1,"player_index":1,"position":1},{"steamId":"1860360996","name":"alex-8344","pickConfirmed":true,"hero":"mirana","team":3,"role":1,"rank":53,"medal_name":"","medal_stars":0,"team_slot":0,"player_index":5,"position":1}]',
+  ]);
+  return buildOverwolfSnapshot({ controllerText });
+}
+
+/** Izlerken GSI'nin gonderdigi tek satir: KIMLIK bizim, HERO baskasinin. */
+function gsiWhileWatching() {
+  return {
+    matchId: "8977224253",
+    phase: "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+    gameTime: 900,
+    radiantScore: 10,
+    direScore: 8,
+    radiantPlayers: [
+      {
+        steamId: "76561198161273990",
+        accountId: "201008262",
+        name: "Janissary",
+        team: "radiant",
+        slot: 1,
+        hero: "antimage",
+        kills: 4,
+        deaths: 1,
+        assists: 6,
+        netWorth: 9000,
+      },
+    ],
+    direPlayers: [],
+    draft: { picks: [], bans: [] },
+    localSteamId: "76561198161273990",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+test("mac izlerken izleyicinin kimligi yabanci oyuncunun uzerine yapismaz", () => {
+  const merged = applyOverwolfSnapshot(gsiWhileWatching(), watchingSnapshot());
+  const all = [...merged.radiantPlayers, ...merged.direPlayers];
+
+  // Anti-Mage'i oynayan kisi roster'daki kisidir, izleyen degil.
+  const antimage = all.find((row) => row.hero === "antimage");
+  assert.equal(antimage.accountId, "1041705551");
+  assert.equal(antimage.name, "041muhamad");
+
+  // Izleyicinin kimligi masaya HIC girmemeli.
+  assert.equal(
+    all.some((row) => row.accountId === "201008262"),
+    false,
+  );
+  assert.equal(
+    all.some((row) => row.name === "Janissary"),
+    false,
+  );
+
+  // Tablo yalnizca Overwolf'un bildirdigi oyunculardan olusur; 11. satir yok.
+  assert.equal(all.length, 3);
+});
+
+test("izlerken 'bizim taraf' Overwolf'un bildirdigi taraftir", () => {
+  const snapshot = watchingSnapshot();
+  snapshot.myTeam = "dire";
+  const merged = applyOverwolfSnapshot(gsiWhileWatching(), snapshot);
+  const context = buildLiveMatchContext({ liveState: merged });
+
+  assert.equal(context.myTeam, "dire");
+});
+
+test("OYNARKEN kendi satirimiz ayiklanmaz", () => {
+  // Ayni ayiklama oynarken calissaydi kendi KDA'miz ekrandan duserdi.
+  const merged = applyOverwolfSnapshot(
+    gsiStateOnlyMe(),
+    buildOverwolfSnapshot({ controllerText: LIVE_MATCH_LOG }),
+  );
+  const me = [...merged.radiantPlayers, ...merged.direPlayers].find(
+    (row) => row.accountId === "201008262",
+  );
+  assert.ok(me);
+  assert.equal(me.kills, 3);
 });
 
 test("uc arkadas ayni macta: Overwolf'lu + iki GSI'ci tek tabloda toplanir", () => {
