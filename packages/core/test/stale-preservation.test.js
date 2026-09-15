@@ -348,3 +348,78 @@ test("gizli isaret az once sorulduysa tekrar sorulmaz", async () => {
     "arka arkaya tiklamak kota harcamamali",
   );
 });
+
+/**
+ * EKSIK cevap veren kaynak.
+ *
+ * Hata yok, bos da degil: yalnizca son gunlerin maclari listede yok. Gercek
+ * hayatta bu, OpenDota'nin (ya da Stratz'in) maci henuz indekslememis olmasi
+ * demek — "basarili ama eksik" cevap.
+ *
+ * @param {Array<Record<string, any>>} rows
+ */
+function partialProvider(rows) {
+  return {
+    async getRecentMatches() {
+      return rows;
+    },
+    async getRecentMatchesFreshest() {
+      return rows;
+    },
+    async getPlayerProfile() {
+      return null;
+    },
+    async getHeroPerformance() {
+      return [];
+    },
+    async requestRefresh() {},
+  };
+}
+
+test("eksik donen tazeleme, duran maclari silmez (birlestirilir)", async () => {
+  const storage = memoryStorage();
+  await seedExistingData(storage, player.player_id);
+
+  // Kaynak yalnizca ESKI maci veriyor; elde duran "111" (yaklasik 3 saat once)
+  // listesinde yok. Uzerine yazilsaydi o mac ekrandan kaybolurdu.
+  const service = serviceWith(storage, partialProvider([match("112", 900)]));
+  const bundle = await service.getPlayerBundle(player, { refresh: true });
+
+  const ids = bundle.matches.map((row) => row.matchId);
+  assert.deepEqual(
+    ids,
+    ["111", "112"],
+    "duran mac korunmali, sira yeniden eskiye",
+  );
+  assert.equal(bundle.stale, false, "cevap alindi; veri bayat degil");
+});
+
+test("tazeleme yeni maci ekler, eskileri korur", async () => {
+  const storage = memoryStorage();
+  await seedExistingData(storage, player.player_id);
+
+  const service = serviceWith(
+    storage,
+    partialProvider([match("113", 10), match("111", 200)]),
+  );
+  const bundle = await service.getPlayerBundle(player, { refresh: true });
+
+  assert.deepEqual(
+    bundle.matches.map((row) => row.matchId),
+    ["113", "111", "112"],
+    "yeni mac basa gelmeli, eskiler durmali",
+  );
+});
+
+test("ayni mac icin YENI satir kazanir", async () => {
+  const storage = memoryStorage();
+  await seedExistingData(storage, player.player_id);
+
+  // Ayni mac, bu kez parse edilmis: ward sayilari dolu geliyor.
+  const parsed = { ...match("111", 200), obsPlaced: 14, senPlaced: 9 };
+  const service = serviceWith(storage, partialProvider([parsed]));
+  const bundle = await service.getPlayerBundle(player, { refresh: true });
+
+  const row = bundle.matches.find((item) => item.matchId === "111");
+  assert.equal(row.obsPlaced, 14, "yeni satirin dolu alanlari kullanilmali");
+});

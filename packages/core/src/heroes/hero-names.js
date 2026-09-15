@@ -9,6 +9,7 @@
  */
 
 import heroIds from "../data/hero-ids.js";
+import heroLocalized from "../data/hero-localized.js";
 import heroRoles from "../data/hero-roles.js";
 
 const HERO_CDN =
@@ -110,6 +111,15 @@ export function heroDisplayName(heroKey) {
   if (!key) {
     return "";
   }
+  // Dota'nin ic anahtarlari gorunen adla ortusmuyor: `nevermore` Shadow Fiend,
+  // `zuus` Zeus, `queenofpain` Queen of Pain. Anahtardan ad turetmek ekrana
+  // oyunda hic gecmeyen isimler yaziyordu (bkz. data/hero-localized.js).
+  const known = heroLocalized[key];
+  if (known) {
+    return known;
+  }
+  // Tablo disinda bir anahtar geldiyse (yeni hero, eski kayit) gizlemek yerine
+  // okunabilir hale getirilir.
   return key
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

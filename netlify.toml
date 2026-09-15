@@ -70,11 +70,6 @@
   status = 200
 
 [[redirects]]
-  from = "/api/weekly"
-  to = "/.netlify/functions/weekly"
-  status = 200
-
-[[redirects]]
   from = "/api/live"
   to = "/.netlify/functions/live"
   status = 200
@@ -97,6 +92,11 @@
 [[redirects]]
   from = "/api/me/item-plans"
   to = "/.netlify/functions/item-plans"
+  status = 200
+
+[[redirects]]
+  from = "/api/me/hero-plans"
+  to = "/.netlify/functions/hero-plans"
   status = 200
 
 [[redirects]]

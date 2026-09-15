@@ -75,9 +75,13 @@ const ROLE_SOURCE_LABELS = {
 /**
  * Secilen oyuncunun detay paneli.
  *
- * @param {{ playerKey: string, onClose: () => void }} props
+ * @param {{
+ *   playerKey: string,
+ *   onClose: () => void,
+ *   onDataChanged?: () => void
+ * }} props
  */
-export function PlayerDetail({ playerKey, onClose }) {
+export function PlayerDetail({ playerKey, onClose, onDataChanged }) {
   const [tab, setTab] = useState("overview");
   // Panel acilirken onbellekten okur; saglayiciya yalnizca "Yenile" ile gider.
   const detail = useAsyncData((options) => api.player(playerKey, options), {
@@ -110,7 +114,9 @@ export function PlayerDetail({ playerKey, onClose }) {
       const response = await api.setMatchRole(matchId, role);
       setMatchRoles(response.roles || {});
       // Degerlendirme sunucuda yeniden hesaplandigi icin paneli tazele.
-      detail.reload();
+      await detail.reload();
+      // Performance Rank degisti; kart listesi de bunu gostermeli.
+      onDataChanged?.();
     } catch (error) {
       setMatchRoles(previous);
       setRoleError(error?.message || "Pozisyon kaydedilemedi");
@@ -179,7 +185,13 @@ export function PlayerDetail({ playerKey, onClose }) {
           <button
             type="button"
             className="btn ghost small"
-            onClick={() => detail.reload({ refresh: true })}
+            onClick={async () => {
+              const result = await detail.reload({ refresh: true });
+              // Ayni veri kartlari da besliyor; liste eski kalmasin.
+              if (result?.ok) {
+                onDataChanged?.();
+              }
+            }}
             disabled={detail.refreshing || refreshWaitMs > 0}
             title={refreshTooltip(refreshWaitMs, detail.refreshing)}
           >
@@ -592,9 +604,11 @@ function MatchesTab({
   onRoleChange,
   mmrByMatch,
 }) {
-  // MMR sutunu, oyuncu icin kayit VARSA herkese gosterilir; kayit yalnizca
-  // masaustu uygulamasini kurmus oyuncularda birikir.
-  const hasMmr = Object.keys(mmrByMatch || {}).length > 0;
+  // MMR sutunu HER ZAMAN durur. Eskiden kayit yoksa sutun tamamen
+  // gizleniyordu; tablo oyuncudan oyuncuya sutun degistiriyor ve "MMR nereye
+  // gitti" sorusunu doguruyordu. Eslesme bulunamayan satirda hucre "—" kalir
+  // ve sebebini basligin ipucu yaziyor.
+  const changes = mmrByMatch || {};
   // Performance Rank mac bazinda degerlendirmeden gelir (gercek MMR degil).
   const rankByMatch = new Map(
     (evaluations || []).map((row) => [row.matchId, row.performanceRank]),
@@ -621,7 +635,9 @@ function MatchesTab({
             <th title="Bu maçtaki performansın hangi seviyeye denk düştüğü — gerçek MMR değil">
               Perf. Rank
             </th>
-            {hasMmr ? <th>MMR</th> : null}
+            <th title="Maçtan sonraki MMR ve o maçın farkı. Yalnızca masaüstü uygulaması açıkken oynanan maçlar için okunabiliyor; diğerlerinde boş kalır.">
+              MMR
+            </th>
             <th>Pozisyon</th>
             <th>KDA</th>
             <th>GPM / XPM</th>
@@ -648,11 +664,9 @@ function MatchesTab({
               <td>
                 <PerformanceRankCell value={rankByMatch.get(row.matchId)} />
               </td>
-              {hasMmr ? (
-                <td>
-                  <MmrCell change={mmrByMatch[row.matchId]} />
-                </td>
-              ) : null}
+              <td>
+                <MmrCell change={changes[row.matchId]} />
+              </td>
               <td>
                 <RoleCell
                   matchId={row.matchId}

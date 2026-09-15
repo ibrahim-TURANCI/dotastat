@@ -350,11 +350,11 @@ export default {
       performanceProfile: {
         strongHeroPerformance: {
           min: 4000,
-          max: 4500,
+          max: 4780,
         },
         gameKnowledgeLevel: {
-          min: 3800,
-          max: 4000,
+          min: 4000,
+          max: 4200,
         },
         averageHeroPerformance: {
           min: 3000,
@@ -706,16 +706,16 @@ export default {
       },
       performanceProfile: {
         strongHeroPerformance: {
-          min: 4500,
-          max: 5000,
+          min: 4200,
+          max: 4600,
         },
         gameKnowledgeLevel: {
-          min: 4500,
-          max: 5000,
-        },
-        averageHeroPerformance: {
           min: 4200,
           max: 4700,
+        },
+        averageHeroPerformance: {
+          min: 4100,
+          max: 4400,
         },
         weakHeroPerformance: {
           min: 2800,

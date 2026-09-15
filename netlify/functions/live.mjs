@@ -19,7 +19,7 @@ import {
 import { getCachedStatsByPlayerId } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
 import { readSession } from "./_lib/session.mjs";
-import { readItemPlans, sessionAccountId } from "./_lib/item-plans.mjs";
+import { readHeroPlans } from "./_lib/hero-plans.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
 /** Kayitlarin depoda tutulma suresi. */
@@ -104,34 +104,32 @@ async function ingest(request) {
 }
 
 /**
- * Item duzenlemelerinin surec ici hafizasi.
+ * Ortak hero katalogunun surec ici hafizasi.
  *
  * Panel 5 saniyede bir yokluyor; her yoklamada depoya gitmek, kredi icin
  * kistigimiz Blobs okumasini geri getirirdi (bkz. _lib/player-data.mjs'teki
- * ayni gerekce). Kullanicinin kendi duzenlemesi zaten nadiren degisir ve
- * degistiginde dialog kaydi kapatirken hafiza temizlenir.
+ * ayni gerekce). Katalog nadiren degisir; degistiginde arayuz bir sonraki
+ * yoklamayi "taze" isaretleyip hafizayi atlar.
  *
- * @type {Map<string, { at: number, plans: Record<string, any> }>}
+ * @type {{ at: number, plans: Record<string, any> }|null}
  */
-const itemPlanMemo = new Map();
-const ITEM_PLAN_MEMO_MS = 60 * 1000;
+let heroPlanMemo = null;
+const HERO_PLAN_MEMO_MS = 60 * 1000;
 
 /**
- * @param {string} accountId
  * @param {{ fresh?: boolean }} [options]  hafizayi atlar
  * @returns {Promise<Record<string, any>>}
  */
-async function cachedItemPlans(accountId, options = {}) {
-  const key = String(accountId || "");
-  if (!key) {
-    return {};
+async function cachedHeroPlans(options = {}) {
+  if (
+    !options.fresh &&
+    heroPlanMemo &&
+    Date.now() - heroPlanMemo.at < HERO_PLAN_MEMO_MS
+  ) {
+    return heroPlanMemo.plans;
   }
-  const hit = itemPlanMemo.get(key);
-  if (!options.fresh && hit && Date.now() - hit.at < ITEM_PLAN_MEMO_MS) {
-    return hit.plans;
-  }
-  const plans = await readItemPlans(key);
-  itemPlanMemo.set(key, { at: Date.now(), plans });
+  const plans = await readHeroPlans();
+  heroPlanMemo = { at: Date.now(), plans };
   return plans;
 }
 
@@ -176,14 +174,14 @@ export default async (request) => {
     // izleyiciye gore secilir; yoksa panel surekli maclar arasinda zipliyordu.
     const liveState = selectLiveStateForViewer(merged, { viewerSteamId });
 
-    // Item tavsiyesi duzenlemeleri KISIYE OZELDIR. Oturum varsa yanit o kisiye
-    // gore sekillenir, dolayisiyla CDN'de PAYLASILAMAZ; yoksa bir kullanicinin
-    // duzenlemesi baskasinin ekranina dusebilir. Oturum yoksa duzenleme de yok
-    // ve yanit herkes icin ayni — asil onbellek kazanci zaten orada
-    // (bkz. CACHE_SECONDS_ACTIVE aciklamasi).
+    // Tavsiye katalogu ORTAKTIR: kadrodaki herkes ayni kaydi duzenler ve
+    // masaustu uygulamasi da ayni kaydi okur (bkz. _lib/hero-plans.mjs). Bu
+    // yuzden tavsiye izleyiciye gore DEGISMEZ; giris yapmamis bir ziyaretci de
+    // grubun duzenledigi hali gorur.
     //
     // `readSession` yalnizca cerez cozer, depoya gitmez; bu yuzden erken
-    // donusten ONCE cagrilabilir.
+    // donusten ONCE cagrilabilir. Yanit yine de oturuma gore onbelleklenir:
+    // `canEditItemPlans` kisiye ozeldir.
     const viewerSession = readSession(request);
     if (!liveState) {
       return json(
@@ -192,23 +190,21 @@ export default async (request) => {
       );
     }
 
-    // Duzenlemeler yalnizca ORTADA MAC VARKEN okunur ve kisa sureli
-    // hafizadan gelir: aksi halde giris yapmis her izleyici, her 5 saniyede
-    // bir fazladan Blobs okumasi ekleyecekti.
-    const overrides = viewerSession
-      ? await cachedItemPlans(sessionAccountId(viewerSession), {
-          // Kullanici az once kaydettiyse arayuz bunu isaretler ve hafiza
-          // atlanir; aksi halde degisiklik bir dakika gorunmezdi.
-          fresh: url.searchParams.get("plans") === "fresh",
-        })
-      : {};
+    // Katalog yalnizca ORTADA MAC VARKEN okunur ve kisa sureli hafizadan
+    // gelir: aksi halde her izleyici, her 5 saniyede bir fazladan Blobs
+    // okumasi ekleyecekti.
+    const heroOverrides = await cachedHeroPlans({
+      // Kullanici az once kaydettiyse arayuz bunu isaretler ve hafiza
+      // atlanir; aksi halde degisiklik bir dakika gorunmezdi.
+      fresh: url.searchParams.get("plans") === "fresh",
+    });
 
     const statsByPlayerId = await getCachedStatsByPlayerId();
     const context = buildLiveMatchContext({
       liveState,
       statsByPlayerId,
       viewerSteamId,
-      itemPlanOverrides: overrides,
+      heroOverrides,
     });
 
     return json(

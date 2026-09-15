@@ -15,15 +15,22 @@
  *
  * Boylece Overwolf kurulu olan daha net tavsiye alir, olmayan yaniltilmaz.
  *
- * VERI KAYNAGI: `hero-profiles.js` (hero basina core/situational/counter item),
- * `item-counters.js` (dusman esyasina karsi item) ve `item-ids.js` (gorunen ad).
- * Bu modul SAFTIR: ag istegi yapmaz, saat okumaz.
+ * VERI KAYNAGI: `heroes/hero-catalog.js` — uretilmis tohum veri ile
+ * kullanicinin "Tavsiyeleri yonet" ekranindaki duzenlemesinin birlesimi. Item
+ * counter kurallari `item-counters.js`, gorunen adlar `item-ids.js`. Bu modul
+ * SAFTIR: ag istegi yapmaz, saat okumaz.
  */
 
-import heroProfiles from "../data/hero-profiles.js";
 import itemCounters from "../data/item-counters.js";
 import itemIds from "../data/item-ids.js";
-import { normalizeHeroKey } from "../heroes/hero-names.js";
+import {
+  ROLE_VALUE_KEYS,
+  ROLE_VALUE_LABELS,
+  heroRecord,
+} from "../heroes/hero-catalog.js";
+import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
+import { isRetiredItem, normalizeItemKey } from "./item-keys.js";
+import { detectThreats, threatAnswers } from "./threats.js";
 
 /**
  * Veri seviyesine gore tavsiye KOTASI.
@@ -59,37 +66,85 @@ const TEAM_UNIQUE_ITEMS = new Set([
   "lotus_orb",
 ]);
 
-/** Kompozisyon karsilastirmasinda bakilan ozellikler. */
-const TEAM_ATTRIBUTES = [
-  { key: "carry", label: "taşıyıcı gücü", source: "tags" },
-  { key: "durable", label: "dayanıklılık", source: "tags" },
-  { key: "initiator", label: "başlatma", source: "tags" },
-  { key: "disabler", label: "kontrol", source: "tags" },
-  { key: "support", label: "destek", source: "tags" },
-  { key: "escape", label: "kaçış", source: "tags" },
-  { key: "pusher", label: "itme", source: "tags" },
-  { key: "teamfight", label: "takım savaşı", source: "draft" },
-  { key: "saveMechanics", label: "kurtarma", source: "draft" },
-  { key: "lateGame", label: "geç oyun", source: "draft" },
+/**
+ * Kompozisyon karsilastirmasinda bakilan ozellikler.
+ *
+ * Anahtarlar hero katalogundaki radar eksenleriyle AYNIDIR: tabloda gorunen
+ * yuzde ile analizde kullanilan puan ayni sayidan turemeli, yoksa ekranda
+ * "Radiant %65 ani hasar" yazarken analiz baska bir seye dayanir.
+ */
+const TEAM_ATTRIBUTES = ROLE_VALUE_KEYS.map((key) => ({
+  key,
+  label: ROLE_VALUE_LABELS[key] || key,
+}));
+
+/** Bir ozellikte "belirgin fark" sayilmasi icin gereken yuzde farki. */
+const ADVANTAGE_MIN_DIFF = 10;
+/** Bir ozelligin "eksik" sayilmasi icin altinda kalmasi gereken yuzde. */
+const WEAKNESS_MAX_SCORE = 35;
+
+/** Radarda gosterilen eksenler (alti kose). */
+const RADAR_AXES = [
+  "carry",
+  "burst",
+  "catch",
+  "durability",
+  "escape",
+  "initiation",
 ];
 
-/** Bir ozellikte "belirgin fark" sayilmasi icin gereken puan araligi. */
-const ADVANTAGE_MIN_DIFF = 1.2;
-/** Bir ozelligin "eksik" sayilmasi icin ortalamanin altinda kalmasi gereken esik. */
-const WEAKNESS_MAX_SCORE = 3.5;
-
-/** Eksik kalan ozellige karsilik takima onerilen itemler. */
+/**
+ * Eksik kalan ozellige karsilik takima onerilen itemler.
+ *
+ * Her item ayrica bir GRUBA girer: cekirdek oyuncularin mi, desteklerin mi
+ * alacagi yoksa duruma gore mi bakilacagi. Ekran uc satiri ayri gosteriyor
+ * (Core / Support / Duruma Göre) ve grup bilgisi olmadan liste tek bir yigina
+ * donerdi.
+ */
 const WEAKNESS_ITEMS = {
-  saveMechanics: ["force_staff", "glimmer_cape", "lotus_orb"],
-  support: ["mekansm", "glimmer_cape", "force_staff"],
-  initiator: ["blink", "cyclone"],
-  disabler: ["orchid", "sheepstick", "abyssal_blade"],
-  durable: ["pipe", "crimson_guard", "assault"],
-  escape: ["force_staff", "cyclone", "blink"],
-  teamfight: ["black_king_bar", "pipe"],
-  lateGame: ["assault", "satanic", "skadi"],
-  carry: ["black_king_bar", "manta"],
-  pusher: ["assault", "necronomicon"],
+  support: [
+    ["mekansm", "support"],
+    ["glimmer_cape", "support"],
+    ["force_staff", "support"],
+    ["pavise", "support"],
+  ],
+  catch: [
+    ["orchid", "core"],
+    ["sheepstick", "core"],
+    ["abyssal_blade", "core"],
+    ["gungir", "situational"],
+  ],
+  initiation: [
+    ["blink", "core"],
+    ["cyclone", "support"],
+    ["meteor_hammer", "situational"],
+  ],
+  durability: [
+    ["pipe", "support"],
+    ["crimson_guard", "support"],
+    ["assault", "core"],
+    ["heart", "core"],
+  ],
+  escape: [
+    ["force_staff", "support"],
+    ["cyclone", "support"],
+    ["blink", "core"],
+  ],
+  burst: [
+    ["ethereal_blade", "core"],
+    ["veil_of_discord", "situational"],
+    ["dagon_5", "situational"],
+  ],
+  carry: [
+    ["black_king_bar", "core"],
+    ["manta", "core"],
+    ["satanic", "core"],
+  ],
+  push: [
+    ["assault", "core"],
+    ["ancient_janggo", "support"],
+    ["boots_of_bearing", "support"],
+  ],
 };
 
 /** Item gruplarinin arayuzde gorunen adlari. */
@@ -97,18 +152,47 @@ const GROUP_LABELS = {
   core: "Çekirdek",
   counter: "Karşı hamle",
   situational: "Duruma göre",
+  support: "Destek",
 };
 
 /**
- * @param {unknown} value
- * @returns {string}
+ * Takim onerisinde bir itemin hangi satirda gorunecegi.
+ *
+ * Ekran uc satir gosteriyor (Core / Support / Duruma Göre) ve tehdit
+ * tablosundaki itemlerin hangi satira ait oldugu oradan anlasilmiyor: Pipe bir
+ * destek itemi, Black King Bar cekirdek itemi, ikisi de ayni tehdide cevap
+ * veriyor. Tabloda olmayan itemler duruma gore satirina duser.
  */
-function normalizeItemKey(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^item_/, "");
-}
+const ITEM_GROUPS = {
+  // Destekler alir.
+  pipe: "support",
+  mekansm: "support",
+  guardian_greaves: "support",
+  spirit_vessel: "support",
+  essence_distiller: "support",
+  glimmer_cape: "support",
+  force_staff: "support",
+  pavise: "support",
+  ancient_janggo: "support",
+  boots_of_bearing: "support",
+  crimson_guard: "support",
+  cyclone: "support",
+  // Cekirdek oyuncular alir.
+  black_king_bar: "core",
+  silver_edge: "core",
+  angels_demise: "core",
+  orchid: "core",
+  bloodthorn: "core",
+  sheepstick: "core",
+  sphere: "core",
+  abyssal_blade: "core",
+  assault: "core",
+  manta: "core",
+  satanic: "core",
+  heart: "core",
+  ethereal_blade: "core",
+  blink: "core",
+};
 
 /** key -> gorunen ad. `item-ids.js` id anahtarli oldugu icin bir kez cevrilir. */
 const ITEM_LABEL_BY_KEY = new Map(
@@ -141,6 +225,11 @@ export function itemDisplayName(key) {
 
 /**
  * Item ikonunun Dota CDN adresi.
+ *
+ * Anahtar `normalizeItemKey` uzerinden gecer; konusma dilindeki yazimlar
+ * (khanda, battle_fury, linkensphere...) burada gercek dosya adina cevrilir.
+ * Bunu atlamak ikonun sessizce 404 donmesi demekti.
+ *
  * @param {string} key
  * @returns {string}
  */
@@ -152,7 +241,7 @@ export function itemIconUrl(key) {
 }
 
 /**
- * Bir oyuncu satirinin SAHIP OLDUGU tum itemler (ana + backpack + neutral).
+ * Bir oyuncu satirinin SAHIP OLDUGU tum itemler (ana + backpack + neutral + tp).
  *
  * @param {Record<string, any>} row
  * @returns {string[]}
@@ -162,8 +251,33 @@ export function ownedItems(row) {
     ...(Array.isArray(row?.items) ? row.items : []),
     ...(Array.isArray(row?.backpack) ? row.backpack : []),
     row?.neutral,
+    row?.neutralEffect,
+    row?.tp,
   ];
   return parts.map(normalizeItemKey).filter(Boolean);
+}
+
+/**
+ * Tavsiye uretirken "elimde var" sayilan itemler.
+ *
+ * Envanterdekilere ek olarak KULLANILMIS Aghanim's Scepter ve Shard'i da
+ * kapsar. Ikisi de alindiginda tuketilir ve hero'nun uzerine islenir; envantere
+ * bakan bir kural onlari hic gormez ve scepter'ini coktan kullanmis bir
+ * oyuncuya "scepter al" onerisi vermeye devam eder.
+ *
+ * @param {Record<string, any>} row
+ * @returns {Set<string>}
+ */
+function effectiveOwned(row) {
+  const owned = new Set(ownedItems(row));
+  if (row?.hasScepter) {
+    owned.add("ultimate_scepter");
+    owned.add("ultimate_scepter_2");
+  }
+  if (row?.hasShard) {
+    owned.add("aghanims_shard");
+  }
+  return owned;
 }
 
 /**
@@ -195,12 +309,15 @@ export function resolveDataLevel(allies, enemies) {
 }
 
 /**
+ * Bir hero'nun BIRLESIK kaydi (tohum veri + kullanicinin duzenlemesi).
+ *
  * @param {string} heroKey
+ * @param {Record<string, Record<string, any>>} overrides
  * @returns {Record<string, any>|null}
  */
-function profileOf(heroKey) {
+function recordOf(heroKey, overrides = {}) {
   const key = normalizeHeroKey(heroKey);
-  return key ? heroProfiles[key] || null : null;
+  return key ? heroRecord(key, overrides?.[key] || null) : null;
 }
 
 /**
@@ -214,7 +331,8 @@ function profileOf(heroKey) {
  * @param {Array<Record<string, any>>} input.allies Ayni takimdaki satirlar
  * @param {Array<Record<string, any>>} input.enemies Karsi takimdaki satirlar
  * @param {"self"|"heroes"|"full"} input.dataLevel
- * @param {{ add?: string[], remove?: string[] }} [input.override] Elle duzenleme
+ * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero -> duzenleme
+ * @param {{ add?: string[], remove?: string[] }} [input.override] Tek seferlik ek duzenleme
  * @param {Set<string>} [input.teamTaken] Takimda baskasina zaten onerilenler
  * @returns {Array<{ key: string, name: string, group: string, groupLabel: string, reason: string }>}
  */
@@ -225,9 +343,14 @@ export function buildPlayerItemAdvice(input) {
     return [];
   }
 
-  const profile = profileOf(hero);
-  const owned = new Set(ownedItems(player));
-  const removed = new Set((input.override?.remove || []).map(normalizeItemKey));
+  const overrides = input.heroOverrides || {};
+  const record = recordOf(hero, overrides);
+  const owned = effectiveOwned(player);
+  const removed = new Set(
+    [...(record?.removedItems || []), ...(input.override?.remove || [])].map(
+      normalizeItemKey,
+    ),
+  );
   const teamTaken = input.teamTaken || new Set();
   const quota = ADVICE_QUOTA[input.dataLevel] || ADVICE_QUOTA.self;
 
@@ -240,11 +363,75 @@ export function buildPlayerItemAdvice(input) {
     if (!key || candidates.has(key) || owned.has(key) || removed.has(key)) {
       return;
     }
+    // Oyundan kaldirilmis item onerilmez. Ornegin Necronomicon 7.29'da
+    // kaldirildi; onerilmesi kullaniciyi dukkanda olmayan bir item icin
+    // altin biriktirmeye iter ve listenin tamamini supheli hale getirir.
+    if (isRetiredItem(key)) {
+      return;
+    }
     // Aura/benzersiz itemler takimda tek kisiye onerilir.
     if (TEAM_UNIQUE_ITEMS.has(key) && teamTaken.has(key)) {
       return;
     }
     candidates.set(key, { key, group, reason, order: candidates.size });
+  };
+
+  // Rakip kompozisyonunun tasidigi tehditler ve onlara cevap veren itemler.
+  // Yalnizca rakip hero'lari goruluyorsa anlamli.
+  const threats =
+    input.dataLevel === "self" ? [] : detectThreats(input.enemies || []);
+  const answers = threatAnswers(threats);
+
+  // Rakibin ELINDEKI itemlere karsi kurallar; yalnizca envanteri goruluyorsa.
+  /** @type {Map<string, string>} item -> gerekce */
+  const itemCounterReasons = new Map();
+  if (input.dataLevel === "full") {
+    const enemyOwned = new Set(
+      (input.enemies || []).flatMap((row) => [...effectiveOwned(row)]),
+    );
+    for (const enemyItem of enemyOwned) {
+      for (const key of itemCounters[enemyItem]?.counters || []) {
+        const normalized = normalizeItemKey(key);
+        if (!itemCounterReasons.has(normalized)) {
+          itemCounterReasons.set(
+            normalized,
+            `Rakipte ${itemDisplayName(enemyItem)} var.`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Bir aday, rakip kompozisyonuna cevap veriyor mu?
+   *
+   * Veriyorsa grubu "counter" olur ve gerekcesi tehdidi anlatir; bu hem
+   * kullaniciya NEDEN sorusunu cevaplar hem kotada counter yerinden pay alarak
+   * cekirdek planin onune gecmesini saglar.
+   *
+   * @param {string} key
+   * @returns {{ group: string, reason: string }|null}
+   */
+  const counterOf = (key) => {
+    const matched = answers.get(key);
+    if (matched?.length) {
+      const names = matched[0].heroes.map(heroDisplayName).join(", ");
+      return { group: "counter", reason: `${matched[0].reason}: ${names}.` };
+    }
+    const owned = itemCounterReasons.get(key);
+    return owned ? { group: "counter", reason: owned } : null;
+  };
+
+  /**
+   * Hero'nun KENDI listesinden bir itemi havuza koyar.
+   * @param {string} rawKey
+   * @param {"core"|"situational"} group
+   * @param {string} reason
+   */
+  const pushOwn = (rawKey, group, reason) => {
+    const key = normalizeItemKey(rawKey);
+    const counter = counterOf(key);
+    push(key, counter?.group || group, counter?.reason || reason);
   };
 
   // 1. ELLE EKLENENLER — kullanicinin beyani her kuralin onundedir.
@@ -253,43 +440,14 @@ export function buildPlayerItemAdvice(input) {
   }
 
   // 2. HERO PLANI — her veri seviyesinde calisir, tek gereken hero bilgisi.
-  for (const key of profile?.coreItems || []) {
-    push(key, "core", "Hero'nun çekirdek item planında.");
+  for (const key of record?.requiredItems || []) {
+    pushOwn(key, "core", "Hero'nun çekirdek item planında.");
   }
 
-  // 3. DUSMAN HERO COUNTER'I — yalnizca rakip hero'lar biliniyorsa.
-  if (input.dataLevel !== "self") {
-    for (const enemy of input.enemies || []) {
-      const enemyHero = normalizeHeroKey(enemy?.hero);
-      const enemyProfile = profileOf(enemyHero);
-      if (!enemyProfile) {
-        continue;
-      }
-      for (const key of enemyProfile.counterItems || []) {
-        push(
-          key,
-          "counter",
-          `Rakip ${enemyProfile.hero || enemyHero} için karşı item.`,
-        );
-      }
-    }
-  }
-
-  // 4. DUSMAN ESYASINA KARSI — yalnizca rakip envanteri goruluyorsa.
-  if (input.dataLevel === "full") {
-    const enemyOwned = new Set(
-      (input.enemies || []).flatMap((row) => ownedItems(row)),
-    );
-    for (const enemyItem of enemyOwned) {
-      for (const key of itemCounters[enemyItem]?.counters || []) {
-        push(key, "counter", `Rakipte ${itemDisplayName(enemyItem)} var.`);
-      }
-    }
-  }
-
-  // 5. DURUMA GORE — plan doldurulamadiysa hero'nun esnek itemleri.
-  for (const key of profile?.situationalItems || []) {
-    push(key, "situational", "Hero'nun duruma göre item planında.");
+  // 3. DURUMA GORE — hero'nun esnek itemleri. Rakibe cevap verenler yukarida
+  //    "counter" olarak isaretlendi ve kotada once gelir.
+  for (const key of record?.situationalItems || []) {
+    pushOwn(key, "situational", "Hero'nun duruma göre item planında.");
   }
 
   return selectByQuota([...candidates.values()], quota).map((row) => ({
@@ -350,35 +508,179 @@ function selectByQuota(candidates, quota) {
 }
 
 /**
- * Bir takimin ortalama ozellik puanlari (0-10).
+ * Bir takimin radar yuzdeleri (0-100).
+ *
+ * Her hero'nun sekiz ekseni 0-100 arasinda; takim degeri BES KISILIK bir takima
+ * gore olculur. Bolme neden sabit 5: dort hero gorunen bir takimin "eksigi"
+ * gorunmeli. Ortalama alinsaydi tek hero'lu bir takim her eksende %100 cikardi
+ * ve draft sirasinda tablo tersine donerdi.
  *
  * @param {Array<Record<string, any>>} rows
+ * @param {Record<string, Record<string, any>>} [overrides]
  * @returns {Record<string, number>}
  */
-function teamScores(rows) {
-  const profiles = rows
-    .map((row) => profileOf(row?.hero))
-    .filter((row) => row !== null);
+export function teamRoleBars(rows, overrides = {}) {
+  const records = (rows || [])
+    .map((row) => recordOf(row?.hero, overrides))
+    .filter(Boolean);
 
   /** @type {Record<string, number>} */
-  const scores = {};
+  const bars = {};
   for (const attribute of TEAM_ATTRIBUTES) {
-    if (!profiles.length) {
-      scores[attribute.key] = 0;
-      continue;
-    }
-    const total = profiles.reduce(
-      (sum, profile) =>
-        sum + Number(profile?.[attribute.source]?.[attribute.key] || 0),
+    const total = records.reduce(
+      (sum, record) => sum + Number(record.roleValues?.[attribute.key] || 0),
       0,
     );
-    scores[attribute.key] = Number((total / profiles.length).toFixed(2));
+    bars[attribute.key] = Math.max(0, Math.min(100, Math.round(total / 5)));
   }
-  return scores;
+  return bars;
+}
+
+/**
+ * Bir takimin diger takima gore BELIRGIN ustunlukleri.
+ *
+ * @param {Record<string, number>} bars
+ * @param {Record<string, number>} against
+ * @returns {Array<{ key: string, label: string, diff: number }>}
+ */
+function advantagesOf(bars, against) {
+  return TEAM_ATTRIBUTES.map((attribute) => ({
+    key: attribute.key,
+    label: attribute.label,
+    diff:
+      Number(bars[attribute.key] || 0) - Number(against[attribute.key] || 0),
+  }))
+    .filter((row) => row.diff >= ADVANTAGE_MIN_DIFF)
+    .sort((a, b) => b.diff - a.diff);
+}
+
+/**
+ * Bir takimin eksikleri ve ona ONERILEN itemler.
+ *
+ * ONERI HAVUZU TAKIMIN KENDI PLANLARIYLA SINIRLI. "Rakipte buyu hasari var,
+ * Pipe al" demek tek basina bir ise yaramiyor — Pipe'i kim alacak? Takimda
+ * planinda Pipe olan kimse yoksa oneri havada kalir. Bu yuzden her oneri, o
+ * itemi planinda tasiyan hero'larla birlikte doner: planinda Mekansm olan biri
+ * varsa Mekansm onerilir, Pipe olan varsa Pipe, ikisi de varsa ikisi birden.
+ *
+ * @param {Record<string, number>} bars Bu takimin radar yuzdeleri
+ * @param {Array<Record<string, any>>} rows Bu takimin satirlari
+ * @param {Array<Record<string, any>>} against KARSI takimin satirlari
+ * @param {Record<string, Record<string, any>>} overrides hero -> duzenleme
+ * @returns {{
+ *   gaps: Array<{ key: string, label: string, score: number }>,
+ *   threats: ReturnType<typeof detectThreats>,
+ *   items: Array<Record<string, any>>
+ * }}
+ */
+function gapsAndItems(bars, rows, against, overrides) {
+  const gaps = TEAM_ATTRIBUTES.map((attribute) => ({
+    key: attribute.key,
+    label: attribute.label,
+    score: Number(bars[attribute.key] || 0),
+  }))
+    .filter((row) => row.score < WEAKNESS_MAX_SCORE)
+    .sort((a, b) => a.score - b.score);
+
+  const owned = new Set(
+    (rows || []).flatMap((row) => [...effectiveOwned(row)]),
+  );
+
+  // item -> onu planinda tasiyan hero'lar.
+  /** @type {Map<string, string[]>} */
+  const buyers = new Map();
+  for (const row of rows || []) {
+    const hero = normalizeHeroKey(row?.hero);
+    const record = recordOf(hero, overrides);
+    if (!record) {
+      continue;
+    }
+    const planned = [
+      ...(record.requiredItems || []),
+      ...(record.situationalItems || []),
+    ];
+    for (const rawKey of planned) {
+      const key = normalizeItemKey(rawKey);
+      if (!key) {
+        continue;
+      }
+      if (!buyers.has(key)) {
+        buyers.set(key, []);
+      }
+      if (!buyers.get(key).includes(hero)) {
+        buyers.get(key).push(hero);
+      }
+    }
+  }
+
+  /** @type {Map<string, Record<string, any>>} */
+  const items = new Map();
+
+  /**
+   * @param {string} rawKey
+   * @param {string} group
+   * @param {string} reason
+   */
+  const offer = (rawKey, group, reason) => {
+    const key = normalizeItemKey(rawKey);
+    if (!key || items.has(key) || owned.has(key) || isRetiredItem(key)) {
+      return;
+    }
+    const canBuy = buyers.get(key);
+    // Takimdan kimsenin planinda yoksa onerilmez.
+    if (!canBuy?.length) {
+      return;
+    }
+    items.set(key, {
+      key,
+      group,
+      name: itemDisplayName(key),
+      groupLabel: GROUP_LABELS[group] || group,
+      reason,
+      buyers: canBuy,
+      buyerNames: canBuy.map(heroDisplayName),
+    });
+  };
+
+  // 1. RAKIP KOMPOZISYONU — asil oneri kaynagi. Tehdit gorulmeden item
+  //    onermek, maca bakmadan konusmak olurdu.
+  const threats = detectThreats(against || []);
+  for (const threat of threats) {
+    const names = threat.heroes.map(heroDisplayName).join(", ");
+    for (const key of threat.items) {
+      offer(
+        key,
+        ITEM_GROUPS[key] || "situational",
+        threat.reason + ": " + names + ".",
+      );
+    }
+  }
+
+  // 2. KENDI EKSIGIMIZ — tehdit yoksa ya da tehdide cevap veren item kimsenin
+  //    planinda yoksa panel bos kalmasin.
+  for (const gap of gaps) {
+    for (const [rawKey, group] of WEAKNESS_ITEMS[gap.key] || []) {
+      offer(
+        rawKey,
+        group,
+        "Takımda " + gap.label.toLocaleLowerCase("tr") + " zayıf.",
+      );
+    }
+  }
+
+  return {
+    gaps: gaps.slice(0, 4),
+    threats,
+    items: [...items.values()].slice(0, 15),
+  };
 }
 
 /**
  * Iki takimin kompozisyon karsilastirmasi ve takim item onerileri.
+ *
+ * IKI TAKIM ICIN DE SIMETRIK uretilir. Eskiden yalnizca "biz" ve "onlar" vardi;
+ * ekranda Radiant ve Dire yan yana duruyor ve hangi tarafta oldugumuza gore
+ * sutunlarin yer degistirmesi tabloyu okunamaz hale getiriyordu.
  *
  * Tavsiye sayisi burada da veri zenginligine baglidir: rakip hero'lar
  * bilinmiyorsa karsilastirma yapilamaz ve yalnizca kendi eksigimiz soylenir.
@@ -387,16 +689,11 @@ function teamScores(rows) {
  * @param {Array<Record<string, any>>} input.allies
  * @param {Array<Record<string, any>>} input.enemies
  * @param {"self"|"heroes"|"full"} input.dataLevel
- * @returns {{
- *   comparable: boolean,
- *   scores: { ours: Record<string, number>, theirs: Record<string, number> },
- *   advantages: Array<{ key: string, label: string, diff: number }>,
- *   gaps: Array<{ key: string, label: string, score: number }>,
- *   recommendations: Array<{ key: string, name: string, reason: string }>,
- *   note: string
- * }}
+ * @param {"radiant"|"dire"} [input.myTeam]
+ * @param {Record<string, Record<string, any>>} [input.heroOverrides]
  */
 export function buildTeamAnalysis(input) {
+  const overrides = input?.heroOverrides || {};
   const allies = (input?.allies || []).filter((row) =>
     normalizeHeroKey(row?.hero),
   );
@@ -404,46 +701,18 @@ export function buildTeamAnalysis(input) {
     normalizeHeroKey(row?.hero),
   );
   const comparable = enemies.length > 0 && allies.length > 0;
+  const myTeam = input?.myTeam === "dire" ? "dire" : "radiant";
 
-  const ours = teamScores(allies);
-  const theirs = teamScores(enemies);
+  const ourBars = teamRoleBars(allies, overrides);
+  const theirBars = teamRoleBars(enemies, overrides);
 
-  const advantages = comparable
-    ? TEAM_ATTRIBUTES.map((attribute) => ({
-        key: attribute.key,
-        label: attribute.label,
-        diff: Number((ours[attribute.key] - theirs[attribute.key]).toFixed(2)),
-      }))
-        .filter((row) => row.diff >= ADVANTAGE_MIN_DIFF)
-        .sort((a, b) => b.diff - a.diff)
-        .slice(0, 3)
-    : [];
+  // Her tarafin ONERISI KARSI tarafin kompozisyonundan turer: "biz ne alalim"
+  // sorusunun cevabi onlarda ne oldugu.
+  const ourSide = gapsAndItems(ourBars, allies, enemies, overrides);
+  const theirSide = gapsAndItems(theirBars, enemies, allies, overrides);
 
-  const gaps = TEAM_ATTRIBUTES.map((attribute) => ({
-    key: attribute.key,
-    label: attribute.label,
-    score: ours[attribute.key],
-  }))
-    .filter((row) => row.score > 0 && row.score < WEAKNESS_MAX_SCORE)
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 3);
-
-  // Takim onerisi eksiklerden turer; ayni item iki kez girmez.
-  /** @type {Map<string, { key: string, reason: string }>} */
-  const recommendations = new Map();
-  const allyOwned = new Set(allies.flatMap((row) => ownedItems(row)));
-  for (const gap of gaps) {
-    for (const key of WEAKNESS_ITEMS[gap.key] || []) {
-      const normalized = normalizeItemKey(key);
-      if (recommendations.has(normalized) || allyOwned.has(normalized)) {
-        continue;
-      }
-      recommendations.set(normalized, {
-        key: normalized,
-        reason: `Takımda ${gap.label} zayıf.`,
-      });
-    }
-  }
+  const advantages = comparable ? advantagesOf(ourBars, theirBars) : [];
+  const theirAdvantages = comparable ? advantagesOf(theirBars, ourBars) : [];
 
   const note = !allies.length
     ? "Hero verisi gelmedi; analiz yapılamıyor."
@@ -453,14 +722,40 @@ export function buildTeamAnalysis(input) {
         ? "Rakip envanteri de görünüyor; öneriler tam veriyle üretildi."
         : "Rakip hero'lar biliniyor, envanterleri bilinmiyor.";
 
+  /** Taraf adiyla eslestirilmis paket; ekran dogrudan bunu ciziyor. */
+  const sides = {
+    [myTeam]: {
+      bars: ourBars,
+      advantages,
+      gaps: ourSide.gaps,
+      // Bu tarafa ONERI URETEN tehditler (yani karsi tarafin tasidiklari).
+      threats: ourSide.threats,
+      items: ourSide.items,
+    },
+    [myTeam === "radiant" ? "dire" : "radiant"]: {
+      bars: theirBars,
+      advantages: theirAdvantages,
+      gaps: theirSide.gaps,
+      threats: theirSide.threats,
+      items: theirSide.items,
+    },
+  };
+
   return {
     comparable,
-    scores: { ours, theirs },
+    myTeam,
+    radarAxes: RADAR_AXES.map((key) => ({
+      key,
+      label: ROLE_VALUE_LABELS[key] || key,
+    })),
+    tableRows: TEAM_ATTRIBUTES,
+    radiant: sides.radiant,
+    dire: sides.dire,
+    // Eski sozlesme korunur: "biz/onlar" bakisini kullanan cagirilar var.
+    scores: { ours: ourBars, theirs: theirBars },
     advantages,
-    gaps,
-    recommendations: [...recommendations.values()]
-      .slice(0, 5)
-      .map((row) => ({ ...row, name: itemDisplayName(row.key) })),
+    gaps: ourSide.gaps,
+    recommendations: ourSide.items.slice(0, 5),
     note,
   };
 }
@@ -475,13 +770,8 @@ export function buildTeamAnalysis(input) {
  * @param {Array<Record<string, any>>} input.radiantPlayers
  * @param {Array<Record<string, any>>} input.direPlayers
  * @param {"radiant"|"dire"} input.myTeam
- * @param {Record<string, { add?: string[], remove?: string[] }>} [input.overrides] hero -> duzenleme
- * @returns {{
- *   dataLevel: "self"|"heroes"|"full",
- *   radiantPlayers: Array<Record<string, any>>,
- *   direPlayers: Array<Record<string, any>>,
- *   teamAnalysis: ReturnType<typeof buildTeamAnalysis>
- * }}
+ * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero -> duzenleme
+ * @param {Record<string, { add?: string[], remove?: string[] }>} [input.overrides] Eski sekil
  */
 export function buildLiveItemAdvice(input = {}) {
   const radiant = Array.isArray(input.radiantPlayers)
@@ -489,7 +779,8 @@ export function buildLiveItemAdvice(input = {}) {
     : [];
   const dire = Array.isArray(input.direPlayers) ? input.direPlayers : [];
   const myTeam = input.myTeam === "dire" ? "dire" : "radiant";
-  const overrides = input.overrides || {};
+  const heroOverrides = input.heroOverrides || {};
+  const legacy = input.overrides || {};
 
   const allies = myTeam === "radiant" ? radiant : dire;
   const enemies = myTeam === "radiant" ? dire : radiant;
@@ -509,7 +800,8 @@ export function buildLiveItemAdvice(input = {}) {
         allies: rows,
         enemies: against,
         dataLevel,
-        override: overrides[normalizeHeroKey(row?.hero)] || null,
+        heroOverrides,
+        override: legacy[normalizeHeroKey(row?.hero)] || null,
         teamTaken,
       });
       for (const card of advice) {
@@ -530,8 +822,22 @@ export function buildLiveItemAdvice(input = {}) {
     dataLevel,
     radiantPlayers: radiantDecorated,
     direPlayers: direDecorated,
-    teamAnalysis: buildTeamAnalysis({ allies, enemies, dataLevel }),
+    teamAnalysis: buildTeamAnalysis({
+      allies,
+      enemies,
+      dataLevel,
+      myTeam,
+      heroOverrides,
+    }),
   };
 }
 
-export { ADVICE_QUOTA, TEAM_ATTRIBUTES, GROUP_LABELS };
+export {
+  ADVICE_QUOTA,
+  GROUP_LABELS,
+  RADAR_AXES,
+  TEAM_ATTRIBUTES,
+  WEAKNESS_ITEMS,
+  isRetiredItem,
+  normalizeItemKey,
+};

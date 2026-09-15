@@ -1,12 +1,13 @@
 /**
  * Kalici depolama katmani (Netlify Blobs).
  *
- * Alti kova kullanilir:
+ * Yedi kova kullanilir:
  *   - `players`     : OpenDota mac onbellegi (oyuncu basina, TTL'li)
  *   - `live`        : masaustu istemcisinin gonderdigi canli mac durumu
  *   - `presence`    : online kullanicilar (heartbeat)
  *   - `match-roles` : oyuncunun elle sectigi pozisyonlar
- *   - `item-plans`  : oyuncunun elle duzenledigi item tavsiyeleri
+ *   - `item-plans`  : ESKI hero tavsiye duzenlemesi (yalnizca okunur)
+ *   - `hero-plans`  : hero basina tavsiye ve analiz duzenlemesi
  *   - `mmr`         : masaustunden gelen MMR okumalari
  *
  * YERELDE NEDEN AYRI BIR KOPYA VAR
@@ -296,6 +297,15 @@ export const matchRoleStore = () => createStore("dotastat-match-roles");
  * bu da kullanicinin kendi beyanidir ve eskimez.
  */
 export const itemPlanStore = () => createStore("dotastat-item-plans");
+/**
+ * Hero basina duzenlenmis tavsiye kaydi ("Tavsiyeleri yonet" ekrani).
+ *
+ * Anahtar: `heroes:<accountId>`. `item-plans` kovasinin yerini alir; o kova
+ * yalnizca ekle/cikar listesi tutuyordu, bu kayit ise radar degerleri ve
+ * counter listelerini de tasiyor. Eski kova SILINMEDI: kaydi olan kullanicilar
+ * icin ilk okumada buraya tasiniyor (bkz. _lib/hero-plans.mjs).
+ */
+export const heroPlanStore = () => createStore("dotastat-hero-plans");
 /**
  * Masaustu uygulamasinin ilettigi MMR okumalari.
  *

@@ -196,3 +196,16 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/*
+  "Tavsiyeleri yonet" dugmesi markanin yaninda durur: duzenledigi kayit tek bir
+  maca ya da tek bir oyuncuya degil, tum hero katalogona ait. Bir bolumun icine
+  konsaydi o bolume aitmis gibi okunurdu.
+*/
+.hero-manager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  white-space: nowrap;
+}

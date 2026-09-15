@@ -13,11 +13,31 @@ canlı maç ve draft asistanı da aynı sayfada görünür.
 
 | Ekran | İçerik |
 | --- | --- |
-| **Oyuncu Değerlendirme** | Kadrodaki her oyuncu için kart: rank madalyası, tahmini seviye, form şeridi, en çok oynanan hero'lar. Karta tıklayınca sekmeli detay (genel, performans, hero havuzu, son maçlar, sinerji). |
-| **Canlı Maç** | GSI'dan gelen skor, süre, iki takımın oyuncuları. Her satırda **envanter** ve **item tavsiyesi**. Kadrodaki oyuncular vurgulanır. Arkadaşlardan birinde Overwolf varsa rakip pickler de gelir. |
-| **Takım Analizi** | Canlı maçın altında: iki kompozisyonun karşılaştırması (üstünlükler, eksikler) ve eksiklerden türeyen takım item önerileri. |
+| **Oyuncu Değerlendirme** | Kadrodaki her oyuncu için kart: rank madalyası, dönem puanı, G/M, MMR değişimi, Performance Rank, maç sayısı, form şeridi ve en çok oynanan 8 hero. **Hafta / Ay / Son 60** seçimine göre hesaplanır (hero şeridi dahil), kartlar **puana göre sıralı**. Karta tıklayınca sekmeli detay (genel, performans, hero havuzu, son maçlar, sinerji). |
+| **Canlı Maç** | GSI'dan gelen skor, süre, iki takımın oyuncuları. Her oyuncu **tek satır**: kimlik/hero, KDA ve LH/DN, envanter, item tavsiyesi. Kadrodaki oyuncular vurgulanır. Arkadaşlardan birinde Overwolf varsa rakip pickler de gelir. |
+| **Takım Analizi** | Canlı maçın üstünde iki panel: altı eksenli **radar** + sekiz satırlık R/D yüzde tablosu, ve her iki taraf için avantaj listesi + Core/Support/Duruma Göre item önerileri. |
+| **Tavsiyeleri yönet** | Üst bardaki tek düğme. Hero kataloğunu açar: pozisyona göre gruplanmış hero'lar, arama kutusu, hero'ya tıklayınca açılan düzenleme ekranı. |
 | **Draft Asistanı** | Canlı maçın altında. Pick başlamadan tanınan oyuncuların havuzuna göre, pick sürerken kendi + rakip seçimlere göre öneri verir. **Pickler bitince tamamen gizlenir.** |
 | **Debug Panel** | Sayfanın altında **kapalı akordeon**; tıklanınca açılır ve o anda veri çeker. |
+
+### Envanter satırı
+
+Envanter oyundaki kutu yerleşimini taklit eder; ekrana bakan kişi aynı anda
+oyuna da bakıyor ve iki görüntünün örtüşmesi taramayı hızlandırıyor:
+
+```
+[agh]   [ 1 2 3 ]   [neutral]
+[shard] [ 4 5 6 ]   [n. etki]
+        [ b b b ]   [  tp   ]
+```
+
+Aghanim's Scepter ve Shard **solda ayrı** durur: ikisi de envanterde tutulmaz,
+alındığında hero'ya işlenir (GSI bunu ayrı bir bayrak olarak veriyor). Bu
+yüzden scepter'ini kullanmış bir oyuncuya bir daha scepter önerilmez. Kutular
+yokken de çizilir, sadece soluklaşır — yokluğu da bilgidir.
+
+Sağdaki üç yuvarlak kutu neutral item, neutral etkisi ve TP; üçü de ana
+envanterden ayrı slotlardır.
 
 ### Item tavsiyesi ne kadar konuşur
 
@@ -30,10 +50,100 @@ konuşmak, hiç konuşmamaktan kötüdür.
 | 10 hero biliniyor (Overwolf / izleme) | Rakip hero'lara karşı item'lar açılır, 4 öneri |
 | Rakip envanteri de görünüyor | Item-counter kuralları açılır, 6 öneri |
 
-**Tavsiyeleri yönet** butonu bir hero için "her zaman öner" / "hiç önerme"
-listeleri tutar ve otomatik öneriyi ezer. Buton yalnızca **Steam ile giriş
-yapmış** kullanıcıya görünür; kayıt anahtarı sunucuda oturum çerezinden alınır,
-tıpkı son maçlardaki pozisyon seçiminde olduğu gibi.
+### Öneri hero'nun kendi listesinden çıkar
+
+Bir oyuncu satırındaki öneriler **yalnızca o hero'nun** "Gerekli itemler" ve
+"Durumsal itemler" listelerinden gelir. Rakip listeye item **eklemez**,
+listedekileri **sıralar**.
+
+Eskiden rakip hero'ların counter listesi de havuza giriyordu ve ekranda
+hero'nun planında hiç olmayan item'lar beliriyordu — Dawnbreaker'a Linken's
+Sphere, Eul's, Force Staff öneriliyordu çünkü rakip Anti-Mage'in counter
+listesinde vardılar. Bu, düzenleme ekranını anlamsız kılıyordu: yazdığın liste
+ile gördüğün öneri aynı şey değildi.
+
+Şimdi rakip şöyle etkiliyor: hero'nun listesinde **zaten bulunan** bir item
+rakip kompozisyonuna cevap veriyorsa başa geçer ve gerekçesi değişir —
+"Hero'nun duruma göre item planında" yerine "Rakip büyü hasarı basıyor: Zeus,
+Lina". Listede yoksa hiçbir şey uydurulmaz.
+
+### Rakip kompozisyonundaki tehditler
+
+Takım önerileri rakip kadroda ne olduğundan türer (bkz. `live/threats.js`):
+
+| Rakipte | Önerilen |
+| --- | --- |
+| **Görünmez** (Riki, Weaver, Mirana, Bounty Hunter…) | Essence Distiller |
+| **Can yenileyen** (Necrophos, Alchemist, Huskar, Io…) | Spirit Vessel |
+| **Kaçan** (Puck, Storm, Ember, Anti-Mage, Void…) | Orchid / Bloodthorn / Scythe of Vyse |
+| **Büyü hasarı** (Zeus, Leshrac, Skywrath, Snapfire, Veno…) | Pipe / BKB / Mekansm / Guardian Greaves |
+| **Tek hedefli ulti** (Legion, Pudge, Anti-Mage, Lina, Spirit Breaker…) | Linken's Sphere / Aeon Disk |
+| **Pasifi güçlü** (Bristleback, PA, Dragon Knight…) | Silver Edge / Khanda |
+
+**Önerilen item, takımdan birinin planında olmak zorunda.** "Rakipte büyü hasarı
+var, Pipe al" demek tek başına bir işe yaramıyor — Pipe'ı kim alacak? Takımda
+planında Pipe olan kimse yoksa öneri havada kalır. Bu yüzden her öneri **onu
+alabilecek hero'larla birlikte** gösterilir: planında Mekansm olan biri varsa
+Mekansm önerilir, Pipe olan varsa Pipe, ikisi de varsa ikisi birden.
+
+Tehdit listeleri **elle tutulur**. Önce Valve'in yetenek verisinden türetmeyi
+denedim (`behavior` bitmaskesi, hasar türü, açıklama metni); sonuç
+kullanılamazdı — "pasif yeteneği var" 127 hero'nun 119'unu, "hedefli büyüsü
+var" 91'ini işaretliyordu. Buradaki soru "teknik olarak pasifi var mı" değil,
+"bu hero yüzünden Silver Edge alınır mı"; o yargı veride yok.
+
+Öneriler **kaldırılmış item'ları hiç içermez**. Necronomicon (7.29), Ring of
+Aquila, Poor Man's Shield gibi item'lar OpenDota tablosunda ve Valve'in item
+listesinde hâlâ duruyor (eski maçlar okunabilsin diye), ama oyunda yoklar;
+listede görünmeleri var oldukları anlamına gelmiyor. Bunlardan birini önermek,
+kullanıcıyı dükkânda bulamayacağı bir item için altın biriktirmeye iter ve
+listenin tamamına olan güveni götürür (bkz. `live/item-keys.js`).
+
+### Tavsiyeleri yönet
+
+Üst barda, "DotaStat" yazısının yanında **tek bir düğme** var. Açılan pencerede
+tüm hero'lar pozisyona göre gruplanmış halde durur; arama kutusu listeyi
+filtreler, bir hero'ya tıklayınca düzenleme ekranı açılır:
+
+| Alan | Ne işe yarar |
+| --- | --- |
+| **Pozisyonlar** | Hero'nun listedeki grubu |
+| **Roller** | Sekiz eksen (0-100). **Takım radarını besleyen sayılar bunlar.** |
+| **Counter hero'lar** | Bu hero'yu zorlayan hero'lar |
+| **Counter item'ler** | Bu hero'ya *karşı* alınanlar — rakip takıma önerilir |
+| **Gerekli item'ler** | Çekirdek plan; öneri listesinin başında gelir |
+| **Durumsal item'ler** | Plan dolmadığında tamamlayanlar |
+| **Hiç önerme** | Bu hero'da asla önerilmesin |
+
+Kaydedilen liste tohum verinin **yerine** geçer; "Sıfırla" kaydı siler ve hero
+varsayılana döner. Düzenlenen hero listede yeşil çerçeveyle işaretlenir.
+
+**Düğme yalnızca kadrodaki oyunculara görünür.** Katalog arkadaş grubunun ortak
+oyun bilgisi — kimin hangi hero'da ne aldığı, neye karşı ne alındığı; gruba ait
+olmayan bir ziyaretçinin orada düzenleyeceği bir şey yok. Steam ile giriş
+yapılmış olması tek başına yetmez, hesabın `players.seed.js` içindeki kadroda
+bulunması gerekir. Sunucu aynı şartı bağımsız olarak uygular (401 oturum yok,
+403 kadroda değil): düğmenin gizli olması ucun korunması demek değil.
+
+**Katalog ortaktır: tek bir kayıt, site ve masaüstü için aynı.** "Bu hero'da
+bu item alınır" bilgisi kişiye özel değil, grubun ortak bilgisidir; bu yüzden
+kadrodaki herkes aynı kaydı okur ve yazar. Masaüstü uygulaması kendi kopyasını
+tutmaz, kataloğu siteden okur — böylece oyun sırasında masaüstünde yapılan bir
+düzenleme sitede de, herkesin canlı maç tavsiyesinde de görünür. Site
+erişilemezse son okunan katalog **yerel aynadan** kullanılır (tavsiye
+çevrimdışı da doğru çalışır); o sırada yapılan düzenleme yalnızca o
+bilgisayarda kalır ve yanıt bunu `synced: false` ile bildirir.
+
+Yazma yetkisi her zaman oturumdan doğrulanır; masaüstünde Steam OpenID akışı
+yoktur — kimlik ayarlardaki SteamID'dir ve aynı kadro şartına tabidir.
+Kişiye özel eski kayıtlar silinmedi: ortak kayıt ilk kez okunduğunda hepsi
+birleştirilip ortak kataloğa taşınır.
+
+> Eskiden bu düğme **her canlı maç satırında ayrı ayrı** duruyordu. Düzenleme
+> oyuncunun değil hero'nun kaydına yazıldığı için bu yanlış bir şey vaat
+> ediyordu; üstelik bir hero'yu düzenlemek için onun o an bir maçta olması
+> gerekiyordu. Eski `{ add, remove }` kayıtları kaybolmadı: ortak kataloğa
+> taşınıyor.
 
 Bu projede **ekran yakalama ve OCR yoktur**; oyuna, belleğe ya da başka bir
 sürece de dokunulmaz. Canlı veri Dota'nın resmî Game State Integration
@@ -44,29 +154,31 @@ yoksa bu okuma hiç çalışmaz, uygulamanın geri kalanı etkilenmez.
 
 ### Ekran düzeni
 
-Dört bölüm de **katlanabilir**. Varsayılan durum:
+Bölümler **katlanabilir**. Sitedeki varsayılan durum:
 
 | Bölüm | Varsayılan |
 | --- | --- |
-| Haftanın Kazananı / Kaybedeni | açık |
 | Oyuncu Değerlendirme | açık |
 | Canlı Maç | kapalı |
 | Debug Panel | kapalı |
 
-**Sıralama kuruluma göre değişir.** Masaüstü uygulaması oyunun yanında, oyun
-sırasında açık durur; oraya bakmanın sebebi neredeyse her zaman o anki maçtır:
+**İçerik kuruluma göre değişir.** Masaüstü uygulaması oyunun yanında, oyun
+sırasında açık durur; oraya bakmanın sebebi her zaman o anki maçtır. Bu yüzden
+masaüstünde **yalnızca Canlı Maç vardır** — Oyuncu Değerlendirme ekranı orada
+hiç kurulmaz. Aynı veri sitede, daha geniş bir ekranda zaten duruyor;
+masaüstünün işi maçı göstermek ve GSI verisini siteye göndermek:
 
 ```
-Masaüstü : Canlı Maç → Haftanın Kazananı → Oyuncu Değerlendirme → Debug
-Site     : Haftanın Kazananı → Oyuncu Değerlendirme → Canlı Maç → Debug
+Masaüstü : Canlı Maç (+ Debug)
+Site     : Oyuncu Değerlendirme → Canlı Maç → Debug
 ```
 
 Site çoğunlukla maç dışında açılıyor (kim nasıl gidiyor diye bakmak için), o
-yüzden orada üst sırayı haftalık tablo ve oyuncu kartları alır. Zaten maç
-başladığında Canlı Maç kendiliğinden açılıp üstündeki iki bölüm katlanıyor.
+yüzden orada üst sırayı oyuncu kartları alır. Zaten maç başladığında Canlı Maç
+kendiliğinden açılıp üstündeki bölüm katlanıyor.
 
 **Canlı maç başladığında düzen kendiliğinden değişir:** Canlı Maç açılır,
-diğer ikisi katlanır — maç sürerken ekranda maç olsun diye. Maç bitince eski
+diğeri katlanır — maç sürerken ekranda maç olsun diye. Maç bitince eski
 düzene dönülür. Aradaki her an istediğin bölümü elle açabilirsin; otomatik
 değişiklik yalnızca maç *başlarken* ve *biterken* olur, her yoklamada değil,
 yoksa senin açtığın bölüm sürekli kapanırdı.
@@ -78,15 +190,17 @@ dotastat/
 ├── packages/
 │   ├── core/        @dotastat/core — saf iş mantığı (bağımlılıksız ES modülü)
 │   │   └── src/
-│   │       ├── data/       hero/oyuncu tohum verileri
-│   │       ├── heroes/     hero adı normalizasyonu, görsel adresleri
+│   │       ├── data/       hero/oyuncu tohum verileri (hero-overrides üretilmiş)
+│   │       ├── heroes/     hero adı normalizasyonu, görsel adresleri, tavsiye kataloğu
 │   │       ├── players/    değerlendirme motorları, roster, veri servisi
 │   │       ├── providers/  OpenDota istemcisi
 │   │       ├── draft/      draft analizi + asistan
+│   │       ├── live/       item tavsiyesi, takım analizi, item anahtarları
 │   │       └── gsi/        GSI normalizasyonu + canlı maç bağlamı
 │   ├── web/         React + Vite arayüz (Netlify'da yayınlanır)
 │   └── desktop/     Electron uygulaması + yerel sunucu (port 3044)
 ├── netlify/functions/   Sunucusuz API (Steam girişi, oyuncular, canlı maç…)
+├── scripts/             Veri üreticileri (hero tavsiye kataloğu)
 └── .github/workflows/   CI + kurulum dosyası yayını
 ```
 
@@ -148,6 +262,38 @@ npm run desktop:serve
 
 > Port **3044**'tür (`dotabaff` projesindeki 3000 ile çakışmaz). GSI
 > yapılandırması da bu portu kullanır.
+
+### Canlı maç panelini Dota açmadan denemek
+
+Canlı maç paneli yalnızca GSI verisi geldiğinde dolar. Envanter yerleşimini,
+item tavsiyesini ya da takım analizini gözle görmek için normalde oyuna girmek
+gerekir. `scripts/fake-live-match.mjs` masaüstü uygulamasının göndereceği
+şeklin **aynısını** `/api/live` ucuna yollar; sunucu gerçek bir maçtan ayırt
+etmez.
+
+```bash
+npm run dev:cloud              # 1. terminal — sunucu 8888'de
+npm run dev:fake-match         # 2. terminal — tek maç gönder
+npm run dev:fake-match:watch   # ya da: 10 sn'de bir tazele, skor ilerlesin
+```
+
+Sonra tarayıcıda **http://lvh.me:8888** — Canlı Maç bölümü kendiliğinden
+açılır. Tek seferlik gönderim 3 dakika sonra bayatlar ve panel "canlı maç
+yok"a döner; açık kalması için `--watch` kullan.
+
+| Bayrak | Ne gösterir |
+| --- | --- |
+| *(yok)* | On oyuncu, dolu envanterler, tavsiye seviyesi `full` (6 öneri) |
+| `--empty` | Envanterler boş — maç başı görünümü |
+| `--enemy-hidden` | Rakip satırlarında envanter alanı **hiç yok** (Overwolf'suz kurulum). Tavsiye seviyesi `heroes`a düşer, 4 öneriye iner ve rakip satırlarında boş kutu yerine "envanter görünmüyor" yazar. |
+| `--url <adres>` | Varsayılan `http://localhost:8888` |
+
+Yetki `.env` içindeki `LIVE_INGEST_TOKEN` ile alınır — tarayıcı oturumu
+gerekmez.
+
+> **Tavsiyeleri yönet** penceresi giriş yapmadan da açılır ama **salt okunur**
+> kalır; kaydetmeyi denemek için `lvh.me:8888` üzerinden Steam ile giriş yap
+> (yukarıdaki nota bak — `localhost` realm'ini Steam reddediyor).
 
 ## Canlı yayına alma
 
@@ -408,10 +554,28 @@ OpenDota'ya giden istek sayısı değişmez.
 
 ### Ne zaman veri çekilir
 
-Dış kaynağa **yalnızca iki durumda** gidilir:
+Dış kaynağa **yalnızca üç durumda** gidilir:
 
 1. Oyuncunun elde hiç verisi yok (ilk açılış)
 2. Kullanıcı **"Yenile"** butonuna bastı
+3. **Canlı maç bitti** — yeni maç tam o anda oluşur, değerlendirme ekranı bir
+   kez tazeler (5 dakikalık ortak bekleme burada da geçerli, yani aynı anda
+   bakan herkes ayrı ayrı istek atmaz)
+
+### Tazeleme veri silemez
+
+Gelen liste, duran listenin **üzerine yazılmaz — birleştirilir** (`matchId`
+üzerinden birleşim; aynı maç için yeni satır kazanır, çünkü parse edilmiş maç
+daha fazla alan taşır).
+
+Sebebi: hiçbir kaynak "şu ana kadarki bütün maçlar" garantisi vermiyor.
+OpenDota maçları kendi programına göre indeksliyor, Stratz'ta da liste anlık
+olarak eksik gelebiliyor. Üzerine yazan bir tazeleme, o an cevap veren kaynak
+ne verdiyse onu doğru kabul ediyordu; sonuç şuydu: kullanıcı son maçı görmek
+için "Yenile"ye basıyor, maç yine gelmiyor **ve üstelik son bir iki günün
+maçları ekrandan kayboluyordu**. Maç geçmişi yalnızca büyür — oynanmış bir maç
+sonradan yok olmaz — bu yüzden birleşim alınır. En kötü ihtimalle tazeleme yeni
+bir şey getirmemiş olur (bkz. `mergeMatchHistory`, `test/stale-preservation.test.js`).
 
 Verinin eskimiş olması tek başına yeniden çekme sebebi **değildir** — eski veri
 olduğu gibi gösterilir, kartın üzerinde "güncellendi: 2 gün önce" yazar.
@@ -428,6 +592,15 @@ bekleyişi yok sayar.
 
 Canlı maç paneli (`/api/live`) ve online listesi (`/api/presence`) pollamaya
 devam eder — onlar GSI/presence deposundan okur, OpenDota'ya gitmez.
+
+Kart listesi de dakikada bir yoklanır ama o istek **`refresh` taşımaz**:
+yalnızca paylaşılan önbelleği okur. Sebebi: önbellek ortak olduğu için biri
+"Yenile"ye bastığında ya da maç bitince veri güncellenir, ve o yeni halin
+diğerlerinin ekranına düşmesi için sayfayı yenilemeleri gerekiyordu. Yoklama
+bunu ortadan kaldırır, OpenDota limitinden ise hiçbir şey harcamaz. Aynı
+şekilde bir oyuncunun detayında "Yenile"ye basılınca kart listesi de anında
+tazelenir — aynı veriyi besleyen iki ekranın farklı şeyler göstermesi
+kafa karıştırıyordu.
 
 ## Ward / vision verisi hakkında
 
@@ -486,30 +659,92 @@ Ayrıntılar [hero-pool.js](packages/core/src/players/hero-pool.js) içinde:
 - Sıralamadaki eşitlikler `draft.comboWithHeroes` verisiyle bozulur: adayın
   oyuncunun kendi havuzuyla combo yapıp yapmadığına bakılır.
 
-## Haftanın Kazananı / Kaybedeni
+## Dönem puanı (Hafta / Ay / Son 60)
 
-Sayfanın en üstündeki bölüm son **7 günü** özetler: birinci yeşil, sonuncu
-kırmızı çerçeveli kartla gösterilir, altında kadronun tamamı sırayla listelenir.
+Oyuncu Değerlendirme başlığının yanındaki **Hafta / Ay / Son 60** düğmeleri
+kartların neyi anlattığını belirler. Seçilen pencerede her kart şunları
+gösterir:
 
-Sıralama **Weekly Score** ile yapılır ve tek bir ölçüte dayanmaz:
+| Alan | Ne |
+| --- | --- |
+| **Puan** (sağ üst) | Dönem puanı, 50 nötr |
+| **G / M** | Galibiyet / mağlubiyet ve yüzdesi |
+| **MMR** | Dönemdeki değişim; ölçülemiyorsa `~` ile işaretli |
+| **Perf. Rank** | Dönemin ortalaması (gerçek MMR değil) + önceki döneme göre değişim |
+| **Maç** | Oynanan maç sayısı |
+| **Hero şeridi** | Dönemde en çok oynanan 8 hero (ikonun üzerinde maç, kazanma oranı, KDA) |
+
+**Hero şeridi de dönemden türer.** "Bu hafta ne oynadı" ile "hep ne oynar"
+farklı sorular; kartın geri kalanı zaten dönemi anlatırken şerit genel kalsaydı
+kart kendi içinde çelişirdi (hafta sekmesinde 2 maç yazarken şerit aylardır
+oynanan hero'ları gösteriyordu).
+
+**"Son 60" bir takvim penceresi değildir:** elde ne kadar maç varsa onun
+tamamı. Önbellek oyuncu başına son **60 maçı** tuttuğu için pencere pratikte
+budur ve etiket bunu açıkça yazar — "Genel" diyordu ama gösterdiği şey
+oyuncunun tüm kariyeri değil, elde duran penceredir. Bu yüzden başlıkta "son N
+gün" de yazmaz. Etiketteki sayı `MATCH_FETCH_SIZE` ile aynı kalmak zorunda;
+bir test ikisini karşılaştırıyor.
+
+**Kartlar puana göre sıralıdır** — "kim iyi gidiyor" sorusu listenin sırasından
+okunur. Dönemde hiç maçı olmayan oyuncu sıralamaya girmez, adıyla en sona
+alınır; puanı 0 olduğu için sıralansaydı hepsi en dibe yığılır ve "çok kötü
+gidiyor" gibi okunurdu, oysa söylediği şey yalnızca "bu dönemde oynamadı".
+
+> Eskiden bu sayılar ayrı bir **"Haftanın Kazananı / Kaybedeni"** bölümündeydi.
+> Aynı bilgiyi iki ayrı düzende göstermek yerine kartların kendisi taşıyor; o
+> bölüm ve `/api/weekly` ucu kaldırıldı.
+
+### Puan nasıl hesaplanır
+
+Tek bir ölçüte dayanmaz:
 
 | Ölçüt | Ağırlık | Not |
 | --- | --- | --- |
 | Gerçek MMR değişimi | 34 | Ölçülemeyen maçlar maç başına ±25 sayılır |
 | Galibiyet/mağlubiyet dengesi | 26 | Küçük örnekte ortalamaya çekilir (shrinkage) |
-| Performance Rank değişimi | 20 | Bu haftanın ortalaması vs. önceki 21 gün |
+| Performance Rank değişimi | 20 | Dönemin ortalaması vs. önceki 3 dönem |
 | Oynanan maç sayısı | 12 | Doğrudan bonus/ceza |
 
-**Maç sayısı aynı zamanda çarpandır.** Başarı kısmı `maç / (maç + 4)` ile
-ağırlıklandırılır: 1 maçta 0,20 — 10 maçta 0,71. Bu yüzden bir maç oynayıp
-kazanan biri haftanın birincisi olamaz; istenen davranış budur.
+**Maç sayısı aynı zamanda çarpandır.** Başarı kısmı `maç / (maç + önsel)` ile
+ağırlıklandırılır (haftada önsel 4): 1 maçta 0,20 — 10 maçta 0,71. Bu yüzden
+bir maç oynayıp kazanan biri haftanın birincisi olamaz; istenen davranış budur.
 
-Bu hafta hiç maçı olmayan oyuncu sıralamaya girmez, listenin sonunda ayrıca
-gösterilir. Bölüm **hiçbir zaman kendi başına dış kaynağa gitmez**; yalnızca
-önbellekteki maç verisini okur, tazeleme kararı "Yenile" butonundadır.
+**"Son 60"ta ölçek takvimden değil MAÇ SAYISINDAN kurulur.** Sonsuz pencerede
+takvim çarpanı kullanılsaydı eşikler de sonsuza giderdi: güven 0'a düşer,
+herkes aynı nötr puanı alırdı. Onun yerine bu sekme oranlara bakar — güven doğrudan
+maç sayısından gelir, MMR eşiği "maç başına 25" üzerinden kurulur ve **hacim
+bonusu yoktur** (tüm zamanlarda çok oynamış olmak bir dönem performansı değil,
+kıdemdir). Performance Rank değişimi de hesaplanmaz: pencere zaten elde duran
+her şeyi kapsadığı için kıyaslanacak "önceki dönem" yoktur; kart orada değişim
+yerine ortalamanın neyin ortalaması olduğunu ("son 60 maç") yazar.
+
+**Eşikler dönemle birlikte büyür.** MMR ölçeği, hacim tavanı ve güven önseli
+haftaya göre kalibre edildi; ay sekmesinde 30/7 katına çıkarılır. Yapılmasaydı
+tablo anlamsızlaşırdı: 12 maçlık hacim tavanı bir ayda herkesçe aşılır ve tam
+ortalama oynayan biri bile "çok oynadı" diye yukarı çıkardı. Performance Rank
+ölçeği **ölçeklenmez** — o bir ortalama, toplam değil.
+
+### Çerçeve rengi
+
+Kartın sol şeridi ve çerçevesi dönemin nasıl geçtiğini söyler: yeşil iyi,
+kırmızı kötü, renksiz ortalama.
+
+Renk **puana değil, başarı kısmına** bakar — yani G/M dengesi, MMR değişimi ve
+Performance Rank değişimine. Oynanan maç sayısı renge karışmaz: bir ayda 30/30
+oynayan biri tam olarak ortalamadır, ama hacim bonusu tek başına onu yukarı
+taşıyıp kartını yeşil yapıyordu.
+
+Renk tek başına taşıyıcı değildir; aynı bilgi sağ üstteki puan rozetinde
+sayıyla da durur.
 
 Hesap `packages/core/src/players/weekly-score.js` içindedir ve saftır (saat
-bile dışarıdan gelir), testleri `test/weekly-score.test.js`.
+bile dışarıdan gelir), testleri `test/weekly-score.test.js` ve
+`test/period-score.test.js`.
+
+Bölüm **hiçbir zaman kendi başına dış kaynağa gitmez**; yalnızca önbellekteki
+maç verisini okur. Hafta/Ay arasında gidip gelmek de günlük limitten harcamaz —
+aynı önbellek başka bir pencereyle özetlenir.
 
 ## Maç pozisyonu beyanı
 
@@ -528,6 +763,45 @@ gövdesinden gelen kimliğe güvenilmez. Kimse başkasının maçlarına rol yaz
 Beyan **okumaya herkese açıktır**: bir oyuncunun sayfasına kim bakarsa baksın
 değerlendirme aynı pozisyonlarla hesaplanır. Steam girişi yalnızca *yazma*
 yetkisini belirler — açılır seçici sadece kendi profilinde çıkar.
+
+## Hero tavsiye kataloğu (üretilmiş veri)
+
+`packages/core/src/data/hero-overrides.js` her hero için tek bir kayıt tutar:
+radar ekseni değerleri, pozisyonlar, counter hero/item listeleri ve
+gerekli/durumsal item planı. Hem canlı maç motoru hem "Tavsiyeleri yönet"
+ekranı **aynı** kaydı okur — iki taraf ayrı yerden okusaydı ekranda görünen
+liste ile motorun kullandığı liste birbirinden kayardı.
+
+Dosya **elle düzenlenmez**, üretilir:
+
+```bash
+node scripts/build-hero-overrides.mjs [dotabaff-dizini]
+```
+
+Kaynaklar, öncelik sırasıyla:
+
+| # | Kaynak | Ne verir |
+| --- | --- | --- |
+| 1 | dotabaff `hero-overrides.json` | roleValues, pozisyonlar, counter listeleri |
+| 1 | dotabaff `ti2026-pro-items.json` | TI 2026 ana etkinliğinden gerçek item kullanımı |
+| 2 | bu depodaki `hero-profiles.js` | mevcut kurgu (tags, counters, coreItems) |
+| 3 | OpenDota `heroes.json` rol etiketleri | yalnızca ilk ikisi de susuyorsa |
+| 4 | OpenDota `itemPopularity` | item planı zayıf kalan hero'lar için |
+
+**Neden gerekliydi:** `hero-profiles.js` 99 hero taşıyor, oyunda ise 127 var.
+Eksik 28 hero (Lina, Pudge, Shadow Fiend, Rubick, Templar Assassin…) canlı
+maçta hiç tavsiye almıyor ve takım analizinde **hiç sayılmıyordu** — yani radar
+beş kişilik bir takımı üç kişi üzerinden ölçüyordu.
+
+Üretici dışarıdaki bir projeye ve ağa bağlı, ama uygulamanın çalışması bağlı
+değil: çıktı dosyası depoya commit'lenir.
+
+> Üreticinin iki küçük ama önemli işi var. dotabaff'ta **hiç düzenlenmemiş** 13
+> hero'nun kaydı sabit bir "hepsi düşük" kalıbı taşıyor; bu "zayıf hero" değil
+> "veri yok" demek, olduğu gibi alınsaydı o hero'lar radarı aşağı çekerdi.
+> İkincisi, OpenDota'nın ham alım sayımı Kaya, Yasha ve Kaya and Sange'yi
+> üçünü birden içeriyor; aynı listede üst sürümü bulunan item'lar atılır, yoksa
+> altı yuvanın yarısı tek bir item'ın yolunu anlatırdı.
 
 ## Kadroyu düzenleme
 
@@ -677,7 +951,10 @@ Overwolf → MMR uygulaması → controller.html.log → DotaStat → maç liste
   1–3 dakika sonraya düşer; bu yüzden okumanın bitişten biraz önce gelmesine
   izin verilir (15 dk pay). Pay olmadan her değer bir önceki maça kayıyordu
   ve kayıp maçlar pozitif MMR alıyordu.
-- 3 saati aşan boşluklarda hangi maça ait olduğu bilinemez, hücre boş kalır
+- 3 saati aşan boşluklarda hangi maça ait olduğu bilinemez, hücre boş kalır.
+  **Sütunun kendisi her zaman durur**: kayıt yoksa hücrede "—" yazar. Eskiden
+  kayıt olmayınca sütun tamamen gizleniyordu ve tablo oyuncudan oyuncuya sütun
+  değiştiriyordu — "MMR nereye gitti" sorusu bundandı
 - **Maç bitince liste kendiliğinden tazelenir.** GSI bitişi bildirir, uygulama
   o maç kimliğiyle veri çeker. Kaynak maçı vermiyorsa sonrakine geçilir
   (ölçüldü: Stratz maçı dakikalar içinde verirken OpenDota'da 29 saat sonra

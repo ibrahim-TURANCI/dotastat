@@ -68,6 +68,8 @@
   border-radius: var(--radius);
   padding: 12px;
   background: rgba(255, 255, 255, 0.02);
+  /* Tablo kendi icinde kaysin; bolum genisligini zorlamasin. */
+  min-width: 0;
 }
 
 .team-column.radiant {
@@ -87,137 +89,189 @@
   gap: 8px;
 }
 
-.live-player-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.live-player {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid transparent;
-}
-
-.live-player.known {
-  border-color: rgba(46, 167, 255, 0.35);
-  background: var(--accent-soft);
-}
-
-.live-player-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.live-player-text strong {
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.live-player-stats {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
-}
-
 .draft-done-note {
   margin: 14px 0 0;
   padding-top: 12px;
   border-top: 1px dashed var(--line);
 }
 
-@media (max-width: 860px) {
-  .live-teams {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* --- Envanter ve tavsiye kolonlari -------------------------------------- */
+/* --- Oyuncu tablosu ------------------------------------------------------ */
 
 /*
-  Satir artik dort bolumden olusuyor (kimlik, KDA, envanter, tavsiye) ve iki
-  takim yan yana duruyor. Sabit genislik vermek yerine sarmasina izin veriliyor:
-  dar ekranda kolonlar alt alta gecip okunur kaliyor, genis ekranda tek satir.
+  Her oyuncu TEK SATIR: kimlik, KDA/LH-DN, envanter ve tavsiye yan yana.
+  Sutunlar sabit genislikte tutuluyor ki iki takim tablosu birbiriyle hizali
+  kalsin; satirdan satira kayan sutunlar on satirlik bir listede okunmuyor.
 */
-.live-player {
-  flex-wrap: wrap;
-  row-gap: 6px;
+.live-table-wrap {
+  overflow-x: auto;
 }
 
-.live-player-col {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  flex: 1 1 100%;
-  padding-top: 4px;
-  border-top: 1px dashed var(--line);
+.live-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
 }
 
-/* Kolonun ne oldugu her satirda yaziyor: baslik satiri yok, olmali da degil
-   (iki takim yan yana, basliklar tekrar ederdi). */
-.live-player-col::before {
-  content: attr(data-label);
+.live-table th {
+  padding: 0 6px 6px;
+  text-align: left;
   font-size: 10px;
+  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txt-2);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
 
+.live-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(148, 175, 212, 0.07);
+  vertical-align: middle;
+}
+
+.live-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Kadrodan taninan oyuncu satiri isaretlenir. */
+.live-table tbody tr.known td {
+  background: var(--accent-soft);
+}
+
+.live-table tbody tr.known td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.live-player-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.live-player-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.live-player-text strong {
+  font-size: 12px;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-player-text .micro {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* KDA ustte, LH/DN altinda — oyundaki okuma sirasiyla ayni. */
+.live-kda-cell {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+/* --- Envanter ------------------------------------------------------------ */
+
+/*
+  Oyundaki yerlesim: solda Aghanim kutulari, ortada 3x3 (6 item + 3 backpack),
+  sagda neutral / neutral etkisi / TP.
+*/
 .inv-layout {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
+}
+
+.inv-aghs {
+  display: grid;
+  grid-template-rows: repeat(2, 20px);
+  gap: 3px;
+}
+
+.inv-agh {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(148, 175, 212, 0.22);
+  border-radius: 4px;
+  background: rgba(5, 10, 19, 0.55);
+  overflow: hidden;
+  /* Yoklugu de bilgidir: kutu duruyor ama sonuk. */
+  opacity: 0.3;
+  filter: grayscale(1) saturate(0.3);
+}
+
+.inv-agh.active {
+  opacity: 1;
+  filter: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(125, 196, 255, 0.35);
+}
+
+.inv-agh img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.inv-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .inv-main {
   display: grid;
-  grid-template-columns: repeat(3, 24px);
-  gap: 2px;
-}
-
-.inv-side {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  grid-template-columns: repeat(3, 26px);
+  grid-template-rows: repeat(2, 20px);
+  gap: 3px;
 }
 
 .inv-backpack {
   display: grid;
-  grid-template-columns: repeat(3, 16px);
-  gap: 2px;
+  grid-template-columns: repeat(3, 26px);
+  gap: 3px;
+}
+
+.inv-side {
+  display: grid;
+  grid-template-rows: repeat(3, 20px);
+  gap: 3px;
 }
 
 .inv-slot {
-  width: 24px;
-  height: 18px;
-  border-radius: 3px;
+  width: 26px;
+  height: 20px;
+  border-radius: 4px;
   overflow: hidden;
-  background: rgba(148, 175, 212, 0.08);
+  background: rgba(5, 10, 19, 0.6);
   border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  color: var(--txt-2);
 }
 
+/* Backpack kutulari kucuk: ana envanterden ayirt edilebilmeli. */
 .inv-backpack .inv-slot {
-  width: 16px;
-  height: 12px;
+  opacity: 0.7;
 }
 
 .inv-slot.circle {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 999px;
 }
 
 .inv-slot.empty {
@@ -231,19 +285,25 @@
   display: block;
 }
 
+/* --- Tavsiye ------------------------------------------------------------- */
+
+/* Sabit 3x2 izgara: satirlar iki takim arasinda hizali kalsin. */
 .advice-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 26px);
   gap: 3px;
 }
 
 .advice-slot {
   width: 26px;
   height: 20px;
-  border-radius: 3px;
+  border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--line);
-  background: rgba(148, 175, 212, 0.08);
+  background: rgba(5, 10, 19, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Grup rengi tavsiyenin TURUNU aninda okutur: karsi hamle mi, plan mi. */
@@ -259,6 +319,12 @@
   border-color: rgba(255, 182, 72, 0.45);
 }
 
+.advice-slot.empty {
+  border-style: dashed;
+  border-color: rgba(148, 175, 212, 0.14);
+  background: rgba(148, 175, 212, 0.04);
+}
+
 .advice-slot img {
   width: 100%;
   height: 100%;
@@ -266,7 +332,13 @@
   display: block;
 }
 
-.plan-manage-btn {
-  align-self: flex-start;
-  margin-top: 2px;
+.advice-fallback {
+  font-size: 8px;
+  color: var(--txt-2);
+}
+
+@media (max-width: 1100px) {
+  .live-teams {
+    grid-template-columns: 1fr;
+  }
 }

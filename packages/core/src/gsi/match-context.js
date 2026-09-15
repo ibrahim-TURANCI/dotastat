@@ -180,8 +180,12 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  * @param {Record<string, any>|null} input.liveState normalizeGsiPayload ciktisi
  * @param {Record<string, Object>} [input.statsByPlayerId] roster id -> PlayerStats
  * @param {string} [input.viewerSteamId] Sayfayi acan kisinin SteamID64'u
+ * @param {Record<string, Record<string, any>>} [input.heroOverrides]
+ *   Hero basina elle duzenlenmis kayit ("Tavsiyeleri yonet": roleValues,
+ *   counter listeleri, item planlari).
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.itemPlanOverrides]
- *   Hero basina elle duzenlenmis item tavsiyesi ("Tavsiyeleri yonet").
+ *   ESKI sekil: yalnizca ekle/cikar listesi. Depoda hala bu sekilde duran
+ *   kayitlar var, bu yuzden kabul edilmeye devam ediyor.
  */
 export function buildLiveMatchContext(input = {}) {
   const liveState = input.liveState || null;
@@ -236,6 +240,7 @@ export function buildLiveMatchContext(input = {}) {
     radiantPlayers: decorated.filter((row) => row.team === "radiant"),
     direPlayers: decorated.filter((row) => row.team === "dire"),
     myTeam,
+    heroOverrides: input.heroOverrides || {},
     overrides: input.itemPlanOverrides || {},
   });
 
