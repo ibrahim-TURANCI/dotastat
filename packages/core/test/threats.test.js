@@ -11,15 +11,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { heroRecord } from "../src/heroes/hero-catalog.js";
+import { isKnownHero, heroRecord } from "../src/heroes/hero-catalog.js";
+import { HERO_TRAITS } from "../src/heroes/hero-traits.js";
 import {
   buildPlayerItemAdvice,
   buildTeamAnalysis,
 } from "../src/live/item-advice.js";
+import { isRetiredItem } from "../src/live/item-keys.js";
 import { THREATS, detectThreats, heroThreats } from "../src/live/threats.js";
 
 /** @param {string[]} heroes */
 const rows = (heroes, team) => heroes.map((hero) => ({ hero, team }));
+
+/** Build parcasi olmayan, plan sarti aranmayan itemler (bkz. item-advice.js). */
+const DETECTION_ITEMS = new Set(["dust", "gem", "essence_distiller"]);
 
 /** Bir hero'nun planindaki tum itemler. */
 const planOf = (hero) => {
@@ -27,25 +32,101 @@ const planOf = (hero) => {
   return new Set([...record.requiredItems, ...record.situationalItems]);
 };
 
-test("tehdit listeleri kullanicinin saydigi hero'lari kapsar", () => {
-  // Bu ornekler kullanicidan geldi; kural degisirse burada patlamali.
+test("tohum ozellik listeleri kullanicinin saydigi hero'lari kapsar", () => {
+  // Bu ornekler kullanicidan geldi; tohum liste degisirse burada patlamali.
   const expected = {
-    invisible: ["weaver", "mirana", "bounty_hunter", "riki"],
-    regen: ["necrolyte", "alchemist", "huskar", "wisp"],
-    escape: ["puck", "storm_spirit", "ember_spirit", "antimage"],
+    invisible: [
+      "riki",
+      "weaver",
+      "mirana",
+      "bounty_hunter",
+      "kez",
+      "nyx_assassin",
+    ],
+    regen: ["huskar", "alchemist", "shredder", "necrolyte", "dawnbreaker"],
+    escape: ["puck", "storm_spirit", "ember_spirit", "antimage", "kez"],
     magical: ["zuus", "leshrac", "skywrath_mage", "snapfire", "venomancer"],
-    targeted: ["legion_commander", "pudge", "antimage", "lina", "spirit_breaker"],
-    passive: ["bristleback", "phantom_assassin", "dragon_knight"],
+    targeted: ["doom_bringer", "lina", "bane", "sniper", "vengefulspirit"],
+    passive: [
+      "bristleback",
+      "phantom_assassin",
+      "dragon_knight",
+      "monkey_king",
+    ],
+    ranged: ["drow_ranger", "nevermore", "furion", "muerta", "arc_warden"],
+    shield: ["abaddon", "templar_assassin", "oracle", "morphling"],
+    armor: ["terrorblade", "skeleton_king", "slardar", "treant"],
+    movespeed: ["bloodseeker", "spirit_breaker", "marci", "primal_beast"],
   };
 
   for (const [key, heroes] of Object.entries(expected)) {
     for (const hero of heroes) {
       assert.ok(
         heroThreats(hero).includes(key),
-        hero + " icin '" + key + "' tehdidi tanimli degil",
+        hero + " icin '" + key + "' ozelligi tanimli degil",
       );
     }
   }
+});
+
+test("her ozellik tanimli bir hero'ya ve gecerli bir item'a baglidir", () => {
+  for (const trait of HERO_TRAITS) {
+    for (const hero of trait.heroes) {
+      assert.ok(isKnownHero(hero), trait.key + " icin tanimsiz hero: " + hero);
+    }
+    for (const item of trait.items) {
+      assert.ok(
+        !isRetiredItem(item),
+        trait.key + " oyundan kaldirilmis item oneriyor: " + item,
+      );
+    }
+  }
+});
+
+test("kullanici bir hero'ya ozellik EKLEYEBILIR", () => {
+  // Kullanicinin somut istegi: Kez gorunmez oluyor ama tohum listede yoktu.
+  // Kutucuk isaretlendiginde ayni hero dedektor onerisi uretmeli.
+  const overrides = { treant: { traits: ["invisible", "armor"] } };
+
+  assert.ok(heroThreats("treant", overrides).includes("invisible"));
+
+  const found = detectThreats(rows(["treant"], "dire"), overrides);
+  const invisible = found.find((row) => row.key === "invisible");
+  assert.ok(invisible, "isaretlenen ozellik tehdit uretmeli");
+  assert.deepEqual(invisible.heroes, ["treant"]);
+});
+
+test("kullanici bir hero'dan ozellik KALDIRABILIR", () => {
+  // Bos liste "bu hero hicbir ozellik tasimiyor" demek; kayit silinmis
+  // sayilmamali, yoksa kutucugu bosaltmanin hicbir etkisi olmazdi.
+  const overrides = { riki: { traits: [] } };
+
+  assert.deepEqual(heroThreats("riki", overrides), []);
+  assert.deepEqual(detectThreats(rows(["riki"], "dire"), overrides), []);
+});
+
+test("ozellik duzenlemesi takim onerisini degistirir", () => {
+  // Juggernaut'un planinda Silver Edge var; rakipte "guclu pasif" isaretli
+  // bir hero yoksa onerilmemeli, isaretlenince onerilmeli.
+  const allies = rows(["juggernaut"], "dire");
+  const enemies = rows(["crystal_maiden"], "radiant");
+  assert.ok(planOf("juggernaut").has("silver_edge"));
+
+  const itemsFor = (heroOverrides) =>
+    buildTeamAnalysis({
+      allies,
+      enemies,
+      dataLevel: "heroes",
+      myTeam: "dire",
+      heroOverrides,
+    }).dire.items.map((row) => row.key);
+
+  assert.ok(!itemsFor({}).includes("silver_edge"));
+  assert.ok(
+    itemsFor({ crystal_maiden: { traits: ["passive"] } }).includes(
+      "silver_edge",
+    ),
+  );
 });
 
 test("her tehdit bir cevap itemi tasir", () => {
@@ -141,6 +222,10 @@ test("takim onerisi yalnizca takimdan BIRININ planindaki itemleri gosterir", () 
   assert.ok(analysis.dire.items.length > 0);
   for (const item of analysis.dire.items) {
     assert.ok(item.buyers?.length, item.key + " icin alici yok");
+    // Dedektorler muaf: build parcasi degiller, kimse planina yazmaz.
+    if (DETECTION_ITEMS.has(item.key)) {
+      continue;
+    }
     for (const hero of item.buyers) {
       assert.ok(
         planOf(hero).has(item.key),
@@ -148,6 +233,36 @@ test("takim onerisi yalnizca takimdan BIRININ planindaki itemleri gosterir", () 
       );
     }
   }
+});
+
+test("gorunmez rakip, plan sarti olmadan dedektor onerir", () => {
+  // Kullanicinin en temel ornegi: rakipte Riki varsa takim Distiller/dust
+  // almali. Dust hicbir hero'nun item planinda gecmiyor; "planinda olan biri
+  // olsun" sarti buna da uygulandiginda oneri sessizce kayboluyordu.
+  const analysis = buildTeamAnalysis({
+    allies: rows(["juggernaut", "crystal_maiden"], "dire"),
+    enemies: rows(["riki"], "radiant"),
+    dataLevel: "heroes",
+    myTeam: "dire",
+  });
+
+  const keys = analysis.dire.items.map((row) => row.key);
+  assert.ok(keys.includes("essence_distiller"));
+  assert.ok(keys.includes("dust"));
+
+  // Alici DESTEGE yazilir; dedektoru carry'nin almasi beklenmiyor.
+  const dust = analysis.dire.items.find((row) => row.key === "dust");
+  assert.deepEqual(dust.buyers, ["crystal_maiden"]);
+
+  // Gorunmez isareti kaldirilinca oneri de gitmeli.
+  const cleared = buildTeamAnalysis({
+    allies: rows(["juggernaut", "crystal_maiden"], "dire"),
+    enemies: rows(["riki"], "radiant"),
+    dataLevel: "heroes",
+    myTeam: "dire",
+    heroOverrides: { riki: { traits: [] } },
+  });
+  assert.ok(!cleared.dire.items.some((row) => row.key === "dust"));
 });
 
 test("ayni tehdide cevap veren itemlerden yalnizca planda OLANLAR cikar", () => {
@@ -202,7 +317,12 @@ test("tehdit listesi analiz ciktisinda taraf taraf doner", () => {
 test("sahip olunan item tekrar onerilmez", () => {
   const analysis = buildTeamAnalysis({
     allies: [
-      { hero: "crystal_maiden", team: "dire", items: ["mekansm"], backpack: [] },
+      {
+        hero: "crystal_maiden",
+        team: "dire",
+        items: ["mekansm"],
+        backpack: [],
+      },
     ],
     enemies: rows(["zuus", "leshrac"], "radiant"),
     dataLevel: "full",

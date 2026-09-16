@@ -211,6 +211,15 @@ export function SettingsPanel({ onClose }) {
       <section className="settings-group">
         <h4>Uygulama</h4>
         <Toggle
+          label="Bilgisayar açılınca başlat"
+          checked={form.autoLaunch !== false}
+          onChange={(v) => change("autoLaunch", v)}
+        />
+        <p className="muted micro">
+          Oturum açıldığında pencere açılmadan tepside başlar. Yalnızca kurulu
+          sürümde geçerlidir.
+        </p>
+        <Toggle
           label="Açılışta simge durumunda başlat"
           checked={form.startMinimized !== false}
           onChange={(v) => change("startMinimized", v)}

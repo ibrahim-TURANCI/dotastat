@@ -22,6 +22,7 @@ const webDist = path.join(repoRoot, "packages", "web", "dist");
 const webTarget = path.join(desktopRoot, "web");
 const releaseDir = path.join(desktopRoot, "release");
 const buildIcon = path.join(desktopRoot, "build", "icon.ico");
+const iconSource = path.join(desktopRoot, "build", "icon-source.png");
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
@@ -55,8 +56,17 @@ removeIfExists(releaseDir);
 removeIfExists(webTarget);
 
 // 2. Ikonlar ------------------------------------------------------------------
-if (!fs.existsSync(buildIcon)) {
-  console.log("Ikonlar bulunamadi, uretiliyor...");
+//
+// Yalnizca "dosya yok mu" diye bakmak yetmiyordu: kaynak gorsel degistiginde
+// build/icon.ico yerinde duruyor ve kurulum ESKI ikonla cikiyordu. Kaynak
+// ciktidan yeniyse ikonlar yeniden uretilir.
+const iconStale =
+  !fs.existsSync(buildIcon) ||
+  (fs.existsSync(iconSource) &&
+    fs.statSync(iconSource).mtimeMs > fs.statSync(buildIcon).mtimeMs);
+
+if (iconStale) {
+  console.log("Ikonlar uretiliyor...");
   execFileSync(process.execPath, [path.join(here, "generate-icons.mjs")], {
     cwd: desktopRoot,
     stdio: "inherit",

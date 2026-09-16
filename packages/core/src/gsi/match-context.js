@@ -240,6 +240,9 @@ export function buildLiveMatchContext(input = {}) {
     radiantPlayers: decorated.filter((row) => row.team === "radiant"),
     direPlayers: decorated.filter((row) => row.team === "dire"),
     myTeam,
+    // Tahmini envanter oyun saatinden olculuyor: envanteri gorunmeyen bir
+    // hero'nun planinin neresine geldigini baska turlu kestirmek mumkun degil.
+    gameTime: liveState.gameTime,
     heroOverrides: input.heroOverrides || {},
     overrides: input.itemPlanOverrides || {},
   });

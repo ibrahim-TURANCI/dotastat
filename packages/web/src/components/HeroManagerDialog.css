@@ -224,6 +224,55 @@
   opacity: 0.7;
 }
 
+/*
+  Ozellik kutucuklari. Lane rozetleriyle ayni dile bagli (secili olan accent
+  rengine geciyor) ama tiklanabilir alan kutucugun KENDISI degil butun etiket:
+  ad uzun ("Yüksek Hareket Hızı") ve 12 piksellik kareyi tutturmaya calismak
+  mac sirasinda sinir bozucu.
+*/
+.trait-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 6px;
+}
+
+.trait-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--txt-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.trait-chip:hover {
+  border-color: var(--accent);
+}
+
+.trait-chip.on {
+  color: var(--txt-0);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.trait-chip input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.trait-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .role-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

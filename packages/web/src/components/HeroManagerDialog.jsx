@@ -11,6 +11,9 @@ import {
   LANE_ROLE_LABELS,
   ROLE_VALUE_KEYS,
   ROLE_VALUE_LABELS,
+  TRAIT_KEYS,
+  TRAIT_LABELS,
+  TRAIT_TOOLTIPS,
 } from "@dotastat/core";
 import { api } from "../lib/api.js";
 import { Combobox } from "./Combobox.jsx";
@@ -374,6 +377,49 @@ function HeroDetailDialog({ record, edited, onClose, onSave }) {
 
         <section className="hero-detail-section">
           <h5>
+            Özellikler
+            <span className="muted micro">
+              {" "}
+              · rakip bu hero&apos;yu gördüğünde ne alsın
+            </span>
+          </h5>
+          {/*
+            Kutucuklar TEHDIT tablosunu besliyor: isaretli her ozellik, o hero
+            karsi takimda gorundugunde bir item onerisi uretiyor (bkz.
+            core/live/threats.js). Tohum listeler genel gecer — "Kez de
+            gorunmez oluyor" demenin eskiden tek yolu depoyu duzenlemekti.
+          */}
+          <div className="trait-grid">
+            {TRAIT_KEYS.map((key) => (
+              <label
+                key={key}
+                className={
+                  "trait-chip" + (draft.traits.includes(key) ? " on" : "")
+                }
+                // Tooltip "ne onerilir"i soyluyor: kutucugun adi tek basina
+                // ("Kalkan / Bariyer") hangi itemi actigini anlatmiyor.
+                title={TRAIT_TOOLTIPS[key]}
+              >
+                <input
+                  type="checkbox"
+                  checked={draft.traits.includes(key)}
+                  onChange={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      traits: current.traits.includes(key)
+                        ? current.traits.filter((row) => row !== key)
+                        : [...current.traits, key],
+                    }))
+                  }
+                />
+                <span>{TRAIT_LABELS[key]}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="hero-detail-section">
+          <h5>
             Roller
             <span className="muted micro"> · takım radarını bu besliyor</span>
           </h5>
@@ -603,6 +649,7 @@ function clamp(value) {
 function toDraft(record) {
   return {
     laneRoles: [...(record?.laneRoles || [])],
+    traits: [...(record?.traits || [])],
     roleValues: Object.fromEntries(
       ROLE_VALUE_KEYS.map((key) => [
         key,

@@ -195,6 +195,15 @@ export {
   RETIRED_ITEMS,
 } from "./live/item-keys.js";
 
+// --- Envanteri gorunmeyen hero'lar icin tahmini envanter ---------------------
+export {
+  goldPerMinute,
+  itemBudget,
+  predictInventory,
+  GOLD_PER_MINUTE,
+  MAX_PREDICTED,
+} from "./live/predicted-items.js";
+
 // --- Rakip kompozisyonundaki tehditler --------------------------------------
 export {
   detectThreats,
@@ -202,6 +211,17 @@ export {
   threatAnswers,
   THREATS,
 } from "./live/threats.js";
+
+// --- Hero ozellikleri ("Özellikler" kutucuklari) ----------------------------
+export {
+  heroTraitSeed,
+  normalizeTraitList,
+  HERO_TRAITS,
+  TRAIT_BY_KEY,
+  TRAIT_KEYS,
+  TRAIT_LABELS,
+  TRAIT_TOOLTIPS,
+} from "./heroes/hero-traits.js";
 
 // --- Hero / item arama (duzenleme ekranindaki otomatik tamamlama) ------------
 export { exactHeroKey, searchHeroes, searchItems } from "./heroes/search.js";

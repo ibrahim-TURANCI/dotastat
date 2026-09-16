@@ -774,6 +774,7 @@ function createServerApp(options) {
       "shareLive",
       "useOverwolf",
       "startMinimized",
+      "autoLaunch",
       "autoInstallGsi",
     ]) {
       if (body[key] !== undefined && body[key] !== "***") {

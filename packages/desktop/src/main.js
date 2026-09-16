@@ -22,6 +22,10 @@ const { DEFAULT_PORT, startServer } = require("./server/index.js");
 const { createLogger } = require("./services/logger.js");
 const { createTray } = require("./services/tray.js");
 const { createUpdater } = require("./services/updater.js");
+const {
+  applyAutoLaunch,
+  launchedHidden,
+} = require("./services/auto-launch.js");
 const { clearCloudSession } = require("./services/cloud-session.js");
 const {
   findDotaCfgDir,
@@ -29,6 +33,14 @@ const {
 } = require("./services/gsi-config.js");
 
 const appDir = path.resolve(__dirname, "..");
+
+/**
+ * Bu calistirma Windows oturum acilisindan mi geliyor?
+ *
+ * Bir KEZ okunur: `app.relaunch` gibi yollarla argumanlar degisebiliyor ve
+ * "acilista mi kalktik" sorusunun cevabi surec boyunca ayni kalmali.
+ */
+const startedAtLogin = launchedHidden();
 
 // Ayni anda iki kopya calisirsa 3044 portu cakisir; ikinci kopya var olan
 // pencereyi one getirir ve kapanir.
@@ -77,6 +89,12 @@ function createWindow() {
   });
 
   mainWindow.once("ready-to-show", () => {
+    // Oturum acilisindan kalkiyorsak pencere HICBIR durumda one atilmaz:
+    // kullanici o an bilgisayarini aciyor, penceresini degil. "Acilista simge
+    // durumunda baslat" ayari ELLE acmayi anlatiyor.
+    if (startedAtLogin) {
+      return;
+    }
     if (!server?.settings.get().startMinimized) {
       mainWindow?.show();
     }
@@ -168,6 +186,14 @@ app.whenReady().then(async () => {
     onCheckUpdates: () => updater.check(),
     onInstallGsi: () => setupGsi(),
   });
+
+  // Ayardaki deger her acilista isletim sistemine yeniden yazilir: guncelleme
+  // sonrasi exe yolu degisebiliyor ve eski kayit artik var olmayan bir dosyayi
+  // gosterirse otomatik baslatma sessizce calismayi birakir.
+  server.settings.onChange("autoLaunch", (enabled) =>
+    applyAutoLaunch({ app, enabled, logger }),
+  );
+  applyAutoLaunch({ app, enabled: server.settings.get().autoLaunch, logger });
 
   if (server.settings.get().autoInstallGsi) {
     setupGsi({ silent: true });

@@ -30,6 +30,7 @@ import {
 } from "../heroes/hero-catalog.js";
 import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { isRetiredItem, normalizeItemKey } from "./item-keys.js";
+import { predictInventory } from "./predicted-items.js";
 import { detectThreats, threatAnswers } from "./threats.js";
 
 /**
@@ -44,8 +45,15 @@ import { detectThreats, threatAnswers } from "./threats.js";
 const ADVICE_QUOTA = {
   /** Yalnizca kendi satirimiz gorunuyor: hero planindan birkac oneri. */
   self: { total: 2, core: 2, counter: 0, situational: 1 },
-  /** Iki takimin hero'lari biliniyor: counter item'lar devrede. */
-  heroes: { total: 4, core: 2, counter: 2, situational: 1 },
+  /**
+   * Iki takimin hero'lari biliniyor: counter item'lar devrede.
+   *
+   * Counter yeri "full"a yaklasti cunku bu seviye artik daha cok sey biliyor:
+   * tehdit cevaplarina ek olarak tahmini rakip envanterinden cikan item
+   * kurallari da aday uretiyor (bkz. predicted-items.js). Iki yer kaldiginda
+   * tahmine dayanan oneri hicbir zaman ekrana cikmiyordu.
+   */
+  heroes: { total: 5, core: 2, counter: 3, situational: 1 },
   /** Dusman envanteri de goruluyor: tam kural seti. */
   full: { total: 6, core: 2, counter: 3, situational: 2 },
 };
@@ -65,6 +73,20 @@ const TEAM_UNIQUE_ITEMS = new Set([
   "shivas_guard",
   "lotus_orb",
 ]);
+
+/**
+ * Takim onerisinde "planinda olan biri var mi" sartindan MUAF itemler.
+ *
+ * Takim onerisi normalde yalnizca takimdan birinin item planinda gecen
+ * itemleri gosterir; yoksa "Pipe al" deyip kimin alacagini soylememis oluruz.
+ * Ama dedektor bir build parcasi degil: dust kimsenin planinda yazmaz, rakipte
+ * gorunmez hero varsa destek gider alir. Sarti dedektorlere de uygulamak,
+ * ozelligin en temel ornegini (rakipte Riki var -> dust) sessizce yutuyordu.
+ *
+ * Liste DAR tutulur: yalnizca hero plani gerektirmeyen, herkesin alabilecegi
+ * itemler. Gercek build itemlerinde sart yerinde kalir.
+ */
+const ALWAYS_BUYABLE_ITEMS = new Set(["dust", "gem", "essence_distiller"]);
 
 /**
  * Kompozisyon karsilastirmasinda bakilan ozellikler.
@@ -177,6 +199,8 @@ const ITEM_GROUPS = {
   boots_of_bearing: "support",
   crimson_guard: "support",
   cyclone: "support",
+  dust: "support",
+  gem: "support",
   // Cekirdek oyuncular alir.
   black_king_bar: "core",
   silver_edge: "core",
@@ -192,6 +216,16 @@ const ITEM_GROUPS = {
   heart: "core",
   ethereal_blade: "core",
   blink: "core",
+  aeon_disk: "core",
+  desolator: "core",
+  diffusal_blade: "core",
+  disperser: "core",
+  gungir: "core",
+  harpoon: "core",
+  nullifier: "core",
+  rod_of_atos: "core",
+  shivas_guard: "core",
+  skadi: "core",
 };
 
 /** key -> gorunen ad. `item-ids.js` id anahtarli oldugu icin bir kez cevrilir. */
@@ -294,6 +328,63 @@ function hasInventoryData(row) {
 }
 
 /**
+ * Bir satirin GORULEN + TAHMIN EDILEN itemleri.
+ *
+ * Envanteri gorunmeyen satirlar icin tahmini envanter (bkz.
+ * predicted-items.js) da hesaba katilir. Iki yerde kullaniliyor:
+ *
+ *   1. Kendi satirinin onerisi : 40. dakikada hala "Phase Boots al" dememek
+ *      icin. Elinde ne oldugunu bilmedigimiz bir hero'nun plani hep bastan
+ *      okunuyordu.
+ *   2. Rakip esya kurallari    : rakip carry'nin BKB alacagi neredeyse
+ *      kesinken, Nullifier onerisi yalnizca envanteri gercekten gorebildigimiz
+ *      kurulumlarda cikiyordu.
+ *
+ * TAHMIN GERCEK VERIYI EZMEZ: satirda gercek envanter varsa tahmin uretilmez.
+ *
+ * @param {Record<string, any>} row
+ * @returns {Set<string>}
+ */
+function assumedOwned(row) {
+  const owned = effectiveOwned(row);
+  for (const key of row?.predictedItems || []) {
+    owned.add(normalizeItemKey(key));
+  }
+  return owned;
+}
+
+/**
+ * Satirlara tahmini envanter ekler (predictedItems alani).
+ *
+ * Satirlar DEGISTIRILMEZ; yeni nesneler donulur. Envanteri gorunen satir
+ * dokunulmadan gecer — tahmin yalnizca boslugu doldurur.
+ *
+ * @param {Array<Record<string, any>>} rows
+ * @param {number} gameTime Saniye cinsinden oyun saati
+ * @param {Record<string, Record<string, any>>} overrides
+ * @returns {Array<Record<string, any>>}
+ */
+function withPredictedItems(rows, gameTime, overrides) {
+  return (rows || []).map((row) => {
+    if (hasInventoryData(row)) {
+      return row;
+    }
+    const record = recordOf(row?.hero, overrides);
+    if (!record) {
+      return row;
+    }
+    return {
+      ...row,
+      predictedItems: predictInventory({
+        record,
+        gameTime,
+        owned: effectiveOwned(row),
+      }),
+    };
+  });
+}
+
+/**
  * Elde ne kadar veri var?
  *
  * @param {Array<Record<string, any>>} allies
@@ -345,7 +436,9 @@ export function buildPlayerItemAdvice(input) {
 
   const overrides = input.heroOverrides || {};
   const record = recordOf(hero, overrides);
-  const owned = effectiveOwned(player);
+  // Tahmini envanter de "elimde var" sayilir: yoksa envanteri gorunmeyen bir
+  // satirin onerisi macin basinda donar kalir.
+  const owned = assumedOwned(player);
   const removed = new Set(
     [...(record?.removedItems || []), ...(input.override?.remove || [])].map(
       normalizeItemKey,
@@ -358,7 +451,7 @@ export function buildPlayerItemAdvice(input) {
   /** @type {Map<string, { key: string, group: string, reason: string, order: number }>} */
   const candidates = new Map();
 
-  const push = (rawKey, group, reason) => {
+  const push = (rawKey, group, reason, predicted = false) => {
     const key = normalizeItemKey(rawKey);
     if (!key || candidates.has(key) || owned.has(key) || removed.has(key)) {
       return;
@@ -373,30 +466,50 @@ export function buildPlayerItemAdvice(input) {
     if (TEAM_UNIQUE_ITEMS.has(key) && teamTaken.has(key)) {
       return;
     }
-    candidates.set(key, { key, group, reason, order: candidates.size });
+    candidates.set(key, {
+      key,
+      group,
+      reason,
+      predicted,
+      order: candidates.size,
+    });
   };
 
   // Rakip kompozisyonunun tasidigi tehditler ve onlara cevap veren itemler.
   // Yalnizca rakip hero'lari goruluyorsa anlamli.
   const threats =
-    input.dataLevel === "self" ? [] : detectThreats(input.enemies || []);
+    input.dataLevel === "self"
+      ? []
+      : detectThreats(input.enemies || [], overrides);
   const answers = threatAnswers(threats);
 
-  // Rakibin ELINDEKI itemlere karsi kurallar; yalnizca envanteri goruluyorsa.
-  /** @type {Map<string, string>} item -> gerekce */
+  // Rakibin ELINDEKI (ya da alacagi) itemlere karsi kurallar.
+  //
+  // Envanteri gercekten gorulen item "var", tahmin edilen "bekleniyor" der ve
+  // secimde geride kalir (bkz. selectByQuota). Kural eskiden yalnizca "full"
+  // seviyesinde calisiyordu; Overwolf kurulumunda rakip envanteri HIC
+  // gorunmedigi icin de hicbir zaman devreye girmiyordu.
+  /** @type {Map<string, { reason: string, predicted: boolean }>} */
   const itemCounterReasons = new Map();
-  if (input.dataLevel === "full") {
-    const enemyOwned = new Set(
-      (input.enemies || []).flatMap((row) => [...effectiveOwned(row)]),
-    );
-    for (const enemyItem of enemyOwned) {
-      for (const key of itemCounters[enemyItem]?.counters || []) {
-        const normalized = normalizeItemKey(key);
-        if (!itemCounterReasons.has(normalized)) {
-          itemCounterReasons.set(
-            normalized,
-            `Rakipte ${itemDisplayName(enemyItem)} var.`,
-          );
+  if (input.dataLevel !== "self") {
+    for (const row of input.enemies || []) {
+      const seen = effectiveOwned(row);
+      for (const enemyItem of assumedOwned(row)) {
+        const predicted = !seen.has(enemyItem);
+        for (const key of itemCounters[enemyItem]?.counters || []) {
+          const normalized = normalizeItemKey(key);
+          const current = itemCounterReasons.get(normalized);
+          // Gorulen esya, tahmin edileni EZER: ayni cevabi iki rakip
+          // tetikliyorsa kesin olani yazmak gerekcenin degerini korur.
+          if (current && !(current.predicted && !predicted)) {
+            continue;
+          }
+          itemCounterReasons.set(normalized, {
+            predicted,
+            reason: predicted
+              ? `Rakipte ${itemDisplayName(enemyItem)} bekleniyor.`
+              : `Rakipte ${itemDisplayName(enemyItem)} var.`,
+          });
         }
       }
     }
@@ -410,7 +523,7 @@ export function buildPlayerItemAdvice(input) {
    * cekirdek planin onune gecmesini saglar.
    *
    * @param {string} key
-   * @returns {{ group: string, reason: string }|null}
+   * @returns {{ group: string, reason: string, predicted?: boolean }|null}
    */
   const counterOf = (key) => {
     const matched = answers.get(key);
@@ -418,8 +531,14 @@ export function buildPlayerItemAdvice(input) {
       const names = matched[0].heroes.map(heroDisplayName).join(", ");
       return { group: "counter", reason: `${matched[0].reason}: ${names}.` };
     }
-    const owned = itemCounterReasons.get(key);
-    return owned ? { group: "counter", reason: owned } : null;
+    const byItem = itemCounterReasons.get(key);
+    return byItem
+      ? {
+          group: "counter",
+          reason: byItem.reason,
+          predicted: byItem.predicted,
+        }
+      : null;
   };
 
   /**
@@ -431,7 +550,12 @@ export function buildPlayerItemAdvice(input) {
   const pushOwn = (rawKey, group, reason) => {
     const key = normalizeItemKey(rawKey);
     const counter = counterOf(key);
-    push(key, counter?.group || group, counter?.reason || reason);
+    push(
+      key,
+      counter?.group || group,
+      counter?.reason || reason,
+      Boolean(counter?.predicted),
+    );
   };
 
   // 1. ELLE EKLENENLER — kullanicinin beyani her kuralin onundedir.
@@ -482,6 +606,10 @@ function selectByQuota(candidates, quota) {
     const room = Number(quota[group] || 0);
     const fromGroup = rest
       .filter((row) => row.group === group && !taken.has(row.key))
+      // Gorulen veriye dayanan oneri, tahmine dayanandan ONCE gelir: kotada
+      // yalnizca iki counter yeri var ve "rakipte BKB VAR" ile "BKB
+      // BEKLENIYOR" ayni yeri hak etmiyor.
+      .sort((a, b) => Number(a.predicted) - Number(b.predicted))
       .slice(0, room);
     for (const row of fromGroup) {
       if (chosen.length >= quota.total) {
@@ -613,6 +741,17 @@ function gapsAndItems(bars, rows, against, overrides) {
     }
   }
 
+  // Plan gerektirmeyen itemleri KIM alacak: once destekler, yoksa takimin
+  // tamami. Alici adi olmadan oneri "birisi alsin" demeye duserdi.
+  const heroesOf = (filter) =>
+    (rows || [])
+      .map((row) => normalizeHeroKey(row?.hero))
+      .filter((hero) => hero && filter(recordOf(hero, overrides)));
+  const supports = heroesOf((record) =>
+    record?.laneRoles?.some((role) => role === "sup4" || role === "sup5"),
+  );
+  const detectionBuyers = supports.length ? supports : heroesOf(Boolean);
+
   /** @type {Map<string, Record<string, any>>} */
   const items = new Map();
 
@@ -626,8 +765,14 @@ function gapsAndItems(bars, rows, against, overrides) {
     if (!key || items.has(key) || owned.has(key) || isRetiredItem(key)) {
       return;
     }
-    const canBuy = buyers.get(key);
-    // Takimdan kimsenin planinda yoksa onerilmez.
+    // Takimdan kimsenin planinda yoksa onerilmez — dedektorler haric, onlar
+    // plan gerektirmiyor ve destege yazilir.
+    const planned = buyers.get(key);
+    const canBuy = planned?.length
+      ? planned
+      : ALWAYS_BUYABLE_ITEMS.has(key)
+        ? detectionBuyers
+        : null;
     if (!canBuy?.length) {
       return;
     }
@@ -644,7 +789,7 @@ function gapsAndItems(bars, rows, against, overrides) {
 
   // 1. RAKIP KOMPOZISYONU — asil oneri kaynagi. Tehdit gorulmeden item
   //    onermek, maca bakmadan konusmak olurdu.
-  const threats = detectThreats(against || []);
+  const threats = detectThreats(against || [], overrides);
   for (const threat of threats) {
     const names = threat.heroes.map(heroDisplayName).join(", ");
     for (const key of threat.items) {
@@ -763,28 +908,45 @@ export function buildTeamAnalysis(input) {
 /**
  * Canli mac icin tum tavsiye paketi.
  *
- * Oyuncu satirlarina `itemAdvice` ekler ve takim analizini uretir. Satirlar
- * DEGISTIRILMEZ; yeni nesneler donulur.
+ * Oyuncu satirlarina `itemAdvice` ekler ve takim analizini uretir. Envanteri
+ * gorunmeyen satirlara ayrica `predictedItems` yazilir (bkz.
+ * predicted-items.js). Satirlar DEGISTIRILMEZ; yeni nesneler donulur.
  *
  * @param {Object} input
  * @param {Array<Record<string, any>>} input.radiantPlayers
  * @param {Array<Record<string, any>>} input.direPlayers
  * @param {"radiant"|"dire"} input.myTeam
+ * @param {number} [input.gameTime] Saniye cinsinden oyun saati; tahmini
+ *   envanterin olcusu. Verilmezse tahmin uretilmez.
  * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero -> duzenleme
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.overrides] Eski sekil
  */
 export function buildLiveItemAdvice(input = {}) {
-  const radiant = Array.isArray(input.radiantPlayers)
+  const radiantRaw = Array.isArray(input.radiantPlayers)
     ? input.radiantPlayers
     : [];
-  const dire = Array.isArray(input.direPlayers) ? input.direPlayers : [];
+  const direRaw = Array.isArray(input.direPlayers) ? input.direPlayers : [];
   const myTeam = input.myTeam === "dire" ? "dire" : "radiant";
   const heroOverrides = input.heroOverrides || {};
   const legacy = input.overrides || {};
+  const gameTime = Number(input.gameTime) || 0;
+
+  // Veri seviyesi HAM satirlardan olculur: tahmin, envanteri gorunmeyen bir
+  // satiri gorunur gibi gostermemeli. Aksi halde "rakip envanteri de
+  // goruluyor" yazip tam kural setini acardik.
+  const dataLevel = resolveDataLevel(
+    myTeam === "radiant" ? radiantRaw : direRaw,
+    myTeam === "radiant" ? direRaw : radiantRaw,
+  );
+
+  // Envanteri gorunmeyen satirlara tahmini envanter yazilir. Kendi
+  // satirimizda ve masaustu uygulamasini calistiran takim arkadaslarimizda
+  // gercek envanter var; onlar dokunulmadan gecer.
+  const radiant = withPredictedItems(radiantRaw, gameTime, heroOverrides);
+  const dire = withPredictedItems(direRaw, gameTime, heroOverrides);
 
   const allies = myTeam === "radiant" ? radiant : dire;
   const enemies = myTeam === "radiant" ? dire : radiant;
-  const dataLevel = resolveDataLevel(allies, enemies);
 
   /**
    * Bir takimin satirlarini tavsiyeyle donatir.

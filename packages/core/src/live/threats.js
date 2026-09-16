@@ -1,238 +1,78 @@
 /**
  * Rakip kompozisyonundaki TEHDITLER ve onlara cevap veren itemler.
  *
- * NE ISE YARAR: "rakipte gorunmez hero var" ile "Essence Distiller al" arasindaki
- * baglanti. Tavsiye motoru hem tek oyuncu satirinda hem takim onerilerinde bu
- * tabloyu kullanir, boylece iki yerde ayni gerekce gorunur.
+ * NE ISE YARAR: "rakipte gorunmez hero var" ile "Essence Distiller al"
+ * arasindaki baglanti. Tavsiye motoru hem tek oyuncu satirinda hem takim
+ * onerilerinde bu tabloyu kullanir, boylece iki yerde ayni gerekce gorunur.
  *
- * NEDEN ELLE YAZILMIS BIR LISTE
- * -----------------------------
- * Once Valve'in yetenek verisinden turetmeyi denedim: `behavior` bitmaskesi,
- * hasar turu ve aciklama metni. Sonuc kullanilamazdi — "pasif yetenegi var"
- * 127 hero'nun 119'unu, "hedefli buyusu var" 91'ini isaretliyordu. Oysa buradaki
- * soru "teknik olarak pasifi var mi" degil, "bu hero YUZUNDEN Silver Edge
- * alinir mi". O yargi veride yok.
+ * TEHDIT TANIMLARI SABIT, HERO LISTELERI DEGIL
+ * --------------------------------------------
+ * Hangi ozelligin hangi itemi cagirdigi oyunun kurali: gorunmezlige dedektor
+ * alinir, tek hedefli ultiye Linken's. Ama hangi hero'nun o ozelligi TASIDIGI
+ * yoruma acik ve yamayla degisiyor — eskiden liste bu dosyada kilitliydi ve
+ * "Kez de gorunmez oluyor" demenin tek yolu depoyu duzenlemekti.
  *
- * Bu yuzden listeler elle tutulur. Bir hero eklerken olcut su: O HERO'YU
- * GORDUGUNDE bu itemi almayi dusunur musun? Cevap "belki" ise eklemeyin;
- * yaniltici bir oneri, hic oneri olmamasindan kotudur.
+ * Artik tohum veri `data/hero-traits.js`'te durur, kullanici "Tavsiyeleri
+ * yonet > hero > Özellikler" kutucuklariyla uzerine yazar ve kayit hero
+ * katalogunda `traits` alani olarak tutulur. Bu yuzden asagidaki fonksiyonlar
+ * hero listesini KATALOGDAN okur; tohuma dogrudan bakmak, kullanicinin
+ * isaretledigi kutucugu yok saymak olurdu.
  */
 
+import { heroRecord } from "../heroes/hero-catalog.js";
 import { normalizeHeroKey } from "../heroes/hero-names.js";
+import {
+  HERO_TRAITS,
+  TRAIT_BY_KEY,
+  TRAIT_KEYS,
+  heroTraitSeed,
+} from "../heroes/hero-traits.js";
 import { normalizeItemKey } from "./item-keys.js";
 
 /**
- * Tehdit tanimlari.
+ * Tehdit tanimlari (`data/hero-traits.js`).
  *
- * `heroes`  : bu tehdidi TASIYAN rakip hero'lar
+ * `heroes`  : bu tehdidi TASIYAN rakip hero'lar (TOHUM — kullanici ezebilir)
  * `items`   : tehdide cevap veren itemler (tercih sirasiyla)
  * `label`   : ekranda gorunen kisa ad
+ * `tooltip` : kutucugun uzerine gelince gorunen "ne onerilir" aciklamasi
  * `reason`  : oneri kutusunda gorunen gerekce kalibi
  */
-const THREATS = [
-  {
-    key: "invisible",
-    label: "görünmez",
-    reason: "Rakipte görünmez hero var",
-    // Olcut: gorunmezlik ya da faz gecisi ile kacip yeniden giren hero'lar.
-    // Aciklamasinda "invisible" gecen her hero degil — Tidehunter'in Ravage'i
-    // gorunmezlikten bahsediyor ama kimse Tide icin dedektor almiyor.
-    heroes: [
-      "riki",
-      "bounty_hunter",
-      "clinkz",
-      "weaver",
-      "mirana",
-      "nyx_assassin",
-      "slark",
-      "templar_assassin",
-      "treant",
-      "sand_king",
-      "invoker",
-    ],
-    items: ["essence_distiller", "dust", "gem"],
-  },
-  {
-    key: "regen",
-    label: "can yenileme",
-    reason: "Rakipte can yenileyen hero var",
-    // Olcut: can yenilemesi/emmesi savasin sonucunu degistiren hero'lar.
-    heroes: [
-      "necrolyte",
-      "huskar",
-      "alchemist",
-      "wisp",
-      "life_stealer",
-      "abaddon",
-      "undying",
-      "dazzle",
-      "omniknight",
-      "oracle",
-      "chen",
-      "treant",
-      "shredder",
-      "broodmother",
-      "dragon_knight",
-      "night_stalker",
-      "winter_wyvern",
-      "warlock",
-    ],
-    items: ["spirit_vessel"],
-  },
-  {
-    key: "escape",
-    label: "kaçış",
-    reason: "Rakipte kaçan hero var",
-    // Olcut: blink/faz ile savastan cikan, susturulmazsa yakalanmayan hero'lar.
-    heroes: [
-      "puck",
-      "storm_spirit",
-      "ember_spirit",
-      "antimage",
-      "faceless_void",
-      "void_spirit",
-      "queenofpain",
-      "morphling",
-      "weaver",
-      "slark",
-      "mirana",
-      "batrider",
-      "pangolier",
-      "nyx_assassin",
-    ],
-    items: ["orchid", "bloodthorn", "sheepstick"],
-  },
-  {
-    key: "magical",
-    label: "büyüsel hasar",
-    reason: "Rakip büyü hasarı basıyor",
-    // Olcut: hasarinin buyuk kismi buyuden gelen hero'lar.
-    heroes: [
-      "zuus",
-      "leshrac",
-      "skywrath_mage",
-      "snapfire",
-      "venomancer",
-      "lina",
-      "lion",
-      "crystal_maiden",
-      "jakiro",
-      "warlock",
-      "tinker",
-      "pugna",
-      "death_prophet",
-      "disruptor",
-      "grimstroke",
-      "witch_doctor",
-      "ancient_apparition",
-      "necrolyte",
-      "invoker",
-      "queenofpain",
-      "shadow_shaman",
-      "enigma",
-    ],
-    items: ["pipe", "black_king_bar", "mekansm", "guardian_greaves"],
-  },
-  {
-    key: "targeted",
-    label: "hedefli büyü",
-    reason: "Rakipte tek hedefli ulti/skill var",
-    // Olcut: Linken'in GERCEKTEN bloklayacagi, tek hedefe basilan buyusu olan
-    // hero'lar. Teknik olarak hedefli buyusu olan herkes degil.
-    heroes: [
-      "legion_commander",
-      "pudge",
-      "antimage",
-      "lina",
-      "spirit_breaker",
-      "doom_bringer",
-      "bane",
-      "beastmaster",
-      "chaos_knight",
-      "axe",
-      "lion",
-      "shadow_shaman",
-      "necrolyte",
-      "batrider",
-      "bloodseeker",
-      "silencer",
-      "shadow_demon",
-      "skywrath_mage",
-      "pugna",
-    ],
-    items: ["sphere", "aeon_disk"],
-  },
-  {
-    key: "passive",
-    label: "pasif yetenek",
-    reason: "Rakipte pasifi güçlü hero var",
-    // Olcut: pasifi kirildiginda hero'nun ISE YARAMAZ hale geldigi durumlar.
-    heroes: [
-      "bristleback",
-      "phantom_assassin",
-      "dragon_knight",
-      "spectre",
-      "ursa",
-      "sven",
-      "juggernaut",
-      "medusa",
-      "faceless_void",
-      "riki",
-      "slark",
-      "life_stealer",
-      "tidehunter",
-      "centaur",
-      "shredder",
-      "huskar",
-      "sniper",
-      "drow_ranger",
-      "axe",
-      "monkey_king",
-      "night_stalker",
-      "luna",
-      "weaver",
-      "viper",
-      "phantom_lancer",
-      "alchemist",
-      "lycan",
-      "templar_assassin",
-    ],
-    items: ["silver_edge", "angels_demise"],
-  },
-];
+const THREATS = HERO_TRAITS;
 
-/** hero -> tasidigi tehdit anahtarlari. Bir kez kurulur. */
-const THREATS_BY_HERO = (() => {
-  /** @type {Map<string, string[]>} */
-  const map = new Map();
-  for (const threat of THREATS) {
-    for (const hero of threat.heroes) {
-      const key = normalizeHeroKey(hero);
-      if (!map.has(key)) {
-        map.set(key, []);
-      }
-      map.get(key).push(threat.key);
-    }
+/**
+ * Bir hero'nun ozellikleri: tohum + kullanicinin duzenlemesi.
+ *
+ * @param {string} hero
+ * @param {Record<string, Record<string, any>>} [overrides] hero -> duzenleme
+ * @returns {string[]}
+ */
+export function heroThreats(hero, overrides = {}) {
+  const key = normalizeHeroKey(hero);
+  if (!key) {
+    return [];
   }
-  return map;
-})();
-
-/** tehdit anahtari -> tanim. */
-const THREAT_BY_KEY = new Map(THREATS.map((threat) => [threat.key, threat]));
+  // Katalogda olmayan bir hero (eski kayit, yeni yama) tohumuna duser; tehdit
+  // uretmeyi tamamen birakmak onerileri sessizce eksiltirdi.
+  const record = heroRecord(key, overrides?.[key] || null);
+  return record ? [...(record.traits || [])] : heroTraitSeed(key);
+}
 
 /**
  * Bir takimin TASIDIGI tehditler.
  *
  * @param {Array<Record<string, any>>} rows Rakip satirlari
+ * @param {Record<string, Record<string, any>>} [overrides] hero -> duzenleme
  * @returns {Array<{
  *   key: string,
  *   label: string,
+ *   tooltip: string,
  *   reason: string,
  *   items: string[],
  *   heroes: string[]
  * }>}
  */
-export function detectThreats(rows) {
+export function detectThreats(rows, overrides = {}) {
   /** @type {Map<string, Set<string>>} tehdit -> onu tasiyan hero'lar */
   const found = new Map();
 
@@ -241,7 +81,7 @@ export function detectThreats(rows) {
     if (!hero) {
       continue;
     }
-    for (const key of THREATS_BY_HERO.get(hero) || []) {
+    for (const key of heroThreats(hero, overrides)) {
       if (!found.has(key)) {
         found.set(key, new Set());
       }
@@ -254,6 +94,7 @@ export function detectThreats(rows) {
   return THREATS.filter((threat) => found.has(threat.key)).map((threat) => ({
     key: threat.key,
     label: threat.label,
+    tooltip: threat.tooltip,
     reason: threat.reason,
     items: threat.items.map(normalizeItemKey),
     heroes: [...found.get(threat.key)],
@@ -288,13 +129,4 @@ export function threatAnswers(threats) {
   return answers;
 }
 
-/**
- * Bir hero'nun tasidigi tehditler (arayuzde hero rozetleri icin).
- * @param {string} hero
- * @returns {string[]}
- */
-export function heroThreats(hero) {
-  return [...(THREATS_BY_HERO.get(normalizeHeroKey(hero)) || [])];
-}
-
-export { THREATS, THREAT_BY_KEY };
+export { THREATS, TRAIT_BY_KEY as THREAT_BY_KEY, TRAIT_KEYS as THREAT_KEYS };

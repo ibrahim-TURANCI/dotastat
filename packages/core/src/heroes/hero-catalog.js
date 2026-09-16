@@ -9,6 +9,8 @@
  * KAYIT SEKLI
  *   roleValues       0-100 sekiz eksen; takim radarinin ham girdisi
  *   laneRoles        pozisyonlar ("carry" | "mid" | "offlane" | "sup4" | "sup5")
+ *   traits           hero'nun tasidigi ozellikler ("invisible", "regen"...);
+ *                    rakip kompozisyonundan uretilen tehdit onerisini bu besler
  *   counterHeroes    bu hero'yu zorlayan heroler
  *   counterItems     bu hero'ya KARSI alinan itemler
  *   requiredItems    cekirdek item plani
@@ -23,6 +25,7 @@
 import heroOverrides from "../data/hero-overrides.js";
 import { isRetiredItem, normalizeItemKey } from "../live/item-keys.js";
 import { normalizeHeroKey } from "./hero-names.js";
+import { heroTraitSeed, normalizeTraitList } from "./hero-traits.js";
 
 /** Radar eksenleri; ekranda gorunen sira budur. */
 export const ROLE_VALUE_KEYS = [
@@ -195,6 +198,11 @@ export function normalizeHeroOverride(patch) {
   if (patch.laneRoles !== undefined) {
     out.laneRoles = laneRoleList(patch.laneRoles);
   }
+  // Bos dizi GECERLI bir cevap: "bu hero hicbir ozellik tasimiyor" demek, o
+  // hero uzerinden uretilen tehdit onerisini kapatmanin tek yolu.
+  if (patch.traits !== undefined) {
+    out.traits = normalizeTraitList(patch.traits);
+  }
   if (patch.counterHeroes !== undefined) {
     out.counterHeroes = heroList(patch.counterHeroes);
   }
@@ -227,6 +235,7 @@ export function heroSeed(hero) {
   return {
     hero: key,
     laneRoles: [...(seed.laneRoles || [])],
+    traits: heroTraitSeed(key),
     roleValues: { ...seed.roleValues },
     counterHeroes: [...(seed.counterHeroes || [])],
     counterItems: [...(seed.counterItems || [])],

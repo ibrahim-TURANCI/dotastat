@@ -60,7 +60,7 @@ export function hasInventory(player) {
  *
  * @param {{ item?: string, title?: string, shape?: "square"|"circle" }} props
  */
-function ItemSlot({ item, title = "", shape = "square" }) {
+function ItemSlot({ item, title = "", shape = "square", predicted = false }) {
   const key = String(item || "");
   const [failed, setFailed] = useState(false);
 
@@ -73,18 +73,23 @@ function ItemSlot({ item, title = "", shape = "square" }) {
   }
 
   const label = itemDisplayName(key);
-  const hint = title ? `${title}: ${label}` : label;
+  const base = "inv-slot " + shape + (predicted ? " predicted" : "");
+  const hint = predicted
+    ? `${label} — tahmini, gerçek envanter görünmüyor`
+    : title
+      ? `${title}: ${label}`
+      : label;
 
   if (failed) {
     return (
-      <div className={"inv-slot " + shape + " fallback"} title={hint}>
+      <div className={base + " fallback"} title={hint}>
         {label.slice(0, 2).toUpperCase()}
       </div>
     );
   }
 
   return (
-    <div className={"inv-slot " + shape} title={hint}>
+    <div className={base} title={hint}>
       <img
         src={itemIconUrl(key)}
         alt={label}
@@ -160,7 +165,17 @@ function inventoryLayout(player) {
  */
 export function LiveInventory({ player }) {
   if (!hasInventory(player)) {
-    return <span className="muted micro">envanter görünmüyor</span>;
+    // Envanter gorunmuyor ama hero biliniyor: cekirdek planindan ve oyun
+    // saatinden kestirilen TAHMINI envanter cizilir (bkz. core/live/
+    // predicted-items.js). Kutular sonuk ve her birinin ustunde "tahmini"
+    // yaziyor — gercek veriyle karistirilmamali.
+    const predicted = Array.isArray(player?.predictedItems)
+      ? player.predictedItems
+      : [];
+    if (!predicted.length) {
+      return <span className="muted micro">envanter görünmüyor</span>;
+    }
+    return <PredictedInventory items={predicted} />;
   }
 
   const layout = inventoryLayout(player);
@@ -216,6 +231,31 @@ export function LiveInventory({ player }) {
         />
         <ItemSlot item={layout.tp} title="TP" shape="circle" />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Envanteri gorunmeyen bir satirin TAHMINI envanteri.
+ *
+ * Yalnizca ana envanter cizilir. Backpack, neutral ve TP tahmin EDILMEZ: o
+ * slotlar hero'nun item planindan turetilemez ve bos kutu cizmek "bunlar yok"
+ * demek olurdu. Aghanim kutulari da ayni sebeple burada yok — plandaki scepter
+ * ana yuvalarda gorunur.
+ *
+ * @param {{ items: string[] }} props
+ */
+function PredictedInventory({ items }) {
+  return (
+    <div className="inv-layout predicted" title="Tahmini envanter">
+      <div className="inv-left">
+        <div className="inv-main">
+          {Array.from({ length: MAIN_SLOTS }, (_, index) => (
+            <ItemSlot key={index} item={items[index]} predicted />
+          ))}
+        </div>
+      </div>
+      <span className="inv-predicted-tag micro">tahmini</span>
     </div>
   );
 }

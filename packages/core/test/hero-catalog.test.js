@@ -99,16 +99,46 @@ test("gecersiz girdi kayda giremez", () => {
   assert.equal(clean.roleValues.burst, 0);
 });
 
+test("ozellik kutucuklari tohumdan gelir ve uzerine yazilabilir", () => {
+  // Kutucuklar tehdit tablosunu besliyor (bkz. live/threats.js); kaydin
+  // tohumu bu yuzden ekranda ISARETLI acilmali, yoksa kullanici her hero icin
+  // en bastan isaretlemek zorunda kalir.
+  assert.ok(heroSeed("riki").traits.includes("invisible"));
+
+  const record = heroRecord("riki", { traits: ["armor"] });
+  assert.deepEqual(record.traits, ["armor"]);
+  // Ozellik yazmak item planina dokunmaz.
+  assert.deepEqual(record.requiredItems, heroSeed("riki").requiredItems);
+
+  // Kutucuklarin tiklanma sirasi kayda girmez: liste hep TANIM sirasinda.
+  assert.deepEqual(
+    normalizeHeroOverride({ traits: ["armor", "invisible", "uydurma"] }).traits,
+    ["invisible", "armor"],
+  );
+
+  // Hepsini bosaltmak gecerli bir kayit: o hero artik tehdit uretmez.
+  assert.deepEqual(heroRecord("riki", { traits: [] }).traits, []);
+  assert.ok(normalizeHeroPlans({ riki: { traits: [] } }).riki);
+});
+
 test("tanimsiz hero kayda giremez", () => {
   assert.equal(isKnownHero("juggernaut"), true);
   assert.equal(isKnownHero("uydurma_hero"), false);
-  assert.deepEqual(normalizeHeroPlans({ uydurma_hero: { laneRoles: ["mid"] } }), {});
+  assert.deepEqual(
+    normalizeHeroPlans({ uydurma_hero: { laneRoles: ["mid"] } }),
+    {},
+  );
   // Bos bir duzenleme de kayda girmez: "duzenlenmis hero" sayaci yaniltici olur.
   assert.deepEqual(normalizeHeroPlans({ juggernaut: {} }), {});
 });
 
 test("duzenleme motorun onerisine yansir", () => {
-  const player = { hero: "juggernaut", team: "radiant", items: [], backpack: [] };
+  const player = {
+    hero: "juggernaut",
+    team: "radiant",
+    items: [],
+    backpack: [],
+  };
   const overrides = {
     juggernaut: { requiredItems: ["radiance"], removedItems: ["manta"] },
   };

@@ -2,8 +2,8 @@
  * Giris yapmis kullanicinin hero basina tavsiye duzenlemesi.
  *
  *   GET  /api/me/hero-plans  -> { heroes: { invoker: { requiredItems: [...] } } }
- *   POST /api/me/hero-plans  -> { hero, roleValues?, laneRoles?, counterHeroes?,
- *                                 counterItems?, requiredItems?,
+ *   POST /api/me/hero-plans  -> { hero, roleValues?, laneRoles?, traits?,
+ *                                 counterHeroes?, counterItems?, requiredItems?,
  *                                 situationalItems?, removedItems? }
  *                               (hicbir alan yollanmazsa kayit SILINIR)
  *
