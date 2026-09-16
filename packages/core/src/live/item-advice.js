@@ -685,11 +685,18 @@ function advantagesOf(bars, against) {
 /**
  * Bir takimin eksikleri ve ona ONERILEN itemler.
  *
- * ONERI HAVUZU TAKIMIN KENDI PLANLARIYLA SINIRLI. "Rakipte buyu hasari var,
- * Pipe al" demek tek basina bir ise yaramiyor — Pipe'i kim alacak? Takimda
- * planinda Pipe olan kimse yoksa oneri havada kalir. Bu yuzden her oneri, o
- * itemi planinda tasiyan hero'larla birlikte doner: planinda Mekansm olan biri
- * varsa Mekansm onerilir, Pipe olan varsa Pipe, ikisi de varsa ikisi birden.
+ * ONERI, MUMKUNSE TAKIMIN KENDI PLANLARIYLA GEREKCELENIR. "Rakipte buyu
+ * hasari var, Pipe al" demek tek basina zayif — Pipe'i kim alacak? Planinda
+ * Pipe olan biri varsa oneri ona baglanir: planinda Mekansm olan biri varsa
+ * Mekansm, Pipe olan varsa Pipe, ikisi de varsa ikisi birden.
+ *
+ * PLANDA KIMSE YOKSA ONERI DUSMEZ, "DURUMA GORE"YE DUSER. Pipe hicbir
+ * hero'nun cekirdek/durumsal listesinde gecmeyebilir ama takim buyu hasarina
+ * karsi yine de Pipe almayi dusunmeli — bu, belirli bir hero'nun BUILD'INE
+ * baglanamayan, takimin GENEL olarak degerlendirmesi gereken bir oneri.
+ * "Core"/"Destek" gostermek belirli bir hero'nun bunu alacagini vaat ederdi;
+ * o vaat verilemedigi icin boyle bir oneri her zaman "Duruma göre" sutununa
+ * yazilir ve alicisi once destekler, yoksa takimin tamamidir.
  *
  * @param {Record<string, number>} bars Bu takimin radar yuzdeleri
  * @param {Array<Record<string, any>>} rows Bu takimin satirlari
@@ -741,8 +748,9 @@ function gapsAndItems(bars, rows, against, overrides) {
     }
   }
 
-  // Plan gerektirmeyen itemleri KIM alacak: once destekler, yoksa takimin
-  // tamami. Alici adi olmadan oneri "birisi alsin" demeye duserdi.
+  // Belirli bir hero'ya BAGLANAMAYAN onerilerin (dedektorler, plansiz kalan
+  // "duruma göre" itemleri) alicisi: once destekler, yoksa takimin tamami.
+  // Alici adi olmadan oneri "birisi alsin" demeye duserdi.
   const heroesOf = (filter) =>
     (rows || [])
       .map((row) => normalizeHeroKey(row?.hero))
@@ -765,22 +773,33 @@ function gapsAndItems(bars, rows, against, overrides) {
     if (!key || items.has(key) || owned.has(key) || isRetiredItem(key)) {
       return;
     }
-    // Takimdan kimsenin planinda yoksa onerilmez — dedektorler haric, onlar
-    // plan gerektirmiyor ve destege yazilir.
+
     const planned = buyers.get(key);
-    const canBuy = planned?.length
-      ? planned
-      : ALWAYS_BUYABLE_ITEMS.has(key)
-        ? detectionBuyers
-        : null;
+    let finalGroup = group;
+    let canBuy = planned;
+
+    if (!canBuy?.length) {
+      if (ALWAYS_BUYABLE_ITEMS.has(key)) {
+        // Dedektor: hicbir zaman bir hero'nun build'ine baglanmaz, her zaman
+        // destege yazilir (bkz. ALWAYS_BUYABLE_ITEMS tanimi).
+        canBuy = detectionBuyers;
+      } else {
+        // Takimda kimsenin planinda olmayan bir item TAMAMEN dusmez: belirli
+        // bir hero'ya baglanamadigi icin "Duruma göre"ye duser, alicisi
+        // ayni destek-once fallback'i kullanir.
+        canBuy = detectionBuyers;
+        finalGroup = "situational";
+      }
+    }
     if (!canBuy?.length) {
       return;
     }
+
     items.set(key, {
       key,
-      group,
+      group: finalGroup,
       name: itemDisplayName(key),
-      groupLabel: GROUP_LABELS[group] || group,
+      groupLabel: GROUP_LABELS[finalGroup] || finalGroup,
       reason,
       buyers: canBuy,
       buyerNames: canBuy.map(heroDisplayName),

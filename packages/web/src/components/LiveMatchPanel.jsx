@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { heroDisplayName } from "@dotastat/core";
 import { formatClock, formatRelativeTime } from "../lib/format.js";
 import {
@@ -46,6 +47,11 @@ export function LiveMatchPanel({
   open = false,
   onToggle = () => {},
 }) {
+  // Hook, altta gelen erken `return`lerden ETKILENMEMESI icin en basta
+  // kosulsuz cagrilir (React kurali); `live` henuz yoksa bile guvenli
+  // varsayilanlarla calisir.
+  const displayClock = useTickingClock(live?.gameTime, Boolean(live?.active));
+
   const frame = (children, right, className = "") => (
     <CollapsibleSection
       title="Canlı Maç"
@@ -89,7 +95,7 @@ export function LiveMatchPanel({
           mine={live.myTeam === "radiant"}
         />
         <div className="live-clock">
-          <strong>{formatClock(live.gameTime)}</strong>
+          <strong>{formatClock(displayClock)}</strong>
           <span className="muted micro">{phaseLabel(live.phase)}</span>
         </div>
         <TeamScore
@@ -314,6 +320,53 @@ function LivePlayerRow({ player }) {
  * @param {string} phase
  * @returns {string}
  */
+/**
+ * Ekranda gosterilen mac saati.
+ *
+ * SUNUCUDAN GELEN DEGER 5 SANIYEDE BIR TAZELENIYOR (bkz. App.jsx,
+ * LIVE_POLL_MS) ama oyundaki saat HER SANIYE ilerliyor. Sunucudan geleni
+ * oldugu gibi yazsaydik saat 5'er 5'er ziplardi — toplam dogru ama gozle
+ * takip edilemez bir gorunum olurdu.
+ *
+ * Bu yuzden en son bilinen deger bir CAPA olarak tutulur ve aradaki
+ * saniyeler GERCEK ZAMANDAN (Date.now farkindan) turetilir: veri yine 5
+ * saniyede bir tazeleniyor, ama saat ekranda birer birer akiyor gibi
+ * gorunuyor. Sunucudan YENI bir deger geldiginde (5 saniyelik dilim kapandi,
+ * mac degisti, saat geri sardi) capa ANINDA o degere atlar — gosterilen
+ * deger hicbir zaman gercek veriden 5 saniyeden fazla uzaklasmaz.
+ *
+ * @param {number|undefined} gameTime Sunucudan gelen en son saniye
+ * @param {boolean} active Mac canli mi (degilse tik atilmaz, saat donmez)
+ * @returns {number}
+ */
+function useTickingClock(gameTime, active) {
+  const serverValue = Number(gameTime) || 0;
+  /** @type {React.MutableRefObject<{ value: number, at: number }>} */
+  const anchorRef = useRef({ value: serverValue, at: Date.now() });
+  const [display, setDisplay] = useState(serverValue);
+
+  // Sunucudan yeni deger geldi: capa ve gosterilen deger ANINDA guncellenir.
+  useEffect(() => {
+    anchorRef.current = { value: serverValue, at: Date.now() };
+    setDisplay(serverValue);
+  }, [serverValue]);
+
+  // Iki tazeleme arasinda saniyede bir, capadan gercek zamana gore ilerletilir.
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      const anchor = anchorRef.current;
+      const elapsed = Math.floor((Date.now() - anchor.at) / 1000);
+      setDisplay(anchor.value + elapsed);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  return display;
+}
+
 function phaseLabel(phase) {
   const value = String(phase || "").toUpperCase();
   if (value.includes("HERO_SELECTION")) {

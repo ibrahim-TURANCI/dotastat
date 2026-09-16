@@ -134,12 +134,32 @@ export function selectLiveStateForViewer(states, options = {}) {
  * @returns {"radiant"|"dire"}
  */
 function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
-  const teamOfSteamId = (steamId) => {
-    const id = String(steamId || "").trim();
-    if (!id) {
+  /**
+   * Bir kimligin (SteamID64 ya da 32-bit account id) oynadigi taraf.
+   *
+   * IKI KAYNAK FARKLI KIMLIK VERIR: GSI oyuncunun kendi SteamID64'unu verir,
+   * Overwolf/DotaPlus ise anonimlik icin yalnizca 32-bit account id — GSI
+   * disindaki dokuz oyuncunun (rakip + takim arkadaslari) `steamId` alani
+   * bu yuzden BOSTUR. Karsilastirma dogrudan `steamId` uzerinden yapilirsa
+   * viewer/uploader eslesmesi yalnizca "makinede GSI'yi gonderen kisi" icin
+   * calisir; grubun geri kalani (Overwolf'tan gelenler) hicbir zaman
+   * eslesmez ve "bizim taraf" sessizce baska bir sinyale (cogunluk, varsayilan
+   * Radiant) duser. Bu yuzden ikisi de account id'ye indirgenip oyle
+   * karsilastirilir — `matchToRoster` ile ayni yontem.
+   *
+   * @param {string} identifier
+   * @returns {string}
+   */
+  const teamOfSteamId = (identifier) => {
+    const accountId = toAccountId(identifier);
+    if (!accountId) {
       return "";
     }
-    const row = allPlayers.find((player) => String(player.steamId) === id);
+    const row = allPlayers.find((player) => {
+      const playerAccountId =
+        String(player.accountId || "") || toAccountId(player.steamId || "");
+      return playerAccountId === accountId;
+    });
     return row?.team || "";
   };
 

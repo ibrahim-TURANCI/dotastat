@@ -222,8 +222,9 @@ test("takim onerisi yalnizca takimdan BIRININ planindaki itemleri gosterir", () 
   assert.ok(analysis.dire.items.length > 0);
   for (const item of analysis.dire.items) {
     assert.ok(item.buyers?.length, item.key + " icin alici yok");
-    // Dedektorler muaf: build parcasi degiller, kimse planina yazmaz.
-    if (DETECTION_ITEMS.has(item.key)) {
+    // Dedektorler ve "Duruma göre"ye dusenler muaf: ikisi de belirli bir
+    // hero'nun BUILD'ine baglanmadan onerilir (bkz. item-advice.js -> offer).
+    if (DETECTION_ITEMS.has(item.key) || item.group === "situational") {
       continue;
     }
     for (const hero of item.buyers) {
@@ -265,35 +266,69 @@ test("gorunmez rakip, plan sarti olmadan dedektor onerir", () => {
   assert.ok(!cleared.dire.items.some((row) => row.key === "dust"));
 });
 
-test("ayni tehdide cevap veren itemlerden yalnizca planda OLANLAR cikar", () => {
-  // Pipe ve Mekansm ikisi de buyu hasarina cevap veriyor. Planinda Pipe olan
-  // hero varsa Pipe, Mekansm olan varsa Mekansm, ikisi de varsa ikisi birden.
+test("planda olan cevap Core/Destek'e, olmayan Duruma göre'ye duser", () => {
+  // Pipe ve Mekansm ikisi de buyu hasarina cevap veriyor. Planinda Mekansm
+  // olan hero varsa Mekansm o hero'ya baglanir (Destek). Kimsenin planinda
+  // Pipe yoksa Pipe DUSMEZ — Duruma göre'ye yazilir, cunku takim buyu
+  // hasarina karsi yine de Pipe'i dusunmeli.
+  //
+  // Somut sikayet: rakipte buyu hasari varken Pipe hicbir hero'nun planinda
+  // olmadigi icin hic gorunmuyordu; oysa "Duruma göre" tam da bunun icin var.
   const enemies = rows(["zuus", "leshrac", "lina"], "radiant");
 
-  /** Verilen kadroyla hangi buyu cevaplari onerildi? */
-  const answersFor = (heroes) => {
-    const analysis = buildTeamAnalysis({
+  const itemsFor = (heroes) =>
+    buildTeamAnalysis({
       allies: rows(heroes, "dire"),
       enemies,
       dataLevel: "heroes",
       myTeam: "dire",
-    });
-    return analysis.dire.items.map((row) => row.key);
-  };
+    }).dire.items;
 
   // Planinda Mekansm olan ama Pipe olmayan bir kadro seclim.
-  const withMek = ["crystal_maiden"];
+  const withMek = itemsFor(["crystal_maiden"]);
   assert.ok(planOf("crystal_maiden").has("mekansm"));
-  const mekOnly = answersFor(withMek);
-  assert.ok(mekOnly.includes("mekansm"));
+  const mekansm = withMek.find((row) => row.key === "mekansm");
+  assert.ok(mekansm, "planda olan cevap dusmemeli");
+  assert.equal(mekansm.group, "support");
 
-  // Hicbirinin planinda Pipe/Mekansm olmayan bir kadroda ikisi de cikmamali.
-  const withNeither = ["antimage"];
+  // Hicbirinin planinda Pipe/Mekansm olmayan bir kadro: ikisi de DUSMEZ ama
+  // Duruma göre'ye yazilir, alicisi belirli bir hero'nun build'ine
+  // baglanmaz.
   const plan = planOf("antimage");
   assert.ok(!plan.has("pipe") && !plan.has("mekansm"));
-  const neither = answersFor(withNeither);
-  assert.ok(!neither.includes("pipe"));
-  assert.ok(!neither.includes("mekansm"));
+  const neither = itemsFor(["antimage"]);
+  const pipe = neither.find((row) => row.key === "pipe");
+  assert.ok(pipe, "planda kimse yoksa bile Pipe onerilmeli");
+  assert.equal(pipe.group, "situational");
+  const mek2 = neither.find((row) => row.key === "mekansm");
+  assert.ok(mek2, "planda kimse yoksa bile Mekansm onerilmeli");
+  assert.equal(mek2.group, "situational");
+});
+
+test("plansiz Duruma göre onerisi alici tasir ve destege oncelik verir", () => {
+  // Kullanicinin sikayeti: "Pipe hicbir heroda gerekli/durumsal itemler
+  // arasinda olmadigi icin gostermiyor". Alici bos birakilmaz — once
+  // destekler, takimda destek yoksa herkes aday olur.
+  const enemies = rows(["zuus", "leshrac", "lina"], "radiant");
+  const noPipePlan = ["antimage", "sniper", "axe", "windrunner"];
+  for (const hero of noPipePlan) {
+    assert.ok(!planOf(hero).has("pipe"), hero + " zaten planinda Pipe tasiyor");
+  }
+
+  const analysis = buildTeamAnalysis({
+    allies: rows(noPipePlan, "dire"),
+    enemies,
+    dataLevel: "heroes",
+    myTeam: "dire",
+  });
+
+  const pipe = analysis.dire.items.find((row) => row.key === "pipe");
+  assert.ok(pipe, "kimsenin planinda olmasa da Pipe onerilmeli");
+  assert.equal(pipe.group, "situational");
+  assert.equal(pipe.groupLabel, "Duruma göre");
+  assert.ok(pipe.buyers.length, "alici bos olmamali");
+  // windrunner tek destek (sup4/sup5); destek varken tum takim yazilmamali.
+  assert.deepEqual(pipe.buyers, ["windrunner"]);
 });
 
 test("tehdit listesi analiz ciktisinda taraf taraf doner", () => {
