@@ -31,7 +31,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(here, "..");
 const buildDir = path.join(desktopRoot, "build");
 const resourcesDir = path.join(desktopRoot, "resources");
-const overlayDir = path.join(desktopRoot, "src", "overlay");
 const webPublicDir = path.resolve(desktopRoot, "..", "web", "public");
 
 /** Tum ciktilarin uretildigi kaynak gorsel. */
@@ -147,7 +146,6 @@ async function main() {
 
   fs.mkdirSync(buildDir, { recursive: true });
   fs.mkdirSync(resourcesDir, { recursive: true });
-  fs.mkdirSync(overlayDir, { recursive: true });
 
   const source = fs.readFileSync(SOURCE);
   const meta = await sharp(source).metadata();
@@ -178,16 +176,12 @@ async function main() {
   // Pencere ikonu da asar disinda dursun (tepsi ile ayni sebep).
   fs.writeFileSync(path.join(resourcesDir, "icon.ico"), buildIco(appImages));
 
-  // Arayuzdeki logolar da ayni kaynaktan: sitenin ust bari ve oyun ici
-  // overlay. Kenar bosluklari kirpilir; kucuk olcekte logo "yuzmesin".
+  // Sitenin ust barindaki logo da ayni kaynaktan. Kenar bosluklari
+  // kirpilir; kucuk olcekte logo "yuzmesin".
   const logo = await trimmed(source);
   fs.writeFileSync(
     path.join(webPublicDir, "logo.png"),
     (await renderSizes(logo, [128]))[0].data,
-  );
-  fs.writeFileSync(
-    path.join(overlayDir, "logo.png"),
-    (await renderSizes(logo, [64]))[0].data,
   );
 
   console.log("Ikonlar uretildi (kaynak: build/icon-source.png):");
@@ -197,7 +191,6 @@ async function main() {
   console.log("  resources/tray.ico  (" + ICO_SIZES_TRAY.join(", ") + ")");
   console.log("  resources/tray.png  (32)");
   console.log("  ../web/public/logo.png (128)");
-  console.log("  src/overlay/logo.png   (64)");
 }
 
 main().catch((error) => {
