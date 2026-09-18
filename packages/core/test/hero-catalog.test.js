@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import heroIds from "../src/data/hero-ids.js";
+import heroSeedOverrides from "../src/data/hero-seed-overrides.js";
 import retiredItems from "../src/data/retired-items.js";
 import {
   heroCatalog,
@@ -34,6 +35,36 @@ import {
   WEAKNESS_ITEMS,
 } from "../src/live/item-advice.js";
 import { isRetiredItem } from "../src/live/item-keys.js";
+
+/**
+ * Elle tutulan varsayilanlar TOHUMUN parcasidir.
+ *
+ * "Tavsiyeleri yonet" ekraninda yapilan bir duzenleme depoda durur ve
+ * "Sifirla" onu siler. Kalici olmasi istenen duzenleme bu yuzden
+ * hero-seed-overrides.js'e tasinir; oradan dusmesi, kullanicinin sifirla'ya
+ * bastigi anda duzenlemesini SESSIZCE kaybetmesi demek olurdu.
+ */
+test("elle yazilan varsayilanlar sifirlanmis kayitta da durur", () => {
+  const entries = Object.entries(heroSeedOverrides);
+  assert.ok(entries.length > 0, "en az bir elle yazilmis varsayilan olmali");
+
+  for (const [hero, manual] of entries) {
+    assert.ok(isKnownHero(hero), `tanimsiz hero: ${hero}`);
+    // Duzenleme YOKKEN (yani sifirlanmis halde) okunan kayit.
+    const record = heroRecord(hero, null);
+    for (const [field, value] of Object.entries(manual)) {
+      if (field === "roleValues") {
+        for (const [axis, score] of Object.entries(value)) {
+          assert.equal(record.roleValues[axis], score, `${hero}.${axis}`);
+        }
+        continue;
+      }
+      assert.deepEqual(record[field], value, `${hero}.${field}`);
+    }
+    // Varsayilan "elle duzenlenmis" sayilmaz: rozet yalnizca depodaki kayda bakar.
+    assert.equal(record.edited, false, `${hero} varsayilan kayit olmali`);
+  }
+});
 
 test("katalog oyundaki tum hero'lari kapsar", () => {
   const keys = new Set(heroKeys());

@@ -22,6 +22,7 @@ const { DEFAULT_PORT, startServer } = require("./server/index.js");
 const { createLogger } = require("./services/logger.js");
 const { createTray } = require("./services/tray.js");
 const { createUpdater } = require("./services/updater.js");
+const { createOverlay } = require("./services/overlay.js");
 const {
   applyAutoLaunch,
   launchedHidden,
@@ -54,6 +55,8 @@ let mainWindow = null;
 let server = null;
 /** @type {ReturnType<typeof createTray>|null} */
 let tray = null;
+/** @type {ReturnType<typeof createOverlay>|null} */
+let overlay = null;
 
 const logger = createLogger({ dir: app.getPath("userData") });
 
@@ -195,6 +198,15 @@ app.whenReady().then(async () => {
   );
   applyAutoLaunch({ app, enabled: server.settings.get().autoLaunch, logger });
 
+  // Oyun ici item tavsiyesi. Ayar her turda okunur; kapatilinca bir sonraki
+  // turda gizlenir, ayrica dinleyici gerekmez.
+  overlay = createOverlay({
+    logger,
+    getState: () => server.getOverlayState(),
+    isEnabled: () => server?.settings.get().showOverlay !== false,
+  });
+  overlay.start();
+
   if (server.settings.get().autoInstallGsi) {
     setupGsi({ silent: true });
   }
@@ -219,6 +231,7 @@ app.on("before-quit", () => {
 
 app.on("will-quit", async () => {
   tray?.destroy();
+  overlay?.stop();
   await server?.stop();
 });
 

@@ -11,6 +11,7 @@
  *   - useOverwolf    : Overwolf/DotaPlus loglarindan canli draft okunsun mu
  *   - startMinimized : acilista pencere gosterilmesin, tepside kalsin
  *   - autoLaunch     : Windows oturumu acilinca uygulama kendiliginden kalksin
+ *   - showOverlay    : oyun sirasinda item tavsiyesi overlay'i gosterilsin
  */
 
 const fs = require("node:fs");
@@ -75,6 +76,10 @@ const DEFAULTS = {
   // kalkar ve tepside bekler (bkz. services/auto-launch.js).
   autoLaunch: true,
   autoInstallGsi: true,
+  // Oyun ici overlay: Dota on plandayken sag altta soluk item tavsiyesi
+  // (bkz. services/overlay.js). Yeni anahtar oldugu icin goc gerekmez; dosyada
+  // yoksa DEFAULTS'tan acik gelir.
+  showOverlay: true,
 };
 
 /**

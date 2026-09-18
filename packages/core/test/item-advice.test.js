@@ -97,6 +97,20 @@ test("yalnizca GSI varken 2 oneri verilir ve hepsi hero planindan gelir", () => 
   );
 });
 
+test("minTotal duz GSI kotasini overlay icin buyutur ama counter uretmez", () => {
+  const advice = buildPlayerItemAdvice({
+    player: gsiRow("juggernaut"),
+    allies: [],
+    enemies: [],
+    dataLevel: "self",
+    minTotal: 4,
+  });
+
+  assert.equal(advice.length, 4);
+  assert.ok(advice.every((row) => row.group !== "counter"));
+  assert.equal(new Set(advice.map((row) => row.key)).size, 4);
+});
+
 test("rakip hero'lar bilindiginde oneri sayisi artar", () => {
   const advice = buildPlayerItemAdvice({
     player: gsiRow("juggernaut"),

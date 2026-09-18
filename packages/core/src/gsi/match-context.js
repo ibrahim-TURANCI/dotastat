@@ -206,6 +206,8 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.itemPlanOverrides]
  *   ESKI sekil: yalnizca ekle/cikar listesi. Depoda hala bu sekilde duran
  *   kayitlar var, bu yuzden kabul edilmeye devam ediyor.
+ * @param {number} [input.minAdvice] Oyuncu basina en az oneri sayisi; oyun
+ *   ici overlay kullanir. Verilmezse veri seviyesinin kotasi gecerli.
  */
 export function buildLiveMatchContext(input = {}) {
   const liveState = input.liveState || null;
@@ -265,6 +267,7 @@ export function buildLiveMatchContext(input = {}) {
     gameTime: liveState.gameTime,
     heroOverrides: input.heroOverrides || {},
     overrides: input.itemPlanOverrides || {},
+    minAdvice: input.minAdvice,
   });
 
   const draftStage = resolveDraftStage({

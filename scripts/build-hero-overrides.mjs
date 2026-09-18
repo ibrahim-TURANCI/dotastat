@@ -27,6 +27,11 @@
  *
  * Cikti dosyasi depoya COMMITLENIR: uretici disaridaki bir projeye ve aga
  * bagli, ama uygulamanin calismasi bagli olmamali.
+ *
+ * ELLE YAPILAN DUZENLEME BURAYA YAZILMAZ: bu dosya her calistirmada bastan
+ * yazilir. "Tavsiyeleri yonet" ekraninda yapilip kalici kilinmak istenen kayit
+ * packages/core/src/data/hero-seed-overrides.js'e girer; o dosya bu uretimin
+ * UZERINE biner ve uretici ona dokunmaz.
  */
 
 import fs from "node:fs";

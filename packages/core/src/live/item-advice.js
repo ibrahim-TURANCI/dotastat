@@ -425,6 +425,9 @@ function recordOf(heroKey, overrides = {}) {
  * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero -> duzenleme
  * @param {{ add?: string[], remove?: string[] }} [input.override] Tek seferlik ek duzenleme
  * @param {Set<string>} [input.teamTaken] Takimda baskasina zaten onerilenler
+ * @param {number} [input.minTotal] Kotanin toplamini en az bu sayiya cikarir
+ *   (oyun ici overlay 4 yer gosteriyor; duz GSI kotasi 2'de kaliyor). Grup
+ *   paylari degismez, artan yerler siranin devamindan dolar.
  * @returns {Array<{ key: string, name: string, group: string, groupLabel: string, reason: string }>}
  */
 export function buildPlayerItemAdvice(input) {
@@ -445,7 +448,11 @@ export function buildPlayerItemAdvice(input) {
     ),
   );
   const teamTaken = input.teamTaken || new Set();
-  const quota = ADVICE_QUOTA[input.dataLevel] || ADVICE_QUOTA.self;
+  const baseQuota = ADVICE_QUOTA[input.dataLevel] || ADVICE_QUOTA.self;
+  const quota = {
+    ...baseQuota,
+    total: Math.max(baseQuota.total, Number(input.minTotal) || 0),
+  };
 
   /** Aday havuzu; secim en sonda kotaya gore yapilir. */
   /** @type {Map<string, { key: string, group: string, reason: string, order: number }>} */
@@ -939,6 +946,8 @@ export function buildTeamAnalysis(input) {
  *   envanterin olcusu. Verilmezse tahmin uretilmez.
  * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero -> duzenleme
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.overrides] Eski sekil
+ * @param {number} [input.minAdvice] Oyuncu basina en az oneri sayisi (bkz.
+ *   buildPlayerItemAdvice `minTotal`)
  */
 export function buildLiveItemAdvice(input = {}) {
   const radiantRaw = Array.isArray(input.radiantPlayers)
@@ -984,6 +993,7 @@ export function buildLiveItemAdvice(input = {}) {
         heroOverrides,
         override: legacy[normalizeHeroKey(row?.hero)] || null,
         teamTaken,
+        minTotal: input.minAdvice,
       });
       for (const card of advice) {
         if (TEAM_UNIQUE_ITEMS.has(card.key)) {

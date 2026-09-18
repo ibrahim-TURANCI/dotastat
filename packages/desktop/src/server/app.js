@@ -628,6 +628,90 @@ function createServerApp(options) {
 
   // --- Canli mac --------------------------------------------------------------
 
+  /**
+   * Canli mac baglami (item tavsiyesi + takim analizi dahil).
+   *
+   * Hem `/api/live` hem oyun ici overlay bunu kullanir; ikisinin AYNI
+   * tavsiyeyi gostermesi gerekir.
+   *
+   * @param {Record<string, any>} state currentLiveState ciktisi
+   * @param {{ freshPlans?: boolean, minAdvice?: number }} [options]
+   */
+  async function buildContext(state, options = {}) {
+    return core.buildLiveMatchContext({
+      liveState: state,
+      minAdvice: options.minAdvice,
+      statsByPlayerId: await playerData.getCachedStatsByPlayerId(),
+      viewerSteamId: settings.resolveSteamId(),
+      // Katalog siteden gelir ve 60 saniye hafizada tutulur; arayuz bir
+      // kayit sonrasi `?plans=fresh` ile hafizayi atlatir.
+      heroOverrides: await readHeroPlans({ fresh: options.freshPlans }),
+    });
+  }
+
+  /** Overlay'in gosterildigi mac evreleri: hero secildikten sonra. */
+  const OVERLAY_PHASES = ["PRE_GAME", "GAME_IN_PROGRESS"];
+  /** Overlay'de gosterilen tavsiye sayisi. */
+  const OVERLAY_SLOTS = 4;
+
+  /**
+   * Oyun ici overlay icin KENDI hero'muzun tavsiyesi.
+   *
+   * Tavsiye listesi hero planiyla basliyor; ilk dort alinirsa rakibe karsi
+   * counter onerisi cogu zaman disarida kaliyordu. Overlay'in amaci tam da
+   * "sirada ne var + rakibe ne lazim" oldugu icin iki gruba ikiser yer
+   * ayrilir, bos kalan yer siradakiyle doldurulur.
+   *
+   * @returns {Promise<{ active: boolean, reason?: string, hero?: string, items?: Array<Record<string, string>> }>}
+   */
+  async function overlayState() {
+    const state = currentLiveState();
+    const phase = String(state?.phase || "").toUpperCase();
+    if (!state || !OVERLAY_PHASES.some((name) => phase.includes(name))) {
+      return { active: false, reason: "oyunda-degil" };
+    }
+
+    const context = await buildContext(state, { minAdvice: OVERLAY_SLOTS });
+    const ids = new Set(
+      [settings.resolveSteamId(), state.localSteamId]
+        .map((value) => String(value || ""))
+        .filter(Boolean),
+    );
+    const me = [
+      ...(context.radiantPlayers || []),
+      ...(context.direPlayers || []),
+    ].find((row) => ids.has(String(row.steamId || "")));
+    if (!context.active || !me) {
+      return { active: false, reason: "oyuncu-bulunamadi" };
+    }
+
+    const advice = Array.isArray(me.itemAdvice) ? me.itemAdvice : [];
+    const counters = advice.filter((row) => row.group === "counter");
+    const others = advice.filter((row) => row.group !== "counter");
+    const picked = new Set([...others.slice(0, 2), ...counters.slice(0, 2)]);
+    for (const row of advice) {
+      if (picked.size >= OVERLAY_SLOTS) {
+        break;
+      }
+      picked.add(row);
+    }
+
+    return {
+      active: true,
+      hero: me.heroName || "",
+      items: advice
+        .filter((row) => picked.has(row))
+        .map((row) => ({
+          key: row.key,
+          name: row.name,
+          group: row.group,
+          groupLabel: row.groupLabel,
+          reason: row.reason,
+          icon: core.itemIconUrl(row.key),
+        })),
+    };
+  }
+
   app.get("/api/live", async (request, response) => {
     const state = currentLiveState();
     if (!state) {
@@ -636,16 +720,8 @@ function createServerApp(options) {
     }
 
     try {
-      const statsByPlayerId = await playerData.getCachedStatsByPlayerId();
-      const context = core.buildLiveMatchContext({
-        liveState: state,
-        statsByPlayerId,
-        viewerSteamId: settings.resolveSteamId(),
-        // Katalog siteden gelir ve 60 saniye hafizada tutulur; arayuz bir
-        // kayit sonrasi `?plans=fresh` ile hafizayi atlatir.
-        heroOverrides: await readHeroPlans({
-          fresh: request.query.plans === "fresh",
-        }),
+      const context = await buildContext(state, {
+        freshPlans: request.query.plans === "fresh",
       });
       // Duzenleme kadroya bagli; masaustunde kimlik ayarlardaki SteamID.
       context.canEditItemPlans = canEditHeroPlans();
@@ -776,6 +852,7 @@ function createServerApp(options) {
       "startMinimized",
       "autoLaunch",
       "autoInstallGsi",
+      "showOverlay",
     ]) {
       if (body[key] !== undefined && body[key] !== "***") {
         patch[key] = body[key];
@@ -893,6 +970,8 @@ function createServerApp(options) {
     getLiveState: () => liveState,
     /** Overwolf ile zenginlestirilmis hali (yoksa GSI'nin aynisi). */
     getEnrichedLiveState: currentLiveState,
+    /** Oyun ici overlay'in gosterecegi tavsiyeler (bkz. services/overlay.js). */
+    getOverlayState: overlayState,
     /**
      * Overwolf logunda bir sey degistiginde cagrilir: draft ilerlerken GSI
      * sessiz kalsa bile yayin guncellensin.

@@ -32,13 +32,9 @@
 .app-logo {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  color: #04121f;
-  background: linear-gradient(140deg, var(--accent), var(--good));
+  flex: none;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
 }
 
 .app-header-side {

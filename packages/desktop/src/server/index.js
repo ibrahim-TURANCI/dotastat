@@ -87,7 +87,7 @@ async function startServer(options) {
     version: options.version || "",
     port,
   });
-  const { app, getLiveState, playerData } = app_;
+  const { app, getLiveState, getOverlayState, playerData } = app_;
   onOverwolfChange = app_.onOverwolfChange;
   overwolf.start();
 
@@ -108,6 +108,7 @@ async function startServer(options) {
     overwolf,
     playerData,
     getLiveState,
+    getOverlayState,
     async stop() {
       relay.stop();
       mmr.stop();

@@ -20,9 +20,14 @@
  * TOHUM VERI degistirilmez; kullanicinin kaydi onun UZERINE biner ve yalnizca
  * yazdigi alanlari ezer. Boylece bir alani duzenlemek digerlerini silmez ve
  * "sifirla" kaydi silmekten ibaret kalir.
+ *
+ * TOHUM IKI KATMANDIR: uretilmis veri (data/hero-overrides.js) ve onun uzerine
+ * binen elle tutulan varsayilanlar (data/hero-seed-overrides.js). Ikincisi,
+ * ekranda yapilip kalici kilinmis duzenlemedir; "sifirla" oraya doner.
  */
 
 import heroOverrides from "../data/hero-overrides.js";
+import heroSeedOverrides from "../data/hero-seed-overrides.js";
 import { isRetiredItem, normalizeItemKey } from "../live/item-keys.js";
 import { normalizeHeroKey } from "./hero-names.js";
 import { heroTraitSeed, normalizeTraitList } from "./hero-traits.js";
@@ -221,7 +226,12 @@ export function normalizeHeroOverride(patch) {
 }
 
 /**
- * Bir hero'nun tohum kaydi (kullanici duzenlemesi OLMADAN).
+ * Bir hero'nun tohum kaydi (kullanicinin DEPODAKI duzenlemesi olmadan).
+ *
+ * Iki katman birlesir: uretilmis veri (hero-overrides.js + hero-traits.js) ve
+ * onun uzerine binen ELLE tutulan varsayilanlar (hero-seed-overrides.js).
+ * Ikincisi ekranda yapilip kalici kilinmis duzenlemedir: "Sifirla" depodaki
+ * kaydi sildiginde hero uretilmis veriye degil BURAYA doner.
  *
  * @param {string} hero
  * @returns {Record<string, any>|null}
@@ -232,7 +242,7 @@ export function heroSeed(hero) {
   if (!seed) {
     return null;
   }
-  return {
+  const base = {
     hero: key,
     laneRoles: [...(seed.laneRoles || [])],
     traits: heroTraitSeed(key),
@@ -243,6 +253,13 @@ export function heroSeed(hero) {
     situationalItems: [...(seed.situationalItems || [])],
     removedItems: [],
   };
+  // Elle yazilan varsayilan da bir duzenlemedir: depodan geleniyle AYNI
+  // temizlikten gecer ki bozuk bir satir kataloga sizmasin. Yalnizca yazilmis
+  // alanlar doner, dolayisiyla eksik birakilan alan uretilmis tohumda kalir.
+  const manual = normalizeHeroOverride(heroSeedOverrides[key]);
+  const record = { ...base, ...manual, hero: key };
+  record.roleValues = { ...base.roleValues, ...(manual.roleValues || {}) };
+  return record;
 }
 
 /**

@@ -47,9 +47,8 @@ export function AppHeader({
   return (
     <header className="app-header">
       <div className="app-header-brand">
-        <span className="app-logo" aria-hidden="true">
-          DS
-        </span>
+        {/* Masaustu uygulamasinin ikonuyla ayni gorsel (bkz. generate-icons.mjs). */}
+        <img className="app-logo" src="/logo.png" alt="" aria-hidden="true" />
         <div>
           <h1>DotaStat</h1>
           <p className="muted">Oyuncu degerlendirme ve canli mac paneli</p>

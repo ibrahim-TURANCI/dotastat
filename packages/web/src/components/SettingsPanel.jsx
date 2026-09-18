@@ -225,6 +225,16 @@ export function SettingsPanel({ onClose }) {
           onChange={(v) => change("startMinimized", v)}
         />
         <Toggle
+          label="Oyun içinde item tavsiyesi göster"
+          checked={form.showOverlay !== false}
+          onChange={(v) => change("showOverlay", v)}
+        />
+        <p className="muted micro">
+          Dota açık ve maç sürerken sağ altta soluk bir şeritte sıradaki 4 item
+          önerisi görünür. Dota'nın görüntü modu “Kenarlıksız pencere” olmalı;
+          tam ekran modunda hiçbir uygulama oyunun üstüne çizilemez.
+        </p>
+        <Toggle
           label="GSI dosyasını otomatik kur"
           checked={form.autoInstallGsi !== false}
           onChange={(v) => change("autoInstallGsi", v)}
