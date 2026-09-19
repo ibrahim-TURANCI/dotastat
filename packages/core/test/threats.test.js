@@ -11,7 +11,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isKnownHero, heroRecord } from "../src/heroes/hero-catalog.js";
+import {
+  isKnownHero,
+  heroKeys,
+  heroRecord,
+} from "../src/heroes/hero-catalog.js";
 import { HERO_TRAITS } from "../src/heroes/hero-traits.js";
 import {
   buildPlayerItemAdvice,
@@ -284,9 +288,19 @@ test("planda olan cevap Core/Destek'e, olmayan Duruma göre'ye duser", () => {
       myTeam: "dire",
     }).dire.items;
 
-  // Planinda Mekansm olan ama Pipe olmayan bir kadro seclim.
-  const withMek = itemsFor(["crystal_maiden"]);
-  assert.ok(planOf("crystal_maiden").has("mekansm"));
+  // Planinda Mekansm olan ama Pipe olmayan bir destek. Hero ADI onemli degil,
+  // aranan kosul onemli: katalogdan secilir ki "Tavsiyeleri yonet" ekraninda
+  // yapilan bir duzenleme bu yonlendirme testini kirmasin.
+  const mekHero = heroKeys().find(
+    (hero) =>
+      planOf(hero).has("mekansm") &&
+      !planOf(hero).has("pipe") &&
+      heroRecord(hero).laneRoles.some(
+        (role) => role === "sup4" || role === "sup5",
+      ),
+  );
+  assert.ok(mekHero, "planinda Mekansm olan destek kalmamis");
+  const withMek = itemsFor([mekHero]);
   const mekansm = withMek.find((row) => row.key === "mekansm");
   assert.ok(mekansm, "planda olan cevap dusmemeli");
   assert.equal(mekansm.group, "support");

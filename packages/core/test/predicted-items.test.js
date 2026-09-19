@@ -39,13 +39,13 @@ test("tahmin oyun saatiyle buyur ve plandan disari cikmaz", () => {
 
 test("tahmin ucuz itemden baslar, pahaliyi erken vermez", () => {
   // Plan ALIM SIRASINDA degil kullanim sikligina gore sirali: Riki'nin listesi
-  // Skadi ile basliyor. Ilk N itemi almis saymak 10. dakikada Riki'ye Skadi
+  // Manta ile basliyor. Ilk N itemi almis saymak 10. dakikada Riki'ye Manta
   // vermek olurdu.
   const riki = heroRecord("riki");
-  assert.equal(riki.requiredItems[0], "skadi");
+  assert.equal(riki.requiredItems[0], "manta");
   assert.ok(
     !predictInventory({ record: riki, gameTime: minutes(10) }).includes(
-      "skadi",
+      "manta",
     ),
   );
 
