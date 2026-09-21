@@ -16,6 +16,7 @@ import {
 } from "./performance-evaluation-engine.js";
 import { buildStatsFromMatches } from "../providers/match-stats.js";
 import { buildHeroPool } from "./hero-pool.js";
+import { PERIOD_HERO_COUNT } from "./weekly-score.js";
 
 /** Gozlemin profil beklentisini en fazla ne kadar kaydirabilecegi. */
 const POTENTIAL_BLEND_MAX_WEIGHT = 0.5;
@@ -180,6 +181,9 @@ export function toRosterCard(evaluation) {
     heroPoolSource: heroPool?.derivedFrom || "",
     form,
     effectivePotential,
-    topHeroes: (stats?.heroes || []).slice(0, 5),
+    // Donem secilmemisse (ya da o donemde hic mac yoksa) kullanilan yedek:
+    // onbellekteki TUM maclarin hero dagilimi. Kartin gosterdigi serit
+    // normalde donemden gelir (bkz. weekly-score -> topHeroes).
+    topHeroes: (stats?.heroes || []).slice(0, PERIOD_HERO_COUNT),
   };
 }

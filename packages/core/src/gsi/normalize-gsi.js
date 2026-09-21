@@ -38,6 +38,9 @@ function extractItems(itemsObj) {
     backpack: [],
     tp: "",
     neutral: "",
+    // Neutral ETKISI ayri bir slot: oyunda neutral itemin yanina takilan
+    // gelistirme. Ayni kovaya atilirsa ikisinden biri sessizce kaybolur.
+    neutralEffect: "",
     all: [],
   };
 
@@ -62,7 +65,13 @@ function extractItems(itemsObj) {
     const isNeutral = /neutral/i.test(rawKey);
     const isBackpack = /backpack/i.test(rawKey);
 
-    if (isNeutral || slot === 16) {
+    // Gelistirme (`enhancement_*`) neutral itemin kendisi degil, ona takilan
+    // etki; slot numarasi surume gore degisiyor, bu yuzden karar ADA gore
+    // verilir. Ayri tutulmazsa ikisi ayni slota yazilir ve hangisinin
+    // gorunecegi GSI'nin anahtar sirasina kalir.
+    if (itemName.startsWith("enhancement_")) {
+      layout.neutralEffect = itemName;
+    } else if (isNeutral || slot === 16 || slot === 17) {
       layout.neutral = itemName;
     } else if (isTeleport || slot === 15) {
       layout.tp = itemName;
@@ -161,9 +170,36 @@ function readHeroName(value) {
 }
 
 /**
- * @param {Record<string, any>} raw ham GSI payload'u
- * @returns {Array<Record<string, any>>}
+ * Aghanim's Scepter / Shard durumu.
+ *
+ * NEDEN AYRI BIR ALAN: ikisi de envanterde DURMAZ — alindiginda tuketilir ve
+ * hero'nun uzerine yazilir. Envantere bakarak "scepter var mi" sorusu
+ * cevaplanamiyor; GSI bunu `hero` blogunda ayri bayrak olarak veriyor. Ekranda
+ * bu iki kutu envanterin solunda, dolu/bos olarak duruyor.
+ *
+ * Bayrak GELMEDIYSE `undefined` birakilir, `false` degil: birlestirme katmani
+ * (bkz. merge-live.js) bos degeri "veri yok" sayar ve baska bir kaynaktan gelen
+ * dogru degerin uzerine yazmaz.
+ *
+ * @param {unknown} hero GSI `hero` blogu
+ * @returns {{ hasScepter?: boolean, hasShard?: boolean }}
  */
+function aghanimState(hero) {
+  if (!hero || typeof hero !== "object") {
+    return {};
+  }
+  /** @type {Record<string, any>} */
+  const row = hero;
+  const out = {};
+  if (row.aghanims_scepter !== undefined) {
+    out.hasScepter = Boolean(row.aghanims_scepter);
+  }
+  if (row.aghanims_shard !== undefined) {
+    out.hasShard = Boolean(row.aghanims_shard);
+  }
+  return out;
+}
+
 /**
  * Izleyici (spectator) modunda GSI, oyuncu bloklarini TAKIMA GORE IC ICE
  * gonderir:
@@ -220,6 +256,9 @@ function extractSpectatorPlayers(raw) {
         items: items.main,
         backpack: items.backpack,
         neutral: items.neutral,
+        neutralEffect: items.neutralEffect,
+        tp: items.tp,
+        ...aghanimState(hero),
       });
     }
   }
@@ -262,6 +301,9 @@ function extractPlayers(raw) {
       items: items.main,
       backpack: items.backpack,
       neutral: items.neutral,
+      neutralEffect: items.neutralEffect,
+      tp: items.tp,
+      ...aghanimState(player?.hero),
     });
   }
 
@@ -296,6 +338,9 @@ function extractPlayers(raw) {
       items: items.main,
       backpack: items.backpack,
       neutral: items.neutral,
+      neutralEffect: items.neutralEffect,
+      tp: items.tp,
+      ...aghanimState(raw?.hero),
     });
   }
 

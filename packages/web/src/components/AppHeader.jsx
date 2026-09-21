@@ -25,6 +25,7 @@ const OVERWOLF_INSTALL_URL =
  * @param {boolean} props.sessionLoading
  * @param {() => void} props.onLogout
  * @param {{ name: string, hero: string, team: string }|null} props.detectedPlayer
+ * @param {() => void} [props.onOpenHeroManager] "Tavsiyeleri yonet" penceresi
  */
 export function AppHeader({
   user,
@@ -35,6 +36,7 @@ export function AppHeader({
   cloudSignedIn,
   cloudConfigured,
   onOpenSettings,
+  onOpenHeroManager,
 }) {
   const presence = useAsyncData(() => api.presence(), { intervalMs: 45000 });
   const release = useAsyncData(() => api.release(), { intervalMs: 0 });
@@ -45,13 +47,29 @@ export function AppHeader({
   return (
     <header className="app-header">
       <div className="app-header-brand">
-        <span className="app-logo" aria-hidden="true">
-          DS
-        </span>
+        {/* Masaustu uygulamasinin ikonuyla ayni gorsel (bkz. generate-icons.mjs). */}
+        <img className="app-logo" src="/logo.png" alt="" aria-hidden="true" />
         <div>
           <h1>DotaStat</h1>
           <p className="muted">Oyuncu degerlendirme ve canli mac paneli</p>
         </div>
+
+        {/*
+          Hero tavsiye katalogu tek bir yerden yonetilir. Eskiden her canli mac
+          satirinda ayri bir dugme vardi; duzenleme HERO'nun kaydina yazildigi
+          icin bu yanlis bir sey vaat ediyordu ve bir hero'yu duzenlemek icin
+          onun o an bir macta olmasi gerekiyordu.
+        */}
+        {onOpenHeroManager ? (
+          <button
+            type="button"
+            className="btn ghost small hero-manager-btn"
+            onClick={onOpenHeroManager}
+            title="Hero başına item tavsiyelerini ve takım analizini besleyen değerleri düzenle"
+          >
+            ⚙ Tavsiyeleri yönet
+          </button>
+        ) : null}
       </div>
 
       <div className="app-header-side">

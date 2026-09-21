@@ -105,13 +105,20 @@ export {
   toMmrChanges,
 } from "./players/mmr-history.js";
 
-// --- Haftanin kazanani / kaybedeni -----------------------------------------
+// --- Donem siralamasi (Hafta / Ay) ------------------------------------------
 export {
+  BASELINE_WINDOW_FACTOR,
   BASELINE_WINDOW_MS,
+  DEFAULT_PERIOD,
   ESTIMATED_MMR_PER_MATCH,
+  PERIODS,
+  PERIOD_HERO_COUNT,
   WEEKLY_WINDOW_MS,
   buildWeeklyEntry,
   buildWeeklyScoreboard,
+  isAllTimePeriod,
+  resolvePeriod,
+  withPeriodSummary,
 } from "./players/weekly-score.js";
 
 export {
@@ -120,6 +127,7 @@ export {
   MATCH_TTL_MS,
   PROFILE_TTL_MS,
   createPlayerDataService,
+  mergeMatchHistory,
 } from "./players/player-data-service.js";
 
 // --- Veri kaynaklari --------------------------------------------------------
@@ -174,10 +182,67 @@ export {
   itemIconUrl,
   ownedItems,
   resolveDataLevel,
+  teamRoleBars,
   ADVICE_QUOTA,
   GROUP_LABELS,
+  RADAR_AXES,
   TEAM_ATTRIBUTES,
 } from "./live/item-advice.js";
+export {
+  isRetiredItem,
+  normalizeItemKey,
+  ITEM_KEY_ALIASES,
+  RETIRED_ITEMS,
+} from "./live/item-keys.js";
+
+// --- Envanteri gorunmeyen hero'lar icin tahmini envanter ---------------------
+export {
+  goldPerMinute,
+  itemBudget,
+  predictInventory,
+  GOLD_PER_MINUTE,
+  MAX_PREDICTED,
+} from "./live/predicted-items.js";
+
+// --- Rakip kompozisyonundaki tehditler --------------------------------------
+export {
+  detectThreats,
+  heroThreats,
+  threatAnswers,
+  THREATS,
+} from "./live/threats.js";
+
+// --- Hero ozellikleri ("Özellikler" kutucuklari) ----------------------------
+export {
+  heroTraitSeed,
+  normalizeTraitList,
+  HERO_TRAITS,
+  TRAIT_BY_KEY,
+  TRAIT_KEYS,
+  TRAIT_LABELS,
+  TRAIT_TOOLTIPS,
+} from "./heroes/hero-traits.js";
+
+// --- Hero / item arama (duzenleme ekranindaki otomatik tamamlama) ------------
+export { exactHeroKey, searchHeroes, searchItems } from "./heroes/search.js";
+
+// --- Hero tavsiye katalogu ("Tavsiyeleri yonet") -----------------------------
+export {
+  heroCatalog,
+  heroKeys,
+  heroPlansFromItemPlans,
+  heroRecord,
+  heroSeed,
+  isKnownHero,
+  normalizeHeroOverride,
+  normalizeHeroPlans,
+  HERO_LIST_FIELDS,
+  LANE_ROLES,
+  LANE_ROLE_LABELS,
+  MAX_LIST_LENGTH,
+  ROLE_VALUE_KEYS,
+  ROLE_VALUE_LABELS,
+} from "./heroes/hero-catalog.js";
 
 // --- Overwolf / DotaPlus (istege bagli ek kaynak) ---------------------------
 export {

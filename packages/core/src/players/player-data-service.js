@@ -172,6 +172,57 @@ function migrateCachedMatches(matches, schema) {
     };
   });
 }
+/**
+ * Duran mac listesiyle yeni geleni birlestirir.
+ *
+ * NEDEN BIRLESTIRME, UZERINE YAZMA DEGIL: hicbir kaynak "su ana kadarki tum
+ * maclar" garantisi vermiyor. OpenDota maclari kendi programina gore
+ * indeksliyor (olculdu: bir mac 29 saat sonra bile yoktu), Stratz'ta da liste
+ * anlik olarak eksik gelebiliyor. Uzerine yazan bir tazeleme, o an cevap veren
+ * kaynak ne verdiyse onu DOGRU kabul eder ve elde duran maclari siler.
+ *
+ * Mac gecmisi ise yalnizca BUYUR: oynanmis bir mac sonradan yok olmaz. Bu
+ * yuzden birlesim alinir.
+ *
+ * Ayni `matchId` icin YENI satir kazanir: parse edilmis bir mac sonradan daha
+ * fazla alan tasiyabilir (ward, kamp), eskisini tutmak veriyi geri gotururdu.
+ *
+ * SAF FONKSIYON: depo okumaz, saat okumaz. Sirlama `startedAt`e gore yeniden
+ * yapilir — iki listenin sirasina guvenilmez.
+ *
+ * @param {import("./player-types.js").PlayerMatch[]} kept Elde duran liste
+ * @param {import("./player-types.js").PlayerMatch[]} incoming Yeni gelen liste
+ * @param {{ limit?: number }} [options] En fazla kac mac saklanacagi
+ * @returns {import("./player-types.js").PlayerMatch[]} yeniden eskiye sirali
+ */
+export function mergeMatchHistory(kept, incoming, options = {}) {
+  const limit = Number(options.limit) || MATCH_FETCH_SIZE;
+  /** @type {Map<string, import("./player-types.js").PlayerMatch>} */
+  const byId = new Map();
+
+  for (const row of Array.isArray(kept) ? kept : []) {
+    const id = String(row?.matchId || "");
+    if (id) {
+      byId.set(id, row);
+    }
+  }
+  // Yeni liste SONRA yazilir; ayni mac icin gelen satir eskisinin yerini alir.
+  for (const row of Array.isArray(incoming) ? incoming : []) {
+    const id = String(row?.matchId || "");
+    if (id) {
+      byId.set(id, row);
+    }
+  }
+
+  return [...byId.values()]
+    .sort(
+      (a, b) =>
+        new Date(b?.startedAt || 0).getTime() -
+        new Date(a?.startedAt || 0).getTime(),
+    )
+    .slice(0, limit);
+}
+
 /** Panel isteginde en fazla kac oyuncu icin taze veri cekilir. */
 const MAX_REFRESH_PER_REQUEST = 4;
 
@@ -309,13 +360,32 @@ export function createPlayerDataService(options) {
       }
       const fetchedAt = new Date().toISOString();
       if (matches.length) {
-        const row = { matches, fetchedAt, schema: MATCH_SCHEMA };
+        // GELEN LISTE, DURAN LISTENIN UZERINE YAZILMAZ — BIRLESTIRILIR.
+        //
+        // Kaynak "basarili" cevap verip EKSIK liste donebiliyor: OpenDota
+        // maclari kendi programina gore indeksliyor, Stratz'ta da her mac
+        // ayni anda gorunmuyor. Uzerine yazildiginda sonuc suydu: kullanici
+        // son maci gormek icin "Yenile"ye basiyor, mac yine gelmiyor ve
+        // USTELIK son bir iki gunun maclari ekrandan kayboluyordu — cunku
+        // o an cevap veren kaynagin listesinde onlar yoktu.
+        //
+        // Birlestirmede AYNI mac icin yeni satir kazanir (parse edilmis mac
+        // daha fazla alan tasir); geri kalan yalnizca eklenir. Boylece bir
+        // tazeleme hicbir zaman veri KAYBETTIREMEZ, en kotu ihtimalle yeni
+        // bir sey getirmemis olur.
+        const kept = await storage.get(staleKey);
+        const merged = mergeMatchHistory(
+          migrateCachedMatches(kept?.matches || [], kept?.schema),
+          matches,
+          { limit: MATCH_FETCH_SIZE },
+        );
+        const row = { matches: merged, fetchedAt, schema: MATCH_SCHEMA };
         await Promise.all([
           storage.set(key, row, { ttlMs: MATCH_TTL_MS }),
           storage.set(staleKey, row),
         ]);
         return {
-          matches,
+          matches: merged,
           fetchedAt,
           fromCache: false,
           stale: false,

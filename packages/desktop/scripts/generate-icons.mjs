@@ -1,10 +1,16 @@
 /**
  * Uygulama ve tepsi (tray) ikonlarini uretir.
  *
+ * KAYNAK TEK BIR GORSEL: `build/icon-source.png`. Tum ciktilar ondan
+ * olceklenir; boylece ikonu degistirmek dosyayi degistirip `npm run icons`
+ * demekten ibaret. Eskiden tasarim bu dosyanin icinde SVG olarak gomuluydu ve
+ * ikonu degistirmek icin kod duzenlemek gerekiyordu.
+ *
  * Ciktilar:
  *   build/icon.ico       - kurulum + pencere ikonu (16..256 px, cok katmanli)
  *   build/icon.png       - 512 px kaynak
- *   resources/tray.ico   - tepsi ikonu (16/20/24/32 px, DPI olceklerini kapsar)
+ *   resources/icon.ico   - pencere ikonu, asar DISINDA
+ *   resources/tray.ico   - tepsi ikonu (16..48 px, DPI olceklerini kapsar)
  *   resources/tray.png   - tepsi yedek gorseli (32 px)
  *
  * Tepsi ikonunun BOS gorunmemesi icin iki sey onemli:
@@ -25,6 +31,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(here, "..");
 const buildDir = path.join(desktopRoot, "build");
 const resourcesDir = path.join(desktopRoot, "resources");
+const webPublicDir = path.resolve(desktopRoot, "..", "web", "public");
+
+/** Tum ciktilarin uretildigi kaynak gorsel. */
+const SOURCE = path.join(buildDir, "icon-source.png");
 
 const require = createRequire(import.meta.url);
 
@@ -38,34 +48,6 @@ try {
   );
   process.exit(1);
 }
-
-/** Uygulama ikonu — favicon ile ayni tasarim. */
-const APP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2ea7ff"/>
-      <stop offset="1" stop-color="#28c76f"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="#0b1420"/>
-  <path d="M14 44V20h10c8 0 13 4 13 12s-5 12-13 12H14zm8-6h2c4 0 6-2 6-6s-2-6-6-6h-2v12z" fill="url(#g)"/>
-  <rect x="42" y="20" width="6" height="24" rx="3" fill="url(#g)"/>
-  <rect x="42" y="20" width="6" height="9" rx="3" fill="#eaf3ff" opacity=".85"/>
-</svg>`;
-
-/**
- * Tepsi ikonu ayri cizilir: 16 px'te okunabilmesi icin cerceve yok, sekil
- * daha kalin ve kontrast yuksek. Kucuk boyutta ince cizgiler kayboluyor.
- */
-const TRAY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="t" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7fd0ff"/>
-      <stop offset="1" stop-color="#4ee39a"/>
-    </linearGradient>
-  </defs>
-  <path d="M4 27V5h9c8.5 0 13.5 4.2 13.5 11S21.5 27 13 27H4zm7-5.5h2.2c4.4 0 6.8-2.1 6.8-5.5s-2.4-5.5-6.8-5.5H11v11z" fill="url(#t)"/>
-</svg>`;
 
 const ICO_SIZES_APP = [16, 24, 32, 48, 64, 128, 256];
 const ICO_SIZES_TRAY = [16, 20, 24, 32, 40, 48];
@@ -107,16 +89,21 @@ function buildIco(images) {
 }
 
 /**
- * @param {string} svg
+ * Kaynagi verilen boyutlara olcekler.
+ *
+ * `fit: contain` ve saydam zemin: kaynak kare degilse ikon EZILMEZ, kisa
+ * kenardan bosluk birakilir. Kare olmayan bir ikonu zorla kareye germek
+ * Windows'ta gorunur sekilde bozuk duruyor.
+ *
+ * @param {Buffer} source
  * @param {number[]} sizes
  * @returns {Promise<Array<{ size: number, data: Buffer }>>}
  */
-async function renderSizes(svg, sizes) {
-  const source = Buffer.from(svg, "utf8");
+async function renderSizes(source, sizes) {
   return Promise.all(
     sizes.map(async (size) => ({
       size,
-      data: await sharp(source, { density: 384 })
+      data: await sharp(source)
         .resize(size, size, {
           fit: "contain",
           background: { r: 0, g: 0, b: 0, alpha: 0 },
@@ -127,18 +114,60 @@ async function renderSizes(svg, sizes) {
   );
 }
 
+/**
+ * Tepsi icin kaynagin BOSLUKLARI kirpilir.
+ *
+ * Tepsi ikonu 16 px cizilir ve kaynaktaki kenar boslugu o olcekte gorselin
+ * yarisini yiyor — ikon "uzakta ve kucuk" duruyordu. Kirpma yalnizca tek
+ * renk/saydam kenarlari atar, tasarima dokunmaz.
+ *
+ * Kirpilamazsa (kenarlar tek duze degilse) kaynak oldugu gibi kullanilir:
+ * kirpma bir iyilestirme, on kosul degil.
+ *
+ * @param {Buffer} source
+ * @returns {Promise<Buffer>}
+ */
+async function trimmed(source) {
+  try {
+    return await sharp(source).trim().png().toBuffer();
+  } catch {
+    return source;
+  }
+}
+
 async function main() {
+  if (!fs.existsSync(SOURCE)) {
+    console.error("Kaynak ikon bulunamadi: " + SOURCE);
+    console.error(
+      "Kullanmak istedigin gorseli bu yola PNG olarak koy (kare, en az 256 px).",
+    );
+    process.exit(1);
+  }
+
   fs.mkdirSync(buildDir, { recursive: true });
   fs.mkdirSync(resourcesDir, { recursive: true });
 
-  const appImages = await renderSizes(APP_SVG, ICO_SIZES_APP);
+  const source = fs.readFileSync(SOURCE);
+  const meta = await sharp(source).metadata();
+  if (Math.min(meta.width || 0, meta.height || 0) < 256) {
+    console.error(
+      "Kaynak ikon cok kucuk (" +
+        meta.width +
+        "x" +
+        meta.height +
+        "). En az 256x256 olmali; kucuk kaynaktan buyutulen 256 px katmani bulanik cikar.",
+    );
+    process.exit(1);
+  }
+
+  const appImages = await renderSizes(source, ICO_SIZES_APP);
   fs.writeFileSync(path.join(buildDir, "icon.ico"), buildIco(appImages));
   fs.writeFileSync(
     path.join(buildDir, "icon.png"),
-    (await renderSizes(APP_SVG, [512]))[0].data,
+    (await renderSizes(source, [512]))[0].data,
   );
 
-  const trayImages = await renderSizes(TRAY_SVG, ICO_SIZES_TRAY);
+  const trayImages = await renderSizes(await trimmed(source), ICO_SIZES_TRAY);
   fs.writeFileSync(path.join(resourcesDir, "tray.ico"), buildIco(trayImages));
   fs.writeFileSync(
     path.join(resourcesDir, "tray.png"),
@@ -147,12 +176,21 @@ async function main() {
   // Pencere ikonu da asar disinda dursun (tepsi ile ayni sebep).
   fs.writeFileSync(path.join(resourcesDir, "icon.ico"), buildIco(appImages));
 
-  console.log("Ikonlar uretildi:");
+  // Sitenin ust barindaki logo da ayni kaynaktan. Kenar bosluklari
+  // kirpilir; kucuk olcekte logo "yuzmesin".
+  const logo = await trimmed(source);
+  fs.writeFileSync(
+    path.join(webPublicDir, "logo.png"),
+    (await renderSizes(logo, [128]))[0].data,
+  );
+
+  console.log("Ikonlar uretildi (kaynak: build/icon-source.png):");
   console.log("  build/icon.ico      (" + ICO_SIZES_APP.join(", ") + ")");
   console.log("  build/icon.png      (512)");
+  console.log("  resources/icon.ico");
   console.log("  resources/tray.ico  (" + ICO_SIZES_TRAY.join(", ") + ")");
   console.log("  resources/tray.png  (32)");
-  console.log("  resources/icon.ico");
+  console.log("  ../web/public/logo.png (128)");
 }
 
 main().catch((error) => {

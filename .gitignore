@@ -18,3 +18,6 @@ packages/desktop/.cache/
 # Yerel calisma verisi (kullaniciya ozel, repoda durmaz)
 packages/desktop/storage/
 *.log
+
+# netlify dev, Edge Functions icin bunu uretiyor; depoya girmesi gerekmiyor.
+deno.lock

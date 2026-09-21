@@ -1,0 +1,430 @@
+/* "Tavsiyeleri yonet" penceresi: hero listesi ve hero detayi. */
+
+.hero-manager-backdrop,
+.hero-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 9, 15, 0.72);
+}
+
+.hero-manager-backdrop {
+  z-index: 60;
+}
+
+/* Detay, liste penceresinin UZERINDE acilir: kullanici hero'ya tikladiginda
+   listeyi kaybetmemeli, kapatinca kaldigi yere donmeli. */
+.hero-detail-backdrop {
+  z-index: 61;
+}
+
+.hero-manager {
+  width: min(1080px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow);
+}
+
+.hero-manager-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* Liste uzun; baslik ve arama kutusu kaydirmada yerinde kalmali. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 10px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.hero-manager-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-manager-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 320px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(5, 10, 19, 0.55);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hero-manager-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Cerceve kapsayicida; input yalnizca metin alani. */
+.hero-manager-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: none;
+  background: transparent;
+  color: var(--txt-0);
+  font-size: 12px;
+  outline: none;
+}
+
+.hero-manager-search input::placeholder {
+  color: var(--txt-2);
+}
+
+.hero-manager-clear {
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--txt-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hero-manager-clear:hover {
+  color: var(--txt-0);
+}
+
+.hero-manager-note {
+  margin: 0;
+}
+
+.hero-manager-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hero-group h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--txt-1);
+}
+
+.hero-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hero-chip {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(5, 10, 19, 0.5);
+  overflow: hidden;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.hero-chip:hover {
+  border-color: var(--accent);
+}
+
+/* Elle duzenlenmis hero listede isaretlenir; aksi halde kullanici neyi
+   degistirdigini 127 ikon arasinda bulamiyor. */
+.hero-chip.edited {
+  border-color: var(--good);
+  box-shadow: inset 0 0 0 1px rgba(41, 201, 122, 0.4);
+}
+
+.hero-chip .hero-icon {
+  display: block;
+}
+
+/* --- Hero detayi --------------------------------------------------------- */
+
+.hero-detail {
+  width: min(640px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow);
+}
+
+.hero-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 10px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.hero-detail-head > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hero-detail-close {
+  margin-left: auto;
+}
+
+.hero-detail-section h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lane-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lane-chip {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--txt-1);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lane-chip.on {
+  color: var(--txt-0);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.lane-chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/*
+  Ozellik kutucuklari. Lane rozetleriyle ayni dile bagli (secili olan accent
+  rengine geciyor) ama tiklanabilir alan kutucugun KENDISI degil butun etiket:
+  ad uzun ("Yüksek Hareket Hızı") ve 12 piksellik kareyi tutturmaya calismak
+  mac sirasinda sinir bozucu.
+*/
+.trait-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 6px;
+}
+
+.trait-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--txt-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.trait-chip:hover {
+  border-color: var(--accent);
+}
+
+.trait-chip.on {
+  color: var(--txt-0);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.trait-chip input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.trait-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px 14px;
+}
+
+.role-input {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--txt-1);
+}
+
+.role-input-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.role-input-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-input-number {
+  width: 46px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(5, 10, 19, 0.55);
+  color: var(--txt-0);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+}
+
+.role-input-number:focus {
+  border-color: var(--accent);
+}
+
+/* Cubugun DOLU kismi vurgu rengiyle boyanir: sekiz eksen yan yana dururken
+   degerleri okumadan da karsilastirilabilsin. */
+.role-input-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  margin: 2px 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 0%),
+    rgba(148, 175, 212, 0.18) var(--fill, 0%) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+
+.role-input-range:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.role-input-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-1);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.role-input-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-1);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.role-input-range:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.entry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 3px;
+  font-size: 12px;
+  color: var(--txt-0);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(148, 175, 212, 0.06);
+  cursor: pointer;
+}
+
+.entry-chip:hover:not(:disabled) {
+  border-color: rgba(255, 93, 108, 0.55);
+}
+
+.entry-chip:disabled {
+  cursor: default;
+}
+
+.entry-chip img,
+.entry-chip .hero-icon {
+  width: 28px;
+  height: 20px;
+  border-radius: 3px;
+  object-fit: cover;
+  display: block;
+}
+
+.add-row {
+  display: flex;
+  margin-top: 8px;
+}
+
+.hero-detail-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  position: sticky;
+  bottom: 0;
+  padding-top: 10px;
+  background: var(--bg-1);
+  border-top: 1px dashed var(--line);
+}
+
+@media (max-width: 720px) {
+  .hero-manager-head {
+    flex-wrap: wrap;
+  }
+
+  .hero-manager-search {
+    max-width: none;
+    order: 3;
+    width: 100%;
+  }
+}

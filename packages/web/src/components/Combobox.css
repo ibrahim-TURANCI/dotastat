@@ -1,0 +1,109 @@
+/* Yazarken arayan secim kutusu. */
+
+.combobox {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.combobox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(5, 10, 19, 0.55);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.combobox-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.combobox-icon {
+  font-size: 11px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Kutunun kendisi cerceveyi tasiyor; input yalnizca metin alani. */
+.combobox-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: none;
+  background: transparent;
+  color: var(--txt-0);
+  font-size: 12px;
+  outline: none;
+}
+
+.combobox-field input::placeholder {
+  color: var(--txt-2);
+}
+
+.combobox-field input:disabled {
+  cursor: not-allowed;
+}
+
+.combobox-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  box-shadow: var(--shadow);
+}
+
+.combobox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--txt-0);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Fare ve klavye AYNI isareti kullanir: imlec nerede oldugu tek bir yerden
+   okunur, yoksa iki ayri vurgu ayni anda gorunuyor. */
+.combobox-option.active {
+  background: var(--accent-soft);
+}
+
+.combobox-option .hero-icon,
+.combobox-item-icon {
+  width: 34px;
+  height: 24px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(5, 10, 19, 0.6);
+}
+
+.combobox-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combobox-empty {
+  padding: 6px;
+}

@@ -14,7 +14,7 @@
 
 const path = require("node:path");
 const express = require("express");
-const { hasCloudSession } = require("../services/cloud-session.js");
+const { cloudFetch, hasCloudSession } = require("../services/cloud-session.js");
 
 /**
  * @param {Object} options
@@ -210,14 +210,53 @@ function createServerApp(options) {
 
   // --- Oyuncu degerlendirme ---------------------------------------------------
 
+  /**
+   * Kadronun secilen donemdeki (Hafta / Ay) siralamasi.
+   *
+   * AG ISTEGI YAPMAZ: yalnizca onbellekteki mac verisini okur, boylece donem
+   * sekmesi arasinda gidip gelmek gunluk limitten harcamaz.
+   *
+   * @param {string} period
+   */
+  async function periodScoreboard(period) {
+    const own = ownAccountId();
+    const samples = own ? await mmr.history() : [];
+
+    const entries = await Promise.all(
+      core.listRoster().map(async (player) => {
+        const accountId = String(player.player_id);
+        const bundle = await playerData.getPlayerBundle(player, {
+          allowFetch: false,
+          forcedRoles: await readMatchRoles(accountId),
+        });
+        return {
+          player: bundle.player,
+          matches: bundle.matches,
+          evaluations: bundle.evaluations,
+          // Yerelde yalnizca bu bilgisayarin oyuncusunun okumasi var;
+          // digerlerinin MMR degisimi mac sonucundan tahmin edilir.
+          samples: accountId === own ? samples : [],
+        };
+      }),
+    );
+
+    return core.buildWeeklyScoreboard({ entries, period });
+  }
+
   app.get("/api/players", async (request, response) => {
     try {
       const dashboard = await playerData.getRosterDashboard({
         refresh: request.query.refresh === "1",
       });
+      const board = await periodScoreboard(String(request.query.period || ""));
       response.json({
         ok: true,
         ...dashboard,
+        cards: core.withPeriodSummary(dashboard.cards, board),
+        period: board.period,
+        periodLabel: board.periodLabel,
+        periodDays: board.windowDays,
+        periodSince: board.since,
         disclaimer:
           "performanceRank ve performans profili degerleri gercek MMR degildir, seviye tahminidir.",
       });
@@ -300,6 +339,227 @@ function createServerApp(options) {
     response.json({ ok: true, accountId, roles });
   });
 
+  // --- Hero tavsiye katalogu ("Tavsiyeleri yonet") ---------------------------
+  //
+  // KATALOG ORTAKTIR VE SITEDE DURUR. "Bu hero'da bu item alinir" bilgisi
+  // kisiye ozel degil; grubun ortak kaydidir. Bu yuzden masaustu kendi kopyasini
+  // TUTMAZ, siteye gider (bkz. netlify/functions/_lib/hero-plans.mjs). Aksi
+  // halde iki ayri katalog olusuyordu: oyun sirasinda masaustunde yapilan
+  // duzenleme sitede hic gorunmuyordu.
+  //
+  // Site erisilemezse (internet yok, siteye giris yapilmamis) YEREL AYNA
+  // kullanilir: son okunan katalog diske yazilir, boylece canli mac tavsiyesi
+  // cevrimdisi da dogru calisir. O halde yapilan duzenleme yalnizca yerelde
+  // kalir ve yanitta `synced: false` ile bildirilir.
+
+  /** Yerel aynanin anahtari. Site kaydiyla ayni adi tasir. */
+  const HERO_PLAN_KEY = "heroes:shared";
+
+  /**
+   * Katalogun surec ici hafizasi.
+   *
+   * Canli mac paneli bu ucu 5 saniyede bir yokluyor; her yoklamada siteye
+   * gitmek hem yavas hem gereksiz. Kullanici kaydettiginde hafiza temizlenir,
+   * arayuz de bir sonraki yoklamayi "taze" isaretler.
+   *
+   * @type {{ at: number, plans: Record<string, any> }|null}
+   */
+  let heroPlanMemo = null;
+  const HERO_PLAN_MEMO_MS = 60 * 1000;
+
+  /** @returns {string} Ayarlardaki site adresi (sondaki bolu isaretleri atilir) */
+  function cloudBase() {
+    return String(settings.get().cloudUrl || "")
+      .trim()
+      .replace(/[/]+$/, "");
+  }
+
+  /**
+   * Katalog ucuna siteden istek atar.
+   *
+   * @param {{ method?: string, body?: Record<string, any> }} [options]
+   * @returns {Promise<Record<string, any>|null>} basarisizsa null
+   */
+  async function cloudHeroPlans(options = {}) {
+    const base = cloudBase();
+    if (!base || !(await hasCloudSession(base))) {
+      return null;
+    }
+    try {
+      const response = await cloudFetch(base + "/api/me/hero-plans", {
+        method: options.method || "GET",
+        headers: options.body ? { "content-type": "application/json" } : {},
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.ok === false) {
+        logger.warn?.(
+          "Tavsiye katalogu siteyle esitlenemedi",
+          String(payload?.message || payload?.error || response.status),
+        );
+        return null;
+      }
+      return core.normalizeHeroPlans(payload?.heroes || {});
+    } catch (error) {
+      logger.warn?.(
+        "Tavsiye katalogu siteye ulasamadi",
+        String(error?.message || error),
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Yerel ayna. Site hic okunamadiysa ESKI kisisel kayitlara dusulur, boylece
+   * ortak kataloga gecmeden once yapilmis duzenlemeler kaybolmaz.
+   *
+   * @returns {Promise<Record<string, Record<string, any>>>}
+   */
+  async function localHeroPlans() {
+    const row = await storage.get(HERO_PLAN_KEY);
+    if (row && typeof row.heroes === "object") {
+      return core.normalizeHeroPlans(row.heroes);
+    }
+
+    const accountId = ownAccountId();
+    if (!accountId) {
+      return {};
+    }
+    const personal = await storage.get("heroes:" + accountId);
+    if (personal && typeof personal.heroes === "object") {
+      return core.normalizeHeroPlans(personal.heroes);
+    }
+    // En eski bicim: `{ add, remove }` listeleri.
+    const legacy = await storage.get("plans:" + accountId);
+    return core.heroPlansFromItemPlans(
+      legacy && typeof legacy.plans === "object" ? legacy.plans : {},
+    );
+  }
+
+  /**
+   * @param {Record<string, any>} heroes
+   */
+  async function mirrorHeroPlans(heroes) {
+    heroPlanMemo = { at: Date.now(), plans: heroes };
+    await storage.set(HERO_PLAN_KEY, {
+      heroes,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Gecerli katalog: once site, olmazsa yerel ayna.
+   *
+   * @param {{ fresh?: boolean }} [options]
+   * @returns {Promise<Record<string, Record<string, any>>>}
+   */
+  async function readHeroPlans(options = {}) {
+    if (
+      !options.fresh &&
+      heroPlanMemo &&
+      Date.now() - heroPlanMemo.at < HERO_PLAN_MEMO_MS
+    ) {
+      return heroPlanMemo.plans;
+    }
+
+    const remote = await cloudHeroPlans();
+    if (remote) {
+      await mirrorHeroPlans(remote);
+      return remote;
+    }
+
+    const local = await localHeroPlans();
+    heroPlanMemo = { at: Date.now(), plans: local };
+    return local;
+  }
+
+  /**
+   * Katalogu duzenleme yetkisi KADROYA baglidir (sitedeki kuralin aynisi).
+   * @returns {boolean}
+   */
+  function canEditHeroPlans() {
+    const accountId = ownAccountId();
+    return Boolean(accountId && core.findRosterPlayer(accountId));
+  }
+
+  app.get("/api/me/hero-plans", async (request, response) => {
+    if (!canEditHeroPlans()) {
+      response.status(403).json({
+        ok: false,
+        error: "kadroda-degil",
+        message:
+          "Tavsiye katalogunu yalnizca kadrodaki oyuncular duzenleyebilir.",
+      });
+      return;
+    }
+    response.json({
+      ok: true,
+      accountId: ownAccountId(),
+      heroes: await readHeroPlans({ fresh: true }),
+    });
+  });
+
+  app.post("/api/me/hero-plans", async (request, response) => {
+    const accountId = ownAccountId();
+    if (!accountId) {
+      response.status(400).json({
+        ok: false,
+        error: "steam-id-yok",
+        message: "Ayarlarda SteamID tanimli degil.",
+      });
+      return;
+    }
+    if (!canEditHeroPlans()) {
+      response.status(403).json({
+        ok: false,
+        error: "kadroda-degil",
+        message:
+          "Tavsiye katalogunu yalnizca kadrodaki oyuncular duzenleyebilir.",
+      });
+      return;
+    }
+
+    const { hero, ...patch } = request.body || {};
+    const heroKey = core.normalizeHeroKey(hero);
+    if (!heroKey || !core.isKnownHero(heroKey)) {
+      response.status(400).json({ ok: false, error: "gecersiz-hero" });
+      return;
+    }
+
+    // Once SITEYE yazilir: ortak kaydin sahibi orasi. Site dondurduğu katalogu
+    // ayna olarak saklariz, boylece baskasinin duzenlemesi de buraya iner.
+    const remote = await cloudHeroPlans({
+      method: "POST",
+      body: { hero: heroKey, ...patch },
+    });
+    if (remote) {
+      await mirrorHeroPlans(remote);
+      response.json({ ok: true, accountId, heroes: remote, synced: true });
+      return;
+    }
+
+    // Site yok: duzenleme yerel aynada tutulur ve canli mac tavsiyesinde
+    // kullanilir, ama gruba GITMEZ. Arayuz bunu `synced: false` ile bilir.
+    const clean = core.normalizeHeroOverride(patch);
+    const heroes = { ...(await localHeroPlans()) };
+    // Hicbir alan yollanmadiysa kayit SILINIR: arayuzdeki "Sifirla" budur ve
+    // hero uretilmis tohum veriye geri doner.
+    if (Object.keys(clean).length) {
+      heroes[heroKey] = clean;
+    } else {
+      delete heroes[heroKey];
+    }
+    await mirrorHeroPlans(heroes);
+    response.json({
+      ok: true,
+      accountId,
+      heroes,
+      synced: false,
+      message:
+        "Siteye ulasilamadi; duzenleme yalnizca bu bilgisayarda saklandi.",
+    });
+  });
+
   app.get("/api/players/:playerKey", async (request, response) => {
     const player = core.findRosterPlayer(request.params.playerKey);
     if (!player) {
@@ -366,48 +626,91 @@ function createServerApp(options) {
     }
   });
 
-  // --- Haftanin kazanani / kaybedeni -------------------------------------------
-
-  app.get("/api/weekly", async (request, response) => {
-    try {
-      const own = ownAccountId();
-      const samples = own ? await mmr.history() : [];
-
-      const entries = await Promise.all(
-        core.listRoster().map(async (player) => {
-          const accountId = String(player.player_id);
-          const bundle = await playerData.getPlayerBundle(player, {
-            allowFetch: false,
-            forcedRoles: await readMatchRoles(accountId),
-          });
-          return {
-            player: bundle.player,
-            matches: bundle.matches,
-            evaluations: bundle.evaluations,
-            // Yerelde yalnizca bu bilgisayarin oyuncusunun okumasi var;
-            // digerlerinin MMR degisimi mac sonucundan tahmin edilir.
-            samples: accountId === own ? samples : [],
-          };
-        }),
-      );
-
-      response.json({
-        ok: true,
-        ...core.buildWeeklyScoreboard({ entries }),
-        disclaimer:
-          "Weekly Score gercek MMR degildir; MMR degisimi, galibiyet dengesi, " +
-          "Performance Rank degisimi ve oynanan mac sayisindan hesaplanir.",
-      });
-    } catch (error) {
-      response.status(500).json({
-        ok: false,
-        error: "haftalik-tablo-alinamadi",
-        message: String(error?.message || error),
-      });
-    }
-  });
-
   // --- Canli mac --------------------------------------------------------------
+
+  /**
+   * Canli mac baglami (item tavsiyesi + takim analizi dahil).
+   *
+   * Hem `/api/live` hem oyun ici overlay bunu kullanir; ikisinin AYNI
+   * tavsiyeyi gostermesi gerekir.
+   *
+   * @param {Record<string, any>} state currentLiveState ciktisi
+   * @param {{ freshPlans?: boolean, minAdvice?: number }} [options]
+   */
+  async function buildContext(state, options = {}) {
+    return core.buildLiveMatchContext({
+      liveState: state,
+      minAdvice: options.minAdvice,
+      statsByPlayerId: await playerData.getCachedStatsByPlayerId(),
+      viewerSteamId: settings.resolveSteamId(),
+      // Katalog siteden gelir ve 60 saniye hafizada tutulur; arayuz bir
+      // kayit sonrasi `?plans=fresh` ile hafizayi atlatir.
+      heroOverrides: await readHeroPlans({ fresh: options.freshPlans }),
+    });
+  }
+
+  /** Overlay'in gosterildigi mac evreleri: hero secildikten sonra. */
+  const OVERLAY_PHASES = ["PRE_GAME", "GAME_IN_PROGRESS"];
+  /** Overlay'de gosterilen tavsiye sayisi. */
+  const OVERLAY_SLOTS = 4;
+
+  /**
+   * Oyun ici overlay icin KENDI hero'muzun tavsiyesi.
+   *
+   * Tavsiye listesi hero planiyla basliyor; ilk dort alinirsa rakibe karsi
+   * counter onerisi cogu zaman disarida kaliyordu. Overlay'in amaci tam da
+   * "sirada ne var + rakibe ne lazim" oldugu icin iki gruba ikiser yer
+   * ayrilir, bos kalan yer siradakiyle doldurulur.
+   *
+   * @returns {Promise<{ active: boolean, reason?: string, hero?: string, items?: Array<Record<string, string>> }>}
+   */
+  async function overlayState() {
+    const state = currentLiveState();
+    const phase = String(state?.phase || "").toUpperCase();
+    if (!state || !OVERLAY_PHASES.some((name) => phase.includes(name))) {
+      return { active: false, reason: "oyunda-degil" };
+    }
+
+    const context = await buildContext(state, { minAdvice: OVERLAY_SLOTS });
+    const ids = new Set(
+      [settings.resolveSteamId(), state.localSteamId]
+        .map((value) => String(value || ""))
+        .filter(Boolean),
+    );
+    const me = [
+      ...(context.radiantPlayers || []),
+      ...(context.direPlayers || []),
+    ].find((row) => ids.has(String(row.steamId || "")));
+    if (!context.active || !me) {
+      return { active: false, reason: "oyuncu-bulunamadi" };
+    }
+
+    const advice = Array.isArray(me.itemAdvice) ? me.itemAdvice : [];
+    const counters = advice.filter((row) => row.group === "counter");
+    const others = advice.filter((row) => row.group !== "counter");
+    const picked = new Set([...others.slice(0, 2), ...counters.slice(0, 2)]);
+    for (const row of advice) {
+      if (picked.size >= OVERLAY_SLOTS) {
+        break;
+      }
+      picked.add(row);
+    }
+
+    return {
+      active: true,
+      hero: me.heroName || "",
+      items: advice
+        .filter((row) => picked.has(row))
+        .map((row) => ({
+          key: row.key,
+          name: row.name,
+          group: row.group,
+          groupLabel: row.groupLabel,
+          reason: row.reason,
+          icon: core.itemIconUrl(row.key),
+        })),
+    };
+  }
 
   app.get("/api/live", async (request, response) => {
     const state = currentLiveState();
@@ -417,12 +720,11 @@ function createServerApp(options) {
     }
 
     try {
-      const statsByPlayerId = await playerData.getCachedStatsByPlayerId();
-      const context = core.buildLiveMatchContext({
-        liveState: state,
-        statsByPlayerId,
-        viewerSteamId: settings.resolveSteamId(),
+      const context = await buildContext(state, {
+        freshPlans: request.query.plans === "fresh",
       });
+      // Duzenleme kadroya bagli; masaustunde kimlik ayarlardaki SteamID.
+      context.canEditItemPlans = canEditHeroPlans();
       response.json({ ok: true, ...context });
     } catch (error) {
       response.status(500).json({
@@ -548,7 +850,9 @@ function createServerApp(options) {
       "shareLive",
       "useOverwolf",
       "startMinimized",
+      "autoLaunch",
       "autoInstallGsi",
+      "showOverlay",
     ]) {
       if (body[key] !== undefined && body[key] !== "***") {
         patch[key] = body[key];
@@ -666,6 +970,8 @@ function createServerApp(options) {
     getLiveState: () => liveState,
     /** Overwolf ile zenginlestirilmis hali (yoksa GSI'nin aynisi). */
     getEnrichedLiveState: currentLiveState,
+    /** Oyun ici overlay'in gosterecegi tavsiyeler (bkz. services/overlay.js). */
+    getOverlayState: overlayState,
     /**
      * Overwolf logunda bir sey degistiginde cagrilir: draft ilerlerken GSI
      * sessiz kalsa bile yayin guncellensin.

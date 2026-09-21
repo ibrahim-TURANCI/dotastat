@@ -60,7 +60,8 @@
       "deleteAppDataOnUninstall": false,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "installerHeaderIcon": "build/icon.ico",
+      "include": "build/installer.nsh"
     },
     "publish": [
       {
@@ -71,6 +72,10 @@
   },
   "dotastat": {
     "cloudUrl": "https://dotastat.netlify.app"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ibrahim-TURANCI/dotastat.git"
   },
   "author": {
     "name": "ibrahim"

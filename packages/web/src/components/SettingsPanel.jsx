@@ -211,10 +211,29 @@ export function SettingsPanel({ onClose }) {
       <section className="settings-group">
         <h4>Uygulama</h4>
         <Toggle
+          label="Bilgisayar açılınca başlat"
+          checked={form.autoLaunch !== false}
+          onChange={(v) => change("autoLaunch", v)}
+        />
+        <p className="muted micro">
+          Oturum açıldığında pencere açılmadan tepside başlar. Yalnızca kurulu
+          sürümde geçerlidir.
+        </p>
+        <Toggle
           label="Açılışta simge durumunda başlat"
           checked={form.startMinimized !== false}
           onChange={(v) => change("startMinimized", v)}
         />
+        <Toggle
+          label="Oyun içinde item tavsiyesi göster"
+          checked={form.showOverlay !== false}
+          onChange={(v) => change("showOverlay", v)}
+        />
+        <p className="muted micro">
+          Dota açık ve maç sürerken sağ altta soluk bir şeritte sıradaki 4 item
+          önerisi görünür. Dota'nın görüntü modu “Kenarlıksız pencere” olmalı;
+          tam ekran modunda hiçbir uygulama oyunun üstüne çizilemez.
+        </p>
         <Toggle
           label="GSI dosyasını otomatik kur"
           checked={form.autoInstallGsi !== false}

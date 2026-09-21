@@ -73,11 +73,11 @@ export default {
         },
         averageHeroPerformance: {
           min: 4000,
-          max: 5000,
+          max: 5200,
         },
         weakHeroPerformance: {
           min: 3500,
-          max: 4000,
+          max: 4300,
         },
         unplayableHeroCount: {
           min: 15,
@@ -350,15 +350,15 @@ export default {
       performanceProfile: {
         strongHeroPerformance: {
           min: 4000,
-          max: 4500,
+          max: 4780,
         },
         gameKnowledgeLevel: {
-          min: 3800,
-          max: 4000,
+          min: 4000,
+          max: 4200,
         },
         averageHeroPerformance: {
-          min: 3000,
-          max: 3500,
+          min: 3300,
+          max: 3850,
         },
         weakHeroPerformance: {
           min: 2500,
@@ -633,19 +633,19 @@ export default {
       performanceProfile: {
         strongHeroPerformance: {
           min: 3500,
-          max: 4000,
+          max: 4200,
         },
         gameKnowledgeLevel: {
           min: 4000,
-          max: 4500,
+          max: 4600,
         },
         averageHeroPerformance: {
           min: 2800,
-          max: 3000,
+          max: 3700,
         },
         weakHeroPerformance: {
           min: 2500,
-          max: 3000,
+          max: 3500,
         },
         unplayableHeroCount: {
           min: 40,
@@ -706,16 +706,16 @@ export default {
       },
       performanceProfile: {
         strongHeroPerformance: {
-          min: 4500,
-          max: 5000,
+          min: 3900,
+          max: 4300,
         },
         gameKnowledgeLevel: {
-          min: 4500,
-          max: 5000,
+          min: 3900,
+          max: 4500,
         },
         averageHeroPerformance: {
-          min: 4200,
-          max: 4700,
+          min: 3900,
+          max: 4200,
         },
         weakHeroPerformance: {
           min: 2800,
@@ -725,7 +725,7 @@ export default {
           min: 5,
           max: 10,
         },
-        actualRank: 3800,
+        actualRank: 3500,
       },
     },
   ],

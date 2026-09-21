@@ -1,10 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { heroDisplayName } from "@dotastat/core";
-import {
-  formatClock,
-  formatCompact,
-  formatRelativeTime,
-} from "../lib/format.js";
+import { formatClock, formatRelativeTime } from "../lib/format.js";
 import {
   CollapsibleSection,
   EmptyState,
@@ -14,7 +10,6 @@ import {
 import { DraftAssistant } from "./DraftAssistant.jsx";
 import { LiveAdvice, LiveInventory } from "./LiveInventory.jsx";
 import { TeamAnalysis } from "./TeamAnalysis.jsx";
-import { ItemPlanDialog } from "./ItemPlanDialog.jsx";
 import "./LiveMatchPanel.css";
 
 /**
@@ -30,6 +25,11 @@ import "./LiveMatchPanel.css";
  * bu bilgi baska turlu alinamiyor. Overwolf'lu kimse yoksa panel eskisi gibi,
  * yalnizca GSI'nin verdigi kadariyla calisir.
  *
+ * DUZEN: her oyuncu TEK BIR SATIR. Onceki surumde envanter ve tavsiye satirin
+ * altina kayiyordu; bir oyuncu uc satir kapliyor, on oyuncu ekrana sigmiyordu
+ * ve iki takimi karsilastirmak icin asagi yukari kaydirmak gerekiyordu. Sabit
+ * sutunlu bir tablo ayni bilgiyi tek bakista veriyor.
+ *
  * Katlanabilir ve VARSAYILAN OLARAK KAPALIDIR; canli mac basladiginda
  * uygulama kabugu bunu acar (bkz. App.jsx).
  *
@@ -39,7 +39,6 @@ import "./LiveMatchPanel.css";
  * @param {Error|null} props.error
  * @param {boolean} [props.open]
  * @param {() => void} [props.onToggle]
- * @param {() => void} [props.onReload] Tavsiye duzenlemesinden sonra tazeleme
  */
 export function LiveMatchPanel({
   live,
@@ -47,14 +46,12 @@ export function LiveMatchPanel({
   error,
   open = false,
   onToggle = () => {},
-  onReload = () => {},
 }) {
-  // Hangi hero'nun tavsiyeleri duzenleniyor ("" = dialog kapali).
-  const [planHero, setPlanHero] = useState("");
-  // Duzenleme YALNIZCA Steam ile giris yapmis kullaniciya acilir; sunucu da
-  // ayni sarti uyguluyor (bkz. netlify/functions/item-plans.mjs). Bu, son
-  // maclardaki pozisyon secimiyle ayni kural.
-  const canEdit = Boolean(live?.canEditItemPlans);
+  // Hook, altta gelen erken `return`lerden ETKILENMEMESI icin en basta
+  // kosulsuz cagrilir (React kurali); `live` henuz yoksa bile guvenli
+  // varsayilanlarla calisir.
+  const displayClock = useTickingClock(live?.gameTime, Boolean(live?.active));
+
   const frame = (children, right, className = "") => (
     <CollapsibleSection
       title="Canlı Maç"
@@ -91,14 +88,6 @@ export function LiveMatchPanel({
 
   return frame(
     <>
-      {planHero ? (
-        <ItemPlanDialog
-          hero={planHero}
-          suggested={adviceOfHero(live, planHero)}
-          onClose={() => setPlanHero("")}
-          onSaved={onReload}
-        />
-      ) : null}
       <div className="live-scoreboard">
         <TeamScore
           side="radiant"
@@ -106,7 +95,7 @@ export function LiveMatchPanel({
           mine={live.myTeam === "radiant"}
         />
         <div className="live-clock">
-          <strong>{formatClock(live.gameTime)}</strong>
+          <strong>{formatClock(displayClock)}</strong>
           <span className="muted micro">{phaseLabel(live.phase)}</span>
         </div>
         <TeamScore
@@ -116,30 +105,26 @@ export function LiveMatchPanel({
         />
       </div>
 
+      <TeamAnalysis
+        analysis={live.teamAnalysis}
+        adviceLevel={live.itemAdviceLevel}
+        myTeam={live.myTeam}
+      />
+
       <div className="live-teams">
         <TeamColumn
           title="Radiant"
           side="radiant"
           players={live.radiantPlayers}
           mine={live.myTeam === "radiant"}
-          canEdit={canEdit}
-          onManage={setPlanHero}
         />
         <TeamColumn
           title="Dire"
           side="dire"
           players={live.direPlayers}
           mine={live.myTeam === "dire"}
-          canEdit={canEdit}
-          onManage={setPlanHero}
         />
       </div>
-
-      <TeamAnalysis
-        analysis={live.teamAnalysis}
-        adviceLevel={live.itemAdviceLevel}
-        myTeam={live.myTeam}
-      />
 
       {advice?.visible ? (
         <DraftAssistant advice={advice} />
@@ -191,9 +176,16 @@ function TeamScore({ side, score, mine }) {
 }
 
 /**
- * @param {{ title: string, side: string, players: Array<Record<string, any>>, mine: boolean }} props
+ * Bir takimin oyuncu tablosu.
+ *
+ * @param {{
+ *   title: string,
+ *   side: string,
+ *   players: Array<Record<string, any>>,
+ *   mine: boolean
+ * }} props
  */
-function TeamColumn({ title, side, players, mine, canEdit, onManage }) {
+function TeamColumn({ title, side, players, mine }) {
   // Slot sirasi sabit tutulur: kaynaklar farkli siralarda gelebiliyor ve
   // satirlar her yoklamada yer degistirirse liste okunamaz hale geliyor.
   const rows = [...(players || [])].sort(
@@ -208,16 +200,23 @@ function TeamColumn({ title, side, players, mine, canEdit, onManage }) {
       </h3>
 
       {rows.length ? (
-        <ul className="live-player-list">
-          {rows.map((player, index) => (
-            <LivePlayerRow
-              key={rowKey(player, index)}
-              player={player}
-              canEdit={canEdit}
-              onManage={onManage}
-            />
-          ))}
-        </ul>
+        <div className="live-table-wrap">
+          <table className="live-table">
+            <thead>
+              <tr>
+                <th>Oyuncu / Hero</th>
+                <th>KDA · LH/DN</th>
+                <th>Envanter</th>
+                <th>Tavsiye</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((player, index) => (
+                <LivePlayerRow key={rowKey(player, index)} player={player} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className="muted micro">Oyuncu verisi gelmedi.</p>
       )}
@@ -246,22 +245,18 @@ function rowKey(player, index) {
 }
 
 /**
- * Canli mac oyuncu satiri.
+ * Canli mac oyuncu satiri (tek satir, dort sutun).
  *
  * Iki tur satir vardir ve ikisi de gecerlidir:
- *   - GSI'li satir  : kimlik + KDA + net worth tam.
+ *   - GSI'li satir  : kimlik + KDA + envanter tam.
  *   - Overwolf satiri: yalnizca hero ve rank; kimlik ranked'da gizlidir.
  *
  * Bu yuzden olmayan alanlar "0" olarak degil, HIC cizilmez — yoksa rakip
  * takimin tamami 0/0/0 gorunur ve gercek bir bilgiymis gibi okunur.
  *
- * @param {{
- *   player: Record<string, any>,
- *   canEdit?: boolean,
- *   onManage?: (hero: string) => void
- * }} props
+ * @param {{ player: Record<string, any> }} props
  */
-function LivePlayerRow({ player, canEdit = false, onManage = () => {} }) {
+function LivePlayerRow({ player }) {
   const hasStats =
     Number.isFinite(Number(player.kills)) &&
     Number.isFinite(Number(player.deaths)) &&
@@ -271,73 +266,53 @@ function LivePlayerRow({ player, canEdit = false, onManage = () => {} }) {
   const pending = player.heroConfirmed === false;
 
   return (
-    <li className={"live-player" + (player.roster ? " known" : "")}>
-      <HeroIcon hero={player.hero} size={32} />
-      <div className="live-player-text">
-        <strong>
-          {name || (
-            <span className="muted">
-              {player.slot ? "Slot " + player.slot : "Bilinmiyor"}
+    <tr className={player.roster ? "known" : ""}>
+      <td>
+        <div className="live-player-cell">
+          <HeroIcon hero={player.hero} size={30} />
+          <div className="live-player-text">
+            <strong>
+              {name || (
+                <span className="muted">
+                  {player.slot ? "Slot " + player.slot : "Bilinmiyor"}
+                </span>
+              )}
+            </strong>
+            <span className="muted micro">
+              {heroDisplayName(player.hero) || "hero seçilmedi"}
+              {pending ? " (seçiliyor)" : ""}
+              {player.level ? " · sv " + player.level : ""}
             </span>
-          )}
-        </strong>
-        <span className="muted micro">
-          {heroDisplayName(player.hero) || "hero seçilmedi"}
-          {pending ? " (seçiliyor)" : ""}
-          {player.level ? " · sv " + player.level : ""}
-        </span>
-      </div>
-      <div className="live-player-stats">
+          </div>
+        </div>
+      </td>
+
+      <td>
         {hasStats ? (
-          <>
+          <div className="live-kda-cell">
             <span className="mono">
               {player.kills}/{player.deaths}/{player.assists}
             </span>
-            <span className="muted micro">
-              {formatCompact(player.netWorth)} net
+            <span className="muted micro mono">
+              {Number(player.lastHits || 0)}/{Number(player.denies || 0)}
             </span>
-          </>
+          </div>
         ) : rank ? (
           <RankMedal rank={rank} size={26} />
         ) : (
           <span className="muted micro">veri yok</span>
         )}
-      </div>
+      </td>
 
-      <div className="live-player-col" data-label="Envanter">
+      <td>
         <LiveInventory player={player} />
-      </div>
+      </td>
 
-      <div className="live-player-col" data-label="Tavsiye">
+      <td>
         <LiveAdvice advice={player.itemAdvice} />
-        {canEdit && player.hero ? (
-          <button
-            type="button"
-            className="btn ghost micro plan-manage-btn"
-            onClick={() => onManage(player.hero)}
-            title="Bu hero için tavsiyeleri yönet"
-          >
-            Tavsiyeleri yönet
-          </button>
-        ) : null}
-      </div>
-    </li>
+      </td>
+    </tr>
   );
-}
-
-/**
- * Panelde gorunen satirlardan bir hero'nun guncel onerisini bulur.
- *
- * Dialog, motorun O ANKI onerisini gostermek zorunda: kullanici neyi
- * cikardigini gormeden karar veremez.
- *
- * @param {Record<string, any>} live
- * @param {string} hero
- * @returns {Array<Record<string, any>>}
- */
-function adviceOfHero(live, hero) {
-  const rows = [...(live?.radiantPlayers || []), ...(live?.direPlayers || [])];
-  return rows.find((row) => row.hero === hero)?.itemAdvice || [];
 }
 
 /**
@@ -345,6 +320,53 @@ function adviceOfHero(live, hero) {
  * @param {string} phase
  * @returns {string}
  */
+/**
+ * Ekranda gosterilen mac saati.
+ *
+ * SUNUCUDAN GELEN DEGER 5 SANIYEDE BIR TAZELENIYOR (bkz. App.jsx,
+ * LIVE_POLL_MS) ama oyundaki saat HER SANIYE ilerliyor. Sunucudan geleni
+ * oldugu gibi yazsaydik saat 5'er 5'er ziplardi — toplam dogru ama gozle
+ * takip edilemez bir gorunum olurdu.
+ *
+ * Bu yuzden en son bilinen deger bir CAPA olarak tutulur ve aradaki
+ * saniyeler GERCEK ZAMANDAN (Date.now farkindan) turetilir: veri yine 5
+ * saniyede bir tazeleniyor, ama saat ekranda birer birer akiyor gibi
+ * gorunuyor. Sunucudan YENI bir deger geldiginde (5 saniyelik dilim kapandi,
+ * mac degisti, saat geri sardi) capa ANINDA o degere atlar — gosterilen
+ * deger hicbir zaman gercek veriden 5 saniyeden fazla uzaklasmaz.
+ *
+ * @param {number|undefined} gameTime Sunucudan gelen en son saniye
+ * @param {boolean} active Mac canli mi (degilse tik atilmaz, saat donmez)
+ * @returns {number}
+ */
+function useTickingClock(gameTime, active) {
+  const serverValue = Number(gameTime) || 0;
+  /** @type {React.MutableRefObject<{ value: number, at: number }>} */
+  const anchorRef = useRef({ value: serverValue, at: Date.now() });
+  const [display, setDisplay] = useState(serverValue);
+
+  // Sunucudan yeni deger geldi: capa ve gosterilen deger ANINDA guncellenir.
+  useEffect(() => {
+    anchorRef.current = { value: serverValue, at: Date.now() };
+    setDisplay(serverValue);
+  }, [serverValue]);
+
+  // Iki tazeleme arasinda saniyede bir, capadan gercek zamana gore ilerletilir.
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      const anchor = anchorRef.current;
+      const elapsed = Math.floor((Date.now() - anchor.at) / 1000);
+      setDisplay(anchor.value + elapsed);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  return display;
+}
+
 function phaseLabel(phase) {
   const value = String(phase || "").toUpperCase();
   if (value.includes("HERO_SELECTION")) {

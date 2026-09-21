@@ -40,9 +40,25 @@ async function request(path, init = {}) {
 }
 
 export const api = {
-  /** Oyuncu kartlari. */
-  players: (options = {}) =>
-    request("/api/players" + (options.refresh ? "?refresh=1" : "")),
+  /**
+   * Oyuncu kartlari.
+   *
+   * `period` ("week" | "month") her karta o donemin ozetini ekler (puan, G/M,
+   * MMR degisimi, Performance Rank, mac sayisi) ve kartlari puana gore siralar.
+   *
+   * @param {{ refresh?: boolean, period?: string }} [options]
+   */
+  players: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.refresh) {
+      params.set("refresh", "1");
+    }
+    if (options.period) {
+      params.set("period", options.period);
+    }
+    const query = params.toString();
+    return request("/api/players" + (query ? "?" + query : ""));
+  },
 
   /** Tek oyuncunun detayi. */
   player: (playerKey, options = {}) =>
@@ -52,13 +68,10 @@ export const api = {
         (options.refresh ? "?refresh=1" : ""),
     ),
 
-  /** Haftanin kazanani / kaybedeni tablosu (son 7 gun). */
-  weekly: () => request("/api/weekly"),
-
   /**
    * Canli mac durumu (GSI).
    *
-   * `freshPlans`: sunucu, item tavsiyesi duzenlemelerini 60 saniye hafizada
+   * `freshPlans`: sunucu, hero tavsiyesi duzenlemelerini 60 saniye hafizada
    * tutuyor (her yoklamada depoya gitmemek icin). Kullanici az once kaydettiyse
    * o hafiza atlanmali, yoksa degisiklik bir dakika gorunmezdi.
    *
@@ -99,24 +112,29 @@ export const api = {
       body: JSON.stringify({ matchId, role }),
     }),
 
-  /** Kullanicinin hero basina elle duzenledigi item tavsiyeleri. */
-  itemPlans: () => request("/api/me/item-plans"),
+  /**
+   * Kullanicinin hero basina elle duzenledigi tavsiye kayitlari.
+   *
+   * Yalnizca DUZENLENMIS heroler doner; tohum veri arayuz paketinde zaten var
+   * (bkz. @dotastat/core -> heroCatalog). 127 hero'luk tabloyu her dialog
+   * acilisinda ag uzerinden tasimanin anlami yok.
+   */
+  heroPlans: () => request("/api/me/hero-plans"),
 
   /**
-   * Bir hero'nun tavsiye duzenlemesini kaydeder. Iki liste de bos verilirse
-   * kayit silinir ve tavsiye otomatik motora geri doner.
+   * Bir hero'nun duzenlemesini kaydeder.
+   *
+   * Yalnizca GONDERILEN alanlar yazilir; hicbir alan gonderilmezse kayit
+   * silinir ve hero tohum veriye doner ("Sifirla").
+   *
    * @param {string} hero
-   * @param {{ add?: string[], remove?: string[] }} plan
+   * @param {Record<string, any>} patch
    */
-  setItemPlan: (hero, plan) =>
-    request("/api/me/item-plans", {
+  setHeroPlan: (hero, patch) =>
+    request("/api/me/hero-plans", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        hero,
-        add: plan?.add || [],
-        remove: plan?.remove || [],
-      }),
+      body: JSON.stringify({ hero, ...(patch || {}) }),
     }),
 
   /** Online listesi. */

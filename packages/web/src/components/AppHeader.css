@@ -32,13 +32,9 @@
 .app-logo {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  color: #04121f;
-  background: linear-gradient(140deg, var(--accent), var(--good));
+  flex: none;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
 }
 
 .app-header-side {
@@ -195,4 +191,17 @@
   font-size: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/*
+  "Tavsiyeleri yonet" dugmesi markanin yaninda durur: duzenledigi kayit tek bir
+  maca ya da tek bir oyuncuya degil, tum hero katalogona ait. Bir bolumun icine
+  konsaydi o bolume aitmis gibi okunurdu.
+*/
+.hero-manager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  white-space: nowrap;
 }

@@ -134,12 +134,32 @@ export function selectLiveStateForViewer(states, options = {}) {
  * @returns {"radiant"|"dire"}
  */
 function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
-  const teamOfSteamId = (steamId) => {
-    const id = String(steamId || "").trim();
-    if (!id) {
+  /**
+   * Bir kimligin (SteamID64 ya da 32-bit account id) oynadigi taraf.
+   *
+   * IKI KAYNAK FARKLI KIMLIK VERIR: GSI oyuncunun kendi SteamID64'unu verir,
+   * Overwolf/DotaPlus ise anonimlik icin yalnizca 32-bit account id — GSI
+   * disindaki dokuz oyuncunun (rakip + takim arkadaslari) `steamId` alani
+   * bu yuzden BOSTUR. Karsilastirma dogrudan `steamId` uzerinden yapilirsa
+   * viewer/uploader eslesmesi yalnizca "makinede GSI'yi gonderen kisi" icin
+   * calisir; grubun geri kalani (Overwolf'tan gelenler) hicbir zaman
+   * eslesmez ve "bizim taraf" sessizce baska bir sinyale (cogunluk, varsayilan
+   * Radiant) duser. Bu yuzden ikisi de account id'ye indirgenip oyle
+   * karsilastirilir — `matchToRoster` ile ayni yontem.
+   *
+   * @param {string} identifier
+   * @returns {string}
+   */
+  const teamOfSteamId = (identifier) => {
+    const accountId = toAccountId(identifier);
+    if (!accountId) {
       return "";
     }
-    const row = allPlayers.find((player) => String(player.steamId) === id);
+    const row = allPlayers.find((player) => {
+      const playerAccountId =
+        String(player.accountId || "") || toAccountId(player.steamId || "");
+      return playerAccountId === accountId;
+    });
     return row?.team || "";
   };
 
@@ -180,8 +200,14 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  * @param {Record<string, any>|null} input.liveState normalizeGsiPayload ciktisi
  * @param {Record<string, Object>} [input.statsByPlayerId] roster id -> PlayerStats
  * @param {string} [input.viewerSteamId] Sayfayi acan kisinin SteamID64'u
+ * @param {Record<string, Record<string, any>>} [input.heroOverrides]
+ *   Hero basina elle duzenlenmis kayit ("Tavsiyeleri yonet": roleValues,
+ *   counter listeleri, item planlari).
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.itemPlanOverrides]
- *   Hero basina elle duzenlenmis item tavsiyesi ("Tavsiyeleri yonet").
+ *   ESKI sekil: yalnizca ekle/cikar listesi. Depoda hala bu sekilde duran
+ *   kayitlar var, bu yuzden kabul edilmeye devam ediyor.
+ * @param {number} [input.minAdvice] Oyuncu basina en az oneri sayisi; oyun
+ *   ici overlay kullanir. Verilmezse veri seviyesinin kotasi gecerli.
  */
 export function buildLiveMatchContext(input = {}) {
   const liveState = input.liveState || null;
@@ -236,7 +262,12 @@ export function buildLiveMatchContext(input = {}) {
     radiantPlayers: decorated.filter((row) => row.team === "radiant"),
     direPlayers: decorated.filter((row) => row.team === "dire"),
     myTeam,
+    // Tahmini envanter oyun saatinden olculuyor: envanteri gorunmeyen bir
+    // hero'nun planinin neresine geldigini baska turlu kestirmek mumkun degil.
+    gameTime: liveState.gameTime,
+    heroOverrides: input.heroOverrides || {},
     overrides: input.itemPlanOverrides || {},
+    minAdvice: input.minAdvice,
   });
 
   const draftStage = resolveDraftStage({

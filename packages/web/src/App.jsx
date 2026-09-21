@@ -3,10 +3,10 @@ import { api } from "./lib/api.js";
 import { useAsyncData } from "./hooks/useAsyncData.js";
 import { useSession } from "./hooks/useSession.js";
 import { AppHeader } from "./components/AppHeader.jsx";
+import { HeroManagerDialog } from "./components/HeroManagerDialog.jsx";
 import { LiveMatchPanel } from "./components/LiveMatchPanel.jsx";
 import { DebugPanel } from "./components/DebugPanel.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
-import { WeeklyLeaderboard } from "./components/WeeklyLeaderboard.jsx";
 import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
 
 /**
@@ -25,10 +25,10 @@ const LIVE_POLL_MS = 5000;
 const LIVE_POLL_IDLE_MS = 20000;
 
 /** Bolumlerin mac YOKKEN aldigi durum. */
-const IDLE_PANELS = { weekly: true, evaluation: true, live: false };
+const IDLE_PANELS = { evaluation: true, live: false };
 
-/** Mac BASLADIGINDA aldigi durum: mac one cikar, digerleri katlanir. */
-const LIVE_PANELS = { weekly: false, evaluation: false, live: true };
+/** Mac BASLADIGINDA aldigi durum: mac one cikar, digeri katlanir. */
+const LIVE_PANELS = { evaluation: false, live: true };
 
 /**
  * Uygulama kabugu.
@@ -37,24 +37,26 @@ const LIVE_PANELS = { weekly: false, evaluation: false, live: true };
  * hepsi birden yer degistirir: mac acilir, digerleri katlanir. Karar tek bir
  * yerde olmazsa bolumler birbirinden habersiz kalir.
  *
- * SIRALAMA KURULUMA GORE DEGISIR
- * ------------------------------
+ * KURULUMA GORE ICERIK
+ * --------------------
  * Masaustu uygulamasi oyunun yaninda, oyun sirasinda acik durur; oraya
- * bakmanin sebebi neredeyse her zaman o anki mactir. Bu yuzden masaustunde
- * Canli Mac EN USTTEDIR.
+ * bakmanin sebebi her zaman o anki mactir. Oyuncu degerlendirme ekrani orada
+ * hic GORUNMEZ — ayni veri sitede, daha genis bir ekranda zaten var ve
+ * masaustunun isi maci gostermek (ve GSI verisini siteye gondermek).
  *
  * Site ise cogu zaman mac disinda aciliyor — kim nasil gidiyor diye bakmak
- * icin. Orada ust sirayi haftalik tablo ve oyuncu kartlari hak ediyor, canli
- * mac altta kaliyor (zaten mac basladiginda kendiliginden acilip ustundeki
- * iki bolum katlaniyor).
+ * icin. Orada ust sirayi oyuncu kartlari alir, canli mac altta kalir (zaten
+ * mac basladiginda kendiliginden acilip ustundeki bolum katlaniyor).
  *
- *   Masaustu : Canli Mac → Haftanin Kazanani → Oyuncu Degerlendirme → Debug
- *   Site     : Haftanin Kazanani → Oyuncu Degerlendirme → Canli Mac → Debug
+ *   Masaustu : Canli Mac
+ *   Site     : Oyuncu Degerlendirme → Canli Mac → Debug
  */
 export default function App() {
   const session = useSession();
   // Ayar ekrani yalnizca masaustunde vardir; sitede boyle bir uc yok.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Hero tavsiye katalogu tek bir yerden yonetiliyor (ust bardaki dugme).
+  const [heroManagerOpen, setHeroManagerOpen] = useState(false);
   const [panels, setPanels] = useState(IDLE_PANELS);
   // Yoklama hizi durum olarak tutulur cunku `live` hook'u asagida kuruluyor:
   // sonucu, kendisini besleyen araligi belirliyor.
@@ -68,8 +70,16 @@ export default function App() {
     },
   );
 
+  // Masaustunde oyuncu degerlendirme ekrani HIC kurulmaz (bkz. asagidaki
+  // `showEvaluation`); duzen kararlari da buna gore veriliyor.
+  const isDesktop = session.mode === "desktop";
+
   const liveActive = Boolean(live.data?.active);
   const previousLiveActive = useRef(liveActive);
+  // Mac BITTIGINDE degisen bir isaret. Degerlendirme ekrani bunu gorunce
+  // kartlari tazeler: yeni mac verisi tam o anda olusur ve kullanicinin
+  // sayfayi yenilemesini beklemenin anlami yok.
+  const [matchEndedToken, setMatchEndedToken] = useState("");
 
   // Yalnizca GECISTE mudahale edilir (mac basladi / bitti). Aksi halde her
   // yoklamada duzen sifirlanir ve kullanicinin actigi bolum kapanirdi —
@@ -79,13 +89,26 @@ export default function App() {
       return;
     }
     previousLiveActive.current = liveActive;
-    setPanels(liveActive ? LIVE_PANELS : IDLE_PANELS);
+    if (!liveActive) {
+      setMatchEndedToken(new Date().toISOString());
+    }
+    // Masaustunde ekrandaki TEK bolum canli mac; mac bitince katlamanin
+    // anlami yok, geriye bos bir sayfa kalirdi.
+    setPanels(liveActive || isDesktop ? LIVE_PANELS : IDLE_PANELS);
     // Aralik degisince hook zamanlayiciyi kurup HEMEN bir istek atar; mac
     // basladiginda ilk hizli yoklama boylece 20 saniye beklemez.
     setLivePollMs(liveActive ? LIVE_POLL_MS : LIVE_POLL_IDLE_MS);
-  }, [liveActive]);
+  }, [liveActive, isDesktop]);
 
-  /** @param {"weekly"|"evaluation"|"live"} key */
+  // Masaustunde canli mac bolumu acik baslar: degerlendirme ekrani yok, aksi
+  // halde uygulama katlanmis tek bir baslikla aciliyordu.
+  useEffect(() => {
+    if (isDesktop) {
+      setPanels(LIVE_PANELS);
+    }
+  }, [isDesktop]);
+
+  /** @param {"evaluation"|"live"} key */
   const toggle = (key) =>
     setPanels((current) => ({ ...current, [key]: !current[key] }));
 
@@ -117,23 +140,27 @@ export default function App() {
       : null;
   }, [session.user, live.data]);
 
-  // Masaustunde canli mac en uste alinir. `mode` oturum yaniti gelene kadar
-  // bos olur; o kisa anda site duzeni kullanilir, sonra tek seferde yerine
-  // oturur.
-  const liveFirst = session.mode === "desktop";
+  // Tavsiye katalogu arkadas grubunun ORTAK oyun bilgisi: kimin hangi hero'da
+  // ne aldigi, neye karsi ne alindigi. Gruba ait olmayan bir ziyaretcinin orada
+  // duzenleyecegi bir sey yok, bu yuzden dugme hic gorunmez. Sunucu da ayni
+  // sarti bagimsiz olarak uyguluyor (bkz. netlify/functions/hero-plans.mjs).
+  //
+  // Masaustunde Steam OpenID akisi yok; kimlik ayarlardaki SteamID ve sunucu
+  // kadro kontrolunu yapip sonucu canli mac yanitinda bildiriyor.
+  const canManageHeroes =
+    session.mode === "desktop"
+      ? Boolean(live.data?.canEditItemPlans)
+      : Boolean(session.user?.inRoster);
 
-  const weeklySection = (
-    <WeeklyLeaderboard
-      key="weekly"
-      open={panels.weekly}
-      onToggle={() => toggle("weekly")}
-    />
-  );
+  // `mode` oturum yaniti gelene kadar bos olur; o kisa anda degerlendirme
+  // ekrani cizilmez, boylece masaustunde kartlar bir an gorunup kaybolmaz.
+  const showEvaluation = Boolean(session.mode) && !isDesktop;
 
   const evaluationSection = (
     <PlayerEvaluationScreen
       key="evaluation"
       liveKnownPlayerIds={live.data?.knownPlayerIds || []}
+      matchEndedToken={matchEndedToken}
       open={panels.evaluation}
       onToggle={() => toggle("evaluation")}
     />
@@ -147,9 +174,6 @@ export default function App() {
       error={live.error}
       open={panels.live}
       onToggle={() => toggle("live")}
-      // Tavsiye duzenlemesi kaydedildiginde panel hemen tazelenir; yoksa
-      // degisiklik bir sonraki yoklamaya kadar gorunmezdi.
-      onReload={() => live.reload({ freshPlans: true })}
     />
   );
 
@@ -164,15 +188,26 @@ export default function App() {
         cloudSignedIn={session.cloudSignedIn}
         cloudConfigured={session.cloudConfigured}
         onOpenSettings={() => setSettingsOpen((open) => !open)}
+        onOpenHeroManager={
+          canManageHeroes ? () => setHeroManagerOpen(true) : null
+        }
       />
+
+      {heroManagerOpen && canManageHeroes ? (
+        <HeroManagerDialog
+          onClose={() => setHeroManagerOpen(false)}
+          // Kayit sonrasi canli panel hemen tazelenir; yoksa degisiklik
+          // sunucunun bir dakikalik hafizasi dolana kadar gorunmezdi.
+          onSaved={() => live.reload({ freshPlans: true })}
+        />
+      ) : null}
 
       {settingsOpen && session.mode === "desktop" ? (
         <SettingsPanel onClose={() => setSettingsOpen(false)} />
       ) : null}
 
-      {liveFirst
-        ? [liveSection, weeklySection, evaluationSection]
-        : [weeklySection, evaluationSection, liveSection]}
+      {showEvaluation ? evaluationSection : null}
+      {liveSection}
 
       <DebugPanel live={live.data} user={session.user} />
 
