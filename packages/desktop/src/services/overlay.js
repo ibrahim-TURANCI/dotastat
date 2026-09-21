@@ -23,21 +23,21 @@ const DOTA_PROCESS = "dota2";
 const POLL_MS = 1200;
 
 /**
- * 4 ikon (41x30) + araliklar. Yukseklik ikonla AYNI: pencere seridin alt
+ * 4 ikon (44x32) + araliklar. Yukseklik ikonla AYNI: pencere seridin alt
  * kenarina gore konumlaniyor, fazlasi yalnizca hesabi bulandirir.
  */
-const WIDTH = 180;
-const HEIGHT = 30;
+const WIDTH = 190;
+const HEIGHT = 32;
 /**
  * Pencerenin alt kenarinin ekranin altindan uzakligi (ekran yuksekligine
  * oran). Dota'nin HUD'u ekran YUKSEKLIGIYLE olceklendigi icin oran her
  * cozunurlukte ayni yere denk gelir.
  *
- * Serit, Zula (stash) paneli ile hizli alim paneli arasindaki bosluga oturur.
- * 1080p olcumu: hizli alimin ust kenari ~102 px, Zula'nin alt kenari ~137 px;
- * aradaki ~35 px'e 30 px'lik serit ortalanir (alt kenar ~105 px).
+ * Serit Zula (stash) panelinin tam ustune oturur: 1080p'de panelin ust
+ * kenari ~204 px. Zula ile hizli alim arasindaki bosluk denendi ama o alan
+ * oyunda bazi durumlarda doluyor.
  */
-const BOTTOM_RATIO = 0.097;
+const BOTTOM_RATIO = 0.19;
 /** Zula paneli gibi ekranin sag kenarina yaslidir. */
 const RIGHT_MARGIN = 0;
 
