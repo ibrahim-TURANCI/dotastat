@@ -31,6 +31,17 @@
   --radiant: #4aa96c;
   --dire: #c8443c;
 
+  /*
+    Pozisyon renkleri (RGB uclusu; rgba() icinde alfa ile kullanilir).
+    Yesil ve kirmizi yok: o ikisi galibiyet/maglubiyet demek.
+  */
+  --role-pos1: 255, 182, 72;
+  --role-pos2: 181, 140, 255;
+  --role-pos3: 88, 190, 255;
+  --role-pos4: 64, 224, 208;
+  --role-pos5: 255, 138, 190;
+  --role-none: 148, 175, 212;
+
   --radius-sm: 8px;
   --radius: 14px;
   --radius-lg: 20px;

@@ -594,6 +594,10 @@ function createServerApp(options) {
         samples,
         rank: bundle.player?.rank || null,
       });
+      // Her macta kadrodan kimlerin oldugu; yalnizca onbellek okunur.
+      const squads = await playerData
+        .getMatchSquads(player, bundle)
+        .catch(() => ({}));
       response.json({
         ok: true,
         player: bundle.player,
@@ -611,6 +615,7 @@ function createServerApp(options) {
         refreshAvailableInMs: bundle.refreshAvailableInMs,
         mmrByMatch,
         mmrProgress,
+        squads,
         fetchedAt: bundle.fetchedAt,
         fromCache: bundle.fromCache,
         provider: bundle.provider,
@@ -621,6 +626,33 @@ function createServerApp(options) {
       response.status(500).json({
         ok: false,
         error: "oyuncu-detayi-alinamadi",
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  // Tek macin tam kadrosu (bkz. netlify/functions/match.mjs — ayni sozlesme).
+  app.get("/api/matches/:matchId", async (request, response) => {
+    try {
+      const result = await playerData.getMatchDetail(request.params.matchId, {
+        // Elle girilen pozisyon takim dagiliminda kesin kabul edilir.
+        readForcedRoles: readMatchRoles,
+      });
+      if (!result.match) {
+        response
+          .status(result.error === "gecersiz-mac" ? 400 : 404)
+          .json({ ok: false, error: result.error || "mac-detayi-alinamadi" });
+        return;
+      }
+      response.json({
+        ok: true,
+        match: result.match,
+        fromCache: result.fromCache,
+      });
+    } catch (error) {
+      response.status(500).json({
+        ok: false,
+        error: "mac-detayi-alinamadi",
         message: String(error?.message || error),
       });
     }
@@ -707,6 +739,8 @@ function createServerApp(options) {
           group: row.group,
           groupLabel: row.groupLabel,
           reason: row.reason,
+          // Ara parca onerisinde hedef item (Yasha -> Manta).
+          buildsIntoName: row.buildsIntoName || "",
           icon: core.itemIconUrl(row.key),
         })),
     };

@@ -15,6 +15,10 @@
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--include=dev"
+  # GITHUB_REPO bir sir degil (acik repo adi) ama Netlify'da "secret" olarak
+  # isaretliyse degeri packages/desktop/package.json'daki repo adresinde
+  # bulunuyor ve gizli anahtar taramasi build'i durduruyor.
+  SECRETS_SCAN_OMIT_KEYS = "GITHUB_REPO"
 
 # Yerel gelistirme (`netlify dev`).
 #
@@ -67,6 +71,11 @@
 [[redirects]]
   from = "/api/players/:playerKey"
   to = "/.netlify/functions/player/:playerKey"
+  status = 200
+
+[[redirects]]
+  from = "/api/matches/:matchId"
+  to = "/.netlify/functions/match/:matchId"
   status = 200
 
 [[redirects]]

@@ -39,6 +39,7 @@ import {
 } from "./player-types.js";
 import { normalizeHeroKey } from "./player-normalizer.js";
 import { approximateMmrFromRank } from "./mmr-history.js";
+import { heroDisplayName } from "../heroes/hero-names.js";
 
 /** Faktor toplaminin rank'e cevrilmesindeki genlik. */
 const SCORE_SPREAD = 1400;
@@ -148,16 +149,58 @@ const HERO_TIER_FIT = {
   weak: "poor",
 };
 
-/** Mac baglaminin skora etkisi (geride kalan takimda iyi oynamak daha degerli). */
+/**
+ * Mac baglaminin skora etkisi (geride kalan takimda iyi oynamak daha degerli).
+ *
+ * Eskiden -0.06 / +0.08 idi ve kazanan takim neredeyse her zaman "onde"
+ * oldugu icin kazananlar CEZALI basliyordu; ayni istatistikle kaybeden
+ * taraf ~200 PR onde bitiyordu. Etki yumusatildi, galibiyet ayrica
+ * RESULT_MODIFIER ile odullendiriliyor.
+ */
 const GAME_STATE_MODIFIER = {
-  ahead: -0.06,
+  ahead: -0.02,
   even: 0,
-  behind: 0.08,
+  behind: 0.04,
+};
+
+/**
+ * Mac sonucunun skora etkisi. Kazanmak takimin isi ama oyuncunun katkisi da
+ * orada; ayni istatistige sahip iki oyuncudan kazanan taraftaki biraz daha
+ * yuksek cikar (~100 PR, maca cekmeden sonra).
+ */
+const RESULT_MODIFIER = {
+  win: 0.15,
+  loss: 0,
+};
+
+/**
+ * POZISYONA GORE beklenti duzeltmesi (BENCHMARKS grubunun uzerine biner).
+ *
+ * Core/support ayrimi tek basina yetmiyor: pos 3 macin basindan itibaren
+ * on saflarda, daha az farmla oynar ve pos 1den dogal olarak cok olur.
+ * Ayni esikle olculunce iyi oynayan bir offlaner, carry ile karsilastirildiginda
+ * yalnizca rolu yuzunden yuzlerce PR geride kaliyordu.
+ */
+const POSITION_BENCHMARKS = {
+  pos1: { gpm: 590, lastHitsPerMinute: 7.5, deathsPerHour: 7 },
+  pos2: { gpm: 560, xpm: 640, lastHitsPerMinute: 6.5, deathsPerHour: 8.5 },
+  pos3: {
+    gpm: 450,
+    xpm: 540,
+    lastHitsPerMinute: 4.8,
+    heroDamagePerMinute: 600,
+    towerDamage: 3000,
+    deathsPerHour: 12,
+    fightParticipation: 0.62,
+  },
+  pos4: { gpm: 330, deathsPerHour: 12.5 },
+  pos5: { gpm: 280, deathsPerHour: 11 },
 };
 
 /** Rolun nereden geldigi (UI'da acikca gosterilir). */
 const ROLE_SOURCE_LABELS = {
   manual: "elle secildi",
+  team: "takim dagilimindan",
   provider: "mac verisinden",
   inferred: "istatistikten cikarildi",
   profile: "oyuncu profilinden",
@@ -173,6 +216,41 @@ const ROLE_INFERENCE = {
   gpmCoreMin: 450,
   gpmHardSupportMax: 280,
 };
+
+/**
+ * MAC ICI KALIBRASYON (lobby).
+ *
+ * Sabit BENCHMARKS "orta seviye bir pub macini" anlatir; ama her mac farkli
+ * tempoda gecer. Archon bir macta herkesin hasari dusuk, kaotik bir macta
+ * herkes cok olur. Mac detayinda on oyuncunun hepsi gorundugu icin
+ * beklentiler o macin kendi ortalamasina dogru kaydirilir: yeni beklenti =
+ * pozisyon beklentisi x (1 - BLEND + BLEND x mac ortalamasi / sabit ortalama).
+ * Boylece pozisyonlar arasi fark (pos 3 daha az farm) korunur, seviye maca
+ * uyar.
+ */
+const LOBBY_BLEND = 0.5;
+
+/** Mac ortalamasina gore kalibre edilen olcutler. */
+const LOBBY_METRICS = [
+  "gpm",
+  "xpm",
+  "lastHitsPerMinute",
+  "heroDamagePerMinute",
+  "deathsPerHour",
+];
+
+/**
+ * KARSI POZISYON: rakip takimda ayni pozisyonu oynayan oyuncuyla kiyas.
+ *
+ * Sabit olcutlerin goremedigi seyi yakalar: 564 GPM tek basina "iyi farm"
+ * gorunur, ama karsidaki pos 1 748 GPM ve iki kat hasarla oynadiysa ayni
+ * kaynaktan cok daha az is cikmistir. Yalnizca mac detayinda (karsi oyuncu
+ * biliniyorsa) eklenir.
+ */
+const OPPONENT_WEIGHT = { core: 0.18, support: 0.12 };
+
+/** Kaybeden takimda objective faktorunun inebilecegi en dusuk skor. */
+const LOSING_OBJECTIVE_FLOOR = -0.3;
 
 const LANE_RESULT_SCORE = {
   won: 0.7,
@@ -295,7 +373,7 @@ function resolveRoleFit(player, role) {
  * @param {import("./player-types").Player|null} player
  * @returns {{ center: number, source: string }}
  */
-function resolvePlayerCenter(player) {
+function resolvePlayerCenter(player, match = null) {
   const range = player?.performanceProfile?.averageHeroPerformance;
   if (range && Number(range.max) > 0) {
     return {
@@ -307,6 +385,26 @@ function resolvePlayerCenter(player) {
   const actualRank = Number(player?.performanceProfile?.actualRank || 0);
   if (actualRank > 0) {
     return { center: actualRank, source: "actualRank" };
+  }
+
+  // PROFILI OLMAYAN OYUNCU (mac detayindaki kadro disi oyuncular): taban
+  // once kendi rank madalyasindan, o da gizliyse macin ortalama seviyesinden
+  // alinir. Eskiden sabit varsayilana (2500) dusuyordu; Divine ortalamali bir
+  // macta 24/6 oynayan carry bile 3300'de kaliyordu, cunku maca cekme
+  // yalnizca %25.
+  const fromRank = approximateMmrFromRank(player?.rank || null);
+  if (fromRank > 0) {
+    return { center: fromRank, source: "rank" };
+  }
+  const tier = Number(match?.averageRankTier);
+  if (Number.isFinite(tier) && tier > 0) {
+    const fromMatch = approximateMmrFromRank({
+      medal: Math.floor(tier / 10),
+      stars: tier % 10,
+    });
+    if (fromMatch > 0) {
+      return { center: fromMatch, source: "matchAverage" };
+    }
   }
 
   return {
@@ -334,8 +432,8 @@ function resolvePlayerCenter(player) {
  * @param {number} observedScore Faktorlerin agirlikli toplami (-1..+1)
  * @returns {{ center: number, source: string }}
  */
-function resolveBaseline(player, heroTier, observedScore) {
-  const base = resolvePlayerCenter(player);
+function resolveBaseline(player, heroTier, observedScore, match = null) {
+  const base = resolvePlayerCenter(player, match);
   const key = HERO_TIER_BASELINE[heroTier] || "averageHeroPerformance";
   const tierRange = player?.performanceProfile?.[key];
   const tierCenter =
@@ -422,10 +520,23 @@ function pullTowardMatchAverage(rawRank, average) {
  * Rol grubuna gore faktor skorlarini uretir.
  * @param {import("./player-types").PlayerMatch} match
  * @param {"core"|"support"} group
+ * @param {string} [role] Pozisyon; verilirse beklenti ona gore duzeltilir
+ * @param {MatchLobby|null} [lobby] Mac ici baglam (mac detayinda)
  * @returns {Array<{ key: string, label: string, score: number, weight: number, note: string }>}
  */
-function buildFactors(match, group) {
-  const bench = BENCHMARKS[group];
+function buildFactors(match, group, role = "", lobby = null) {
+  const bench = { ...BENCHMARKS[group], ...(POSITION_BENCHMARKS[role] || {}) };
+  const lobbyAverages = lobby?.averages?.[group] || null;
+  if (lobbyAverages) {
+    for (const metric of LOBBY_METRICS) {
+      const observed = Number(lobbyAverages[metric]);
+      const reference = Number(BENCHMARKS[group][metric]);
+      if (observed > 0 && reference > 0) {
+        const scale = clamp(observed / reference, 0.5, 1.8);
+        bench[metric] = bench[metric] * (1 - LOBBY_BLEND + LOBBY_BLEND * scale);
+      }
+    }
+  }
   const weights = WEIGHTS[group];
   const minutes = matchMinutes(match);
 
@@ -490,23 +601,40 @@ function buildFactors(match, group) {
     {
       key: "objectiveContribution",
       label: "Objective katkisi",
-      score: scoreAgainstBenchmark(
-        Number(match?.towerDamage || 0),
-        bench.towerDamage,
+      // Kaybeden takim cogu zaman savunmada kalir; kule vuramamasi oyuncunun
+      // degil macin gidisatinin sonucu. Olculdu: 56-31 biten bir macta
+      // rakibin bes oyuncusunun da tower damage'i 0'di ve hepsi bu faktorden
+      // tam ceza aliyordu. Kaybeden tarafta eksi yon LOSING_OBJECTIVE_FLOOR
+      // ile sinirlanir; arti yon (kaybederken kule vurmak) aynen sayilir.
+      score: Math.max(
+        scoreAgainstBenchmark(
+          Number(match?.towerDamage || 0),
+          bench.towerDamage,
+        ),
+        match?.result === "loss" ? LOSING_OBJECTIVE_FLOOR : -1,
       ),
       weight: weights.objectiveContribution,
       note: `${Math.round(Number(match?.towerDamage || 0))} tower damage.`,
     },
-    {
+  ];
+
+  // Lane sonucu YALNIZCA biliniyorsa eklenir. Eskiden bilinmeyen lane 0
+  // puanla %11-12 agirlik tasiyordu ve her macta dusuk hasar / cok olum gibi
+  // gercek sinyalleri ayni oranda sulandiriyordu.
+  if (match?.laneResult && LANE_RESULT_SCORE[match.laneResult] !== undefined) {
+    factors.push({
       key: "laneOutcome",
       label: "Lane sonucu",
-      score: LANE_RESULT_SCORE[String(match?.laneResult || "")] ?? 0,
+      score: LANE_RESULT_SCORE[match.laneResult],
       weight: weights.laneOutcome,
-      note: match?.laneResult
-        ? `Lane: ${match.laneResult}`
-        : "Lane verisi yok.",
-    },
-  ];
+      note: `Lane: ${match.laneResult}`,
+    });
+  }
+
+  const opponent = lobby?.opponent || null;
+  if (opponent) {
+    factors.push(opponentFactor(match, opponent, group, minutes));
+  }
 
   if (group === "core") {
     factors.push({
@@ -531,6 +659,71 @@ function buildFactors(match, group) {
   // performans demek degildir.
 
   return normalizeWeights(factors);
+}
+
+/**
+ * @typedef {Object} MatchLobby
+ * @property {Record<"core"|"support", Record<string, number>>} [averages]
+ *   Mactaki core / support oyuncularinin ortalamalari (LOBBY_METRICS)
+ * @property {import("./player-types").PlayerMatch|null} [opponent] Rakip
+ *   takimda ayni pozisyondaki oyuncu
+ */
+
+/**
+ * Karsi pozisyondaki oyuncuyla kiyas faktoru.
+ *
+ * Core: farm (GPM), hero hasari, olum ve kill katilimi. Support: hasar +
+ * heal, olum ve kill katilimi (supportun farmi kiyas degil).
+ *
+ * @param {import("./player-types").PlayerMatch} match
+ * @param {import("./player-types").PlayerMatch} opponent
+ * @param {"core"|"support"} group
+ * @param {number} minutes
+ */
+function opponentFactor(match, opponent, group, minutes) {
+  const perMinute = (row, field) => Number(row?.[field] || 0) / minutes;
+  const involvement = (row) =>
+    Number(row?.kills || 0) + Number(row?.assists || 0);
+  const output = (row) =>
+    perMinute(row, "heroDamage") +
+    (group === "support" ? perMinute(row, "heroHealing") : 0);
+
+  const parts = [
+    scoreAgainstBenchmark(output(match), output(opponent)),
+    // +1: sifir olumlu rakibe karsi bolme hatasi olmasin.
+    scoreAgainstBenchmark(
+      Number(match?.deaths || 0) + 1,
+      Number(opponent?.deaths || 0) + 1,
+      { inverse: true, tolerance: 1 },
+    ),
+    scoreAgainstBenchmark(involvement(match) + 1, involvement(opponent) + 1),
+  ];
+  if (group === "core") {
+    parts.push(
+      scoreAgainstBenchmark(
+        Number(match?.gpm || 0),
+        Number(opponent?.gpm || 0),
+      ),
+    );
+  }
+  const score = parts.reduce((total, value) => total + value, 0) / parts.length;
+  const name = heroDisplayName(opponent?.hero) || "karsi oyuncu";
+
+  return {
+    key: "opponentComparison",
+    label: "Karsi pozisyon",
+    score,
+    weight: OPPONENT_WEIGHT[group],
+    note: `${name} ile kiyas: ${Math.round(output(match))} / ${Math.round(
+      output(opponent),
+    )} hasar/dk, ${Number(match?.deaths || 0)} / ${Number(
+      opponent?.deaths || 0,
+    )} olum${
+      group === "core"
+        ? `, ${Number(match?.gpm || 0)} / ${Number(opponent?.gpm || 0)} GPM`
+        : ""
+    }.`,
+  };
 }
 
 /**
@@ -615,12 +808,20 @@ function inferRoleFromMatch(match) {
  * @param {import("./player-types").PlayerMatch} match
  * @param {import("./player-types").Player|null} player
  * @param {import("./player-types").RoleKey|""} [forcedRole]
- * @returns {{ role: import("./player-types").RoleKey, group: "core"|"support", source: "manual"|"provider"|"inferred"|"profile" }}
+ * @param {import("./player-types").RoleKey|""} [teamRole] Takim dagilimindan
+ *   gelen rol (bkz. role-assignment.js). Tek oyuncunun istatistiginden daha
+ *   guvenilir: ayni takimda iki pos 1 olamaz.
+ * @returns {{ role: import("./player-types").RoleKey, group: "core"|"support", source: "manual"|"team"|"provider"|"inferred"|"profile" }}
  */
-function resolveEvaluationRole(match, player, forcedRole) {
+function resolveEvaluationRole(match, player, forcedRole, teamRole = "") {
   const manual = normalizeRoleKey(forcedRole);
   if (manual) {
     return { role: manual, group: ROLE_GROUP[manual], source: "manual" };
+  }
+
+  const assigned = normalizeRoleKey(teamRole);
+  if (assigned) {
+    return { role: assigned, group: ROLE_GROUP[assigned], source: "team" };
   }
 
   const fromProvider = normalizeRoleKey(match?.role);
@@ -825,6 +1026,10 @@ function buildNarrative(input) {
  * @param {import("./player-types").PlayerMatch} input.match
  * @param {Partial<import("./player-types").EvaluationContext>} [input.context]
  * @param {import("./player-types").RoleKey|""} [input.forcedRole] Elle secilen rol
+ * @param {import("./player-types").RoleKey|""} [input.teamRole] Takim dagilimindan gelen rol
+ * @param {MatchLobby|null} [input.lobby] Mac ici baglam: mac ortalamalari ve
+ *   karsi pozisyondaki oyuncu. Yalnizca tam kadro bilindiginde (mac detayi)
+ *   verilir; verilmezse sabit olcutler kullanilir.
  * @returns {import("./player-types").PerformanceEvaluation|null}
  */
 function evaluateMatchPlayer(input) {
@@ -834,7 +1039,12 @@ function evaluateMatchPlayer(input) {
   }
 
   const player = input.player || null;
-  const resolvedRole = resolveEvaluationRole(match, player, input.forcedRole);
+  const resolvedRole = resolveEvaluationRole(
+    match,
+    player,
+    input.forcedRole,
+    input.teamRole,
+  );
   const role = resolvedRole.role;
   const group = resolvedRole.group;
 
@@ -844,7 +1054,7 @@ function evaluateMatchPlayer(input) {
   );
   const roleFit = resolveRoleFit(player, role);
 
-  const factors = buildFactors(match, group);
+  const factors = buildFactors(match, group, role, input.lobby || null);
   const weightedScore = factors.reduce(
     (total, factor) => total + factor.score * factor.weight,
     0,
@@ -862,12 +1072,14 @@ function evaluateMatchPlayer(input) {
       (match.laneResult ? match.laneResult : undefined),
   };
 
-  const contextModifier = GAME_STATE_MODIFIER[context.gameState] || 0;
+  const contextModifier =
+    (GAME_STATE_MODIFIER[context.gameState] || 0) +
+    (context.teamWon ? RESULT_MODIFIER.win : RESULT_MODIFIER.loss);
   const adjustedScore = clamp(weightedScore + contextModifier, -1, 1);
 
   // Taban SKORDAN SONRA cozulur: hero kademesinin beklenti duzeltmesi, macta
   // gorulen performansla celisiyorsa geri cekilir (bkz. resolveBaseline).
-  const baseline = resolveBaseline(player, heroTier, adjustedScore);
+  const baseline = resolveBaseline(player, heroTier, adjustedScore, match);
 
   const rawRank = clamp(
     baseline.center + adjustedScore * SCORE_SPREAD,

@@ -69,6 +69,13 @@ export const api = {
     ),
 
   /**
+   * Tek macin tam kadrosu (iki takim, on oyuncu, herkes icin PR).
+   * Sunucu maci bir kez ceker ve kalici onbellege yazar.
+   * @param {string} matchId
+   */
+  match: (matchId) => request("/api/matches/" + encodeURIComponent(matchId)),
+
+  /**
    * Canli mac durumu (GSI).
    *
    * `freshPlans`: sunucu, hero tavsiyesi duzenlemelerini 60 saniye hafizada

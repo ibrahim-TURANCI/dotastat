@@ -3,47 +3,120 @@
 .player-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
+/*
+  CAM KART. Yari saydam zemin + arka plani bulaniklastirma + ustten gelen
+  ince bir isik (ic ust kenar) derinlik hissi verir. Golge iki katmanli:
+  genis ve yumusak olan karti zeminden kaldirir, dar olan kenari netlestirir.
+
+  Zemin katmanlari DEGISKENLERDEN kurulur: ton, hover, secim ve canli mac
+  yalnizca ilgili degiskeni degistirir, `background`/`box-shadow`u bastan
+  yazmaz — boylece durumlar birbirini ezmez.
+*/
 .player-card {
+  --card-tint: transparent;
+  --card-line: transparent;
+  --card-sheen: 0.075;
+  --card-base: rgba(12, 22, 36, 0.5);
+  --card-glow: 0 0 0 0 transparent;
+  --card-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.32),
+    0 2px 6px rgba(0, 0, 0, 0.22);
+
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 11px;
   padding: 14px;
   border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: rgba(11, 20, 32, 0.55);
+  border: 1px solid rgba(170, 200, 240, 0.14);
+  background:
+    radial-gradient(
+      90% 70% at 100% 0%,
+      var(--card-tint),
+      transparent 65%
+    ),
+    linear-gradient(
+      150deg,
+      rgba(255, 255, 255, var(--card-sheen)),
+      rgba(255, 255, 255, 0.015) 55%,
+      rgba(255, 255, 255, 0) 100%
+    ),
+    var(--card-base);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    var(--card-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    var(--card-shadow);
   color: inherit;
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    transform 140ms ease;
-}
-
-.player-card:hover {
-  background: var(--card-hover);
-  border-color: var(--line-strong);
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease;
 }
 
 /*
-  DONEM RENGI. Sol serit ve cerceve puanin yonunu soyler: iyi giden yesil,
-  kotu giden kirmizi, ortalama notr.
+  Ust kenardaki isik cizgisi: ortada donem renginde, uclara dogru soner.
+  Varsayilan saydam; yalnizca ton/canli durumunda gorunur.
+*/
+.player-card::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--card-line),
+    transparent
+  );
+  box-shadow: 0 0 10px var(--card-line);
+  pointer-events: none;
+}
 
-  Renk TEK BASINA TASIYICI DEGIL — ayni bilgi sag ustteki puan rozetinde
+.player-card:hover {
+  --card-sheen: 0.1;
+  --card-base: rgba(18, 32, 50, 0.58);
+  --card-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.4),
+    0 3px 8px rgba(0, 0, 0, 0.26);
+
+  border-color: rgba(170, 200, 240, 0.26);
+  transform: translateY(-2px);
+}
+
+.player-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+  DONEM RENGI. Cerceve NOTR kalir; puanin yonu iki ince ipucuyla verilir:
+  sag ust koseden (puan halkasinin arkasindan) yayilan yumusak bir isik ve
+  ust kenardaki isik cizgisi. Iyi giden yesil, kotu giden kirmizi, ortalama
+  notr. (Eskiden renkli cerceve + kalin sol serit vardi; kaba duruyordu.)
+
+  Renk TEK BASINA TASIYICI DEGIL — ayni bilgi sag ustteki puan halkasinda
   sayiyla da duruyor. Yalnizca renge dayansaydi kart, renk ayrimi zor olan
   kullaniciya hicbir sey soylemezdi.
 */
 .player-card.tone-up {
-  border-color: rgba(41, 201, 122, 0.45);
-  box-shadow: inset 3px 0 0 var(--good);
+  --card-tint: rgba(57, 255, 136, 0.11);
+  --card-line: rgba(57, 255, 136, 0.75);
 }
 
 .player-card.tone-down {
-  border-color: rgba(255, 93, 108, 0.45);
-  box-shadow: inset 3px 0 0 var(--bad);
+  --card-tint: rgba(210, 36, 60, 0.13);
+  --card-line: rgba(255, 80, 100, 0.7);
 }
 
 /*
@@ -52,14 +125,16 @@
   belirliyor.
 */
 .player-card.live {
-  border-color: rgba(41, 201, 122, 0.55);
-  box-shadow: none;
+  --card-line: rgba(41, 201, 122, 0.9);
+  --card-glow: 0 0 18px rgba(41, 201, 122, 0.18);
 }
 
 .player-card.selected {
-  border-color: var(--accent);
-  background: var(--card-hover);
-  box-shadow: inset 0 0 0 1px var(--accent-soft);
+  --card-tint: rgba(46, 167, 255, 0.14);
+  --card-line: rgba(46, 167, 255, 0.9);
+  --card-base: rgba(18, 32, 50, 0.62);
+  --card-glow: 0 0 22px rgba(46, 167, 255, 0.2);
+  border-color: rgba(46, 167, 255, 0.55);
 }
 
 .player-card-top {
@@ -82,7 +157,8 @@
   border-radius: 11px;
   object-fit: cover;
   flex: none;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(170, 200, 240, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .player-avatar.placeholder {
@@ -142,32 +218,6 @@
   flex: none;
 }
 
-/* Puan rozeti: rengi cerceveyle ayni kaynaktan (core -> tone). */
-.player-score {
-  min-width: 34px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(5, 10, 19, 0.5);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  color: var(--txt-1);
-}
-
-.player-score.up {
-  color: var(--good);
-  border-color: rgba(41, 201, 122, 0.45);
-  background: var(--good-soft);
-}
-
-.player-score.down {
-  color: var(--bad);
-  border-color: rgba(255, 93, 108, 0.45);
-  background: var(--bad-soft);
-}
-
 /*
   Dort olcut tek satirda: G/M, MMR, Perf. Rank, Maç. Sabit dort sutun cunku
   kartlar yan yana duruyor ve sutunlar hizali olmazsa iki oyuncuyu
@@ -179,8 +229,13 @@
   gap: 6px;
   padding: 9px 10px;
   border-radius: 10px;
-  background: rgba(46, 167, 255, 0.06);
-  border: 1px solid rgba(46, 167, 255, 0.14);
+  background: linear-gradient(
+    180deg,
+    rgba(46, 167, 255, 0.09),
+    rgba(46, 167, 255, 0.03)
+  );
+  border: 1px solid rgba(46, 167, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .player-metric {
@@ -194,14 +249,6 @@
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.player-delta.up {
-  color: var(--good);
-}
-
-.player-delta.down {
-  color: var(--bad);
 }
 
 /* --- Donem secici (Hafta / Ay / Genel) ------------------------------------ */

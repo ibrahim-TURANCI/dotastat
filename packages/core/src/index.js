@@ -130,6 +130,14 @@ export {
   mergeMatchHistory,
 } from "./players/player-data-service.js";
 
+// --- Mac kadrosu ve Genel sekmesi ozeti (onbellekten, ag istegi yok) ---------
+export { buildMatchSquads } from "./players/match-squads.js";
+export { buildMatchDetailView } from "./players/match-detail.js";
+export {
+  buildPlayerOverview,
+  OVERVIEW_RECENT_COUNT,
+} from "./players/player-overview.js";
+
 // --- Veri kaynaklari --------------------------------------------------------
 export { createOpenDotaClient, PROVIDER_NAME } from "./providers/opendota.js";
 export { createStratzClient } from "./providers/stratz.js";
@@ -194,6 +202,19 @@ export {
   ITEM_KEY_ALIASES,
   RETIRED_ITEMS,
 } from "./live/item-keys.js";
+
+// --- Kademeli item tavsiyesi (once ara parca, gec oyunda kucuk item yok) -----
+export {
+  hasGameTime,
+  isLateGame,
+  isSmallItem,
+  itemComponentsOf,
+  nextBuildStep,
+  ownedWithComponents,
+  LATE_GAME_SECONDS,
+  SMALL_ITEM_COST,
+  STEP_MIN_COST,
+} from "./live/item-progression.js";
 
 // --- Envanteri gorunmeyen hero'lar icin tahmini envanter ---------------------
 export {

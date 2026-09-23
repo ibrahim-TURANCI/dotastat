@@ -4,7 +4,14 @@ import {
   ROLE_SHORT_LABELS,
 } from "@dotastat/core";
 import { formatPercent, formatRelativeTime } from "../lib/format.js";
-import { FormStrip, HeroIcon, RankMedal } from "./primitives.jsx";
+import {
+  DeltaArrow,
+  FormStrip,
+  HeroIcon,
+  RankMedal,
+  RoleBadge,
+  ScoreRing,
+} from "./primitives.jsx";
 import "./PlayerCard.css";
 
 /**
@@ -78,9 +85,10 @@ export function PlayerCard({ card, selected, onSelect, live = false }) {
             <strong className="player-name">{card.name}</strong>
             <div className="row" style={{ gap: 6, marginTop: 3 }}>
               {card.primaryRole ? (
-                <span className="chip accent">
-                  {ROLE_SHORT_LABELS[card.primaryRole] || card.primaryRole}
-                </span>
+                <RoleBadge
+                  role={card.primaryRole}
+                  label={ROLE_SHORT_LABELS[card.primaryRole]}
+                />
               ) : null}
               {live ? <span className="chip good">Canlı maçta</span> : null}
             </div>
@@ -90,17 +98,17 @@ export function PlayerCard({ card, selected, onSelect, live = false }) {
         <div className="player-card-rank">
           <RankMedal rank={card.rank} size={38} />
           {period?.ranked ? (
-            <span
-              className={"player-score " + tone}
+            <ScoreRing
+              value={period.score}
+              tone={tone}
+              size={42}
               title={
                 "Puan " +
                 period.score +
                 (period.position ? " · " + period.position + ". sıra" : "") +
                 " — G/M dengesi, MMR değişimi ve Performance Rank değişiminden hesaplanır (50 nötr)."
               }
-            >
-              {period.score}
-            </span>
+            />
           ) : null}
         </div>
       </div>
@@ -225,21 +233,17 @@ const MMR_SOURCE_HINTS = {
  * @param {{ period: Record<string, any> }} props
  */
 function MmrDelta({ period }) {
-  const delta = Number(period.mmrDelta) || 0;
   const estimated = period.mmrSource !== "measured";
   return (
-    <span
-      className={"player-delta " + (delta >= 0 ? "up" : "down")}
+    <DeltaArrow
+      value={period.mmrDelta}
+      approximate={estimated}
       title={
         estimated
           ? "Bu oyuncunun MMR'ı tam okunamıyor; eksik maçlar maç başına ±25 sayıldı."
           : "Oyundan okunan gerçek MMR değişimi"
       }
-    >
-      {estimated ? "~" : ""}
-      {delta > 0 ? "+" : ""}
-      {delta}
-    </span>
+    />
   );
 }
 
@@ -265,14 +269,10 @@ function PerformanceDelta({ period }) {
   if (!period.hasBaseline) {
     return <span title="Kıyaslanacak önceki dönem verisi yok">yeni</span>;
   }
-  const delta = Number(period.performanceDelta) || 0;
   return (
-    <span
-      className={"player-delta " + (delta >= 0 ? "up" : "down")}
+    <DeltaArrow
+      value={period.performanceDelta}
       title="Önceki döneme göre değişim"
-    >
-      {delta > 0 ? "+" : ""}
-      {delta}
-    </span>
+    />
   );
 }

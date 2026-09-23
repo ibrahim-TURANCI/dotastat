@@ -1,0 +1,117 @@
+/* Son Maclar -> mac detayi penceresi. Skor seridi ve takim tablolari
+   LiveMatchPanel.css'ten gelir; burada yalnizca pencere cercevesi var. */
+
+.match-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 9, 15, 0.72);
+}
+
+.match-detail {
+  width: min(1080px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow);
+}
+
+.match-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.match-detail-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* "Kazandi/Kaybetti" canli skordaki sayidan daha uzun; ayni boyda tasardi. */
+.team-score strong.match-detail-result {
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.match-detail-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.match-detail-eval {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.match-detail-eval .eval-summary {
+  margin-top: 0;
+}
+
+.match-detail-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/*
+  Tablolar LiveMatchPanel ile ortak; oyun ici panel kompakt kalmali, bu
+  yuzden genis bosluklar YALNIZCA bu pencerede uygulanir.
+*/
+.match-detail .live-table {
+  font-size: 12.5px;
+}
+
+.match-detail .live-table th {
+  padding: 0 12px 9px;
+}
+
+.match-detail .live-table td {
+  padding: 10px 12px;
+}
+
+.match-detail .live-table tbody tr:not(.known):hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.live-table tbody tr.match-detail-hidden td {
+  padding: 7px 6px;
+  border-bottom-style: dashed;
+}
+
+.match-detail-note {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .match-detail-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .match-detail {
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    padding: 12px;
+  }
+
+  .team-score strong.match-detail-result {
+    font-size: 16px;
+  }
+}

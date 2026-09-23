@@ -11,7 +11,7 @@ import {
   listSynergiesForPlayer,
   resolveRankProgress,
 } from "@dotastat/core";
-import { getPlayerBundle } from "./_lib/player-data.mjs";
+import { getMatchSquads, getPlayerBundle } from "./_lib/player-data.mjs";
 import { readMatchRoles, sessionAccountId } from "./_lib/match-roles.mjs";
 import { readSession } from "./_lib/session.mjs";
 import { mmrStore } from "./_lib/store.mjs";
@@ -62,6 +62,9 @@ export default async (request) => {
       samples,
       rank: bundle.player?.rank || null,
     });
+    // Her macta kadrodan kimlerin oldugu. Yalnizca onbellek okunur; eslesme
+    // kurulamazsa bos kalir ve ekran eski haliyle calisir.
+    const squads = await getMatchSquads(player, bundle).catch(() => ({}));
     return json(
       {
         ok: true,
@@ -79,6 +82,7 @@ export default async (request) => {
         historyUnavailable: bundle.historyUnavailable,
         mmrByMatch,
         mmrProgress,
+        squads,
         refreshSkipped: bundle.refreshSkipped,
         refreshAvailableInMs: bundle.refreshAvailableInMs,
         fetchedAt: bundle.fetchedAt,

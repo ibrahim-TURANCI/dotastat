@@ -10,6 +10,8 @@
  */
 
 import bundledHeroIds from "../data/hero-ids.js";
+import bundledItemIds from "../data/item-ids.js";
+import { approximateMmrFromRank } from "../players/mmr-history.js";
 import { LANE_ROLE_TO_ROLE_KEY } from "../players/player-types.js";
 import { buildStatsFromMatches } from "./match-stats.js";
 import {
@@ -70,6 +72,54 @@ function optionalNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+/**
+ * Rank kademelerinin (54 = Legend 4) ortalamasi, yine kademe olarak.
+ *
+ * Ortalama MMR uzerinden alinir ve en yakin kademeye cevrilir. Immortal
+ * (80) ustu bilinemedigi icin tabanindan sayilir.
+ *
+ * @param {unknown[]} values
+ * @returns {number|null}
+ */
+export function averageTierOf(values) {
+  const mmrs = (Array.isArray(values) ? values : [])
+    .map(Number)
+    .filter((tier) => Number.isFinite(tier) && tier > 0)
+    .map((tier) =>
+      approximateMmrFromRank({
+        medal: Math.floor(tier / 10),
+        stars: tier % 10,
+      }),
+    )
+    .filter((mmr) => mmr > 0);
+  if (!mmrs.length) {
+    return null;
+  }
+  const mean = mmrs.reduce((total, mmr) => total + mmr, 0) / mmrs.length;
+  let best = null;
+  for (let medal = 1; medal <= 8; medal += 1) {
+    for (
+      let stars = medal === 8 ? 0 : 1;
+      stars <= (medal === 8 ? 0 : 5);
+      stars += 1
+    ) {
+      const mmr = approximateMmrFromRank({ medal, stars });
+      if (!best || Math.abs(mmr - mean) < Math.abs(best.mmr - mean)) {
+        best = { tier: medal * 10 + stars, mmr };
+      }
+    }
+  }
+  return best ? best.tier : null;
+}
+
+/** Item kimligi -> anahtar (mac detayindaki envanter icin). */
+const ITEM_BY_ID = new Map(
+  Object.entries(bundledItemIds).map(([id, row]) => [
+    Number(id),
+    String(row?.key || ""),
+  ]),
+);
 
 /** Paketlenmis hero tablosu taban; ag yoksa da hero isimleri dogru gorunur. */
 const HERO_BY_ID = new Map(
@@ -177,6 +227,14 @@ export function createOpenDotaClient(options = {}) {
       hero: HERO_BY_ID.get(heroId) || (heroId ? `hero_${heroId}` : ""),
       role: resolveRole(row),
       result: isWin(row) ? "win" : "loss",
+      // Takim tarafi: mac detayinda kadrodaki oyunculari iki takima ayirmak
+      // icin. Slot gelmezse bos; sonuc (G/M) uzerinden ayrim yapilir.
+      side:
+        row?.player_slot === undefined || row?.player_slot === null
+          ? ""
+          : Number(row.player_slot) < 128
+            ? "radiant"
+            : "dire",
       kills: Number(row?.kills || 0),
       deaths: Number(row?.deaths || 0),
       assists: Number(row?.assists || 0),
@@ -350,6 +408,95 @@ export function createOpenDotaClient(options = {}) {
         })
         .filter((row) => row.hero && row.matches > 0)
         .sort((a, b) => b.matches - a.matches);
+    },
+
+    /**
+     * Tek macin TAM kadrosu (`/matches/{id}`): on oyuncunun hero, KDA, hasar
+     * ve takim skoru.
+     *
+     * Mac basina bir istek oldugu icin yalnizca kullanici bir maci actiginda
+     * cagrilir ve sonuc kalici olarak onbellege yazilir (bkz.
+     * player-data-service -> getMatchDetail). Oyuncu satirlari ortak
+     * `PlayerMatch` sekline cevrilir; boylece degerlendirme motoru kadro
+     * disindaki oyunculara da ayni olcutle Performance Rank uretebilir.
+     *
+     * @param {string} matchId
+     * @returns {Promise<Record<string, any>|null>} Oyuncu listesi yoksa null
+     */
+    async getMatchDetail(matchId) {
+      const payload = await requestJson(
+        `/matches/${encodeURIComponent(matchId)}`,
+      );
+      const players = Array.isArray(payload?.players) ? payload.players : [];
+      if (!players.length) {
+        return null;
+      }
+
+      const radiantScore = optionalNumber(payload.radiant_score);
+      const direScore = optionalNumber(payload.dire_score);
+      // Mac seviyesi. OpenDota'nin RESMI ortalamasi (`average_rank`) bu uclarda
+      // gelmiyor; oyuncunun mac listesinde geliyor ve servis onu tercih eder
+      // (bkz. player-data-service -> getMatchDetail). Burada yalnizca yedek
+      // hesap var: gorunen madalyalarin MMR karsiliklarinin ORTALAMASI.
+      // Kademe kodlarinin medyani kullanilmaz; kodlar dogrusal degil (55'ten
+      // sonra 61 gelir) ve medyan ucdaki oyunculari tamamen yok sayar.
+      const averageRankTier =
+        optionalNumber(payload.average_rank) ??
+        averageTierOf(players.map((row) => row?.rank_tier));
+
+      return {
+        matchId: String(payload.match_id || matchId),
+        startedAt: payload.start_time
+          ? new Date(Number(payload.start_time) * 1000).toISOString()
+          : "",
+        durationSeconds: Number(payload.duration || 0),
+        radiantWin: Boolean(payload.radiant_win),
+        radiantScore,
+        direScore,
+        averageRankTier,
+        players: players.map((row) => {
+          const radiant = Number(row?.player_slot || 0) < 128;
+          const base = toPlayerMatch(
+            {
+              ...row,
+              match_id: payload.match_id || matchId,
+              start_time: payload.start_time,
+              duration: payload.duration,
+              radiant_win: payload.radiant_win,
+            },
+            String(row?.account_id || ""),
+          );
+          return {
+            ...base,
+            // Takim skoru macin durumunu (onde/geride) olcmek icin kullanilir.
+            teamKills: Number((radiant ? radiantScore : direScore) || 0),
+            teamDeaths: Number((radiant ? direScore : radiantScore) || 0),
+            averageRankTier,
+            accountId: row?.account_id ? String(row.account_id) : "",
+            personaName: String(row?.personaname || ""),
+            rankTier: optionalNumber(row?.rank_tier),
+            level: optionalNumber(row?.level),
+            netWorth: optionalNumber(row?.net_worth ?? row?.total_gold),
+            slot: Number(row?.player_slot || 0),
+            // Lane tabanli rol (OpenDota yalnizca parse edilmis macta verir).
+            // Tek basina pozisyon degil; takim dagiliminda ipucu olarak
+            // kullanilir (bkz. players/role-assignment.js).
+            laneRole: base.role,
+            items: [0, 1, 2, 3, 4, 5, "neutral"]
+              .map((index) =>
+                ITEM_BY_ID.get(
+                  Number(
+                    index === "neutral"
+                      ? row?.item_neutral
+                      : row?.["item_" + index],
+                  ),
+                ),
+              )
+              .filter(Boolean),
+          };
+        }),
+        provider: PROVIDER_NAME,
+      };
     },
 
     /**

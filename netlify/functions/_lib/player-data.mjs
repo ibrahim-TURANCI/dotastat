@@ -33,6 +33,12 @@ export function playerDataService() {
 export const getPlayerBundle = (player, options) =>
   playerDataService().getPlayerBundle(player, options);
 
+export const getMatchDetail = (matchId, options) =>
+  playerDataService().getMatchDetail(matchId, options);
+
+export const getMatchSquads = (player, bundle) =>
+  playerDataService().getMatchSquads(player, bundle);
+
 export const getRosterDashboard = (options) =>
   playerDataService().getRosterDashboard(options);
 

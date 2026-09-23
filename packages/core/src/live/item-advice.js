@@ -30,6 +30,13 @@ import {
 } from "../heroes/hero-catalog.js";
 import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { isRetiredItem, normalizeItemKey } from "./item-keys.js";
+import {
+  hasGameTime,
+  isLateGame,
+  isSmallItem,
+  nextBuildStep,
+  ownedWithComponents,
+} from "./item-progression.js";
 import { predictInventory } from "./predicted-items.js";
 import { detectThreats, threatAnswers } from "./threats.js";
 
@@ -227,6 +234,21 @@ const ITEM_GROUPS = {
   shivas_guard: "core",
   skadi: "core",
 };
+
+/**
+ * Item counter tablosu, anahtarlari NORMALIZE edilmis haliyle.
+ *
+ * Tablo konusma dilindeki yazimlari tasiyor (`linkensphere`, `euls`,
+ * `ghost_scepter`); rakip envanteri ise gercek anahtarlarla (`sphere`,
+ * `cyclone`, `ghost`) geliyor. Dogrudan bakmak bu uc kuralin hic
+ * tetiklenmemesi demekti.
+ */
+const ITEM_COUNTERS = new Map(
+  Object.entries(itemCounters || {}).map(([key, row]) => [
+    normalizeItemKey(key),
+    (row?.counters || []).map(normalizeItemKey),
+  ]),
+);
 
 /** key -> gorunen ad. `item-ids.js` id anahtarli oldugu icin bir kez cevrilir. */
 const ITEM_LABEL_BY_KEY = new Map(
@@ -428,7 +450,11 @@ function recordOf(heroKey, overrides = {}) {
  * @param {number} [input.minTotal] Kotanin toplamini en az bu sayiya cikarir
  *   (oyun ici overlay 4 yer gosteriyor; duz GSI kotasi 2'de kaliyor). Grup
  *   paylari degismez, artan yerler siranin devamindan dolar.
- * @returns {Array<{ key: string, name: string, group: string, groupLabel: string, reason: string }>}
+ * @param {number|null} [input.gameTime] Saniye cinsinden oyun saati. Verilirse
+ *   kademeli oneri (once ara parca), gec oyun filtresi (kucuk item yok) ve
+ *   kisisel erken cevaplar (Wand, Raindrop) devreye girer; verilmezse eski
+ *   davranis korunur (bkz. item-progression.js).
+ * @returns {Array<{ key: string, name: string, group: string, groupLabel: string, reason: string, buildsInto?: string, buildsIntoName?: string }>}
  */
 export function buildPlayerItemAdvice(input) {
   const player = input?.player || {};
@@ -440,8 +466,9 @@ export function buildPlayerItemAdvice(input) {
   const overrides = input.heroOverrides || {};
   const record = recordOf(hero, overrides);
   // Tahmini envanter de "elimde var" sayilir: yoksa envanteri gorunmeyen bir
-  // satirin onerisi macin basinda donar kalir.
-  const owned = assumedOwned(player);
+  // satirin onerisi macin basinda donar kalir. Sahip olunan itemlerin
+  // PARCALARI da sayilir: Manta'si olana Yasha onerilmez.
+  const owned = ownedWithComponents(assumedOwned(player));
   const removed = new Set(
     [...(record?.removedItems || []), ...(input.override?.remove || [])].map(
       normalizeItemKey,
@@ -458,26 +485,63 @@ export function buildPlayerItemAdvice(input) {
   /** @type {Map<string, { key: string, group: string, reason: string, order: number }>} */
   const candidates = new Map();
 
-  const push = (rawKey, group, reason, predicted = false) => {
-    const key = normalizeItemKey(rawKey);
-    if (!key || candidates.has(key) || owned.has(key) || removed.has(key)) {
-      return;
-    }
+  const gameTime = input.gameTime;
+  const late = isLateGame(gameTime);
+
+  /**
+   * Bu item (ya da ara parcasi) onerilemez mi?
+   * @param {string} key
+   */
+  const blocked = (key) =>
+    owned.has(key) ||
+    removed.has(key) ||
     // Oyundan kaldirilmis item onerilmez. Ornegin Necronomicon 7.29'da
     // kaldirildi; onerilmesi kullaniciyi dukkanda olmayan bir item icin
     // altin biriktirmeye iter ve listenin tamamini supheli hale getirir.
-    if (isRetiredItem(key)) {
+    isRetiredItem(key) ||
+    // Aura/benzersiz itemler takimda tek kisiye onerilir.
+    (TEAM_UNIQUE_ITEMS.has(key) && teamTaken.has(key));
+
+  /**
+   * @param {string} rawKey
+   * @param {string} group
+   * @param {string} reason
+   * @param {boolean} [predicted]
+   * @param {boolean} [exact] Ara parcaya cevirme ve gec oyun filtresi
+   *   uygulanmaz (kullanicinin elle ekledigi item oldugu gibi kalir).
+   */
+  const push = (rawKey, group, reason, predicted = false, exact = false) => {
+    const target = normalizeItemKey(rawKey);
+    if (!target || blocked(target)) {
       return;
     }
-    // Aura/benzersiz itemler takimda tek kisiye onerilir.
-    if (TEAM_UNIQUE_ITEMS.has(key) && teamTaken.has(key)) {
+    // Gec oyunda kucuk item onerilmez: 30. dakikada Raindrop ya da Wand yuva
+    // israfi. Dedektorler muaf; gorunmez rakip her dakikada tehdit.
+    if (
+      late &&
+      !exact &&
+      !ALWAYS_BUYABLE_ITEMS.has(target) &&
+      isSmallItem(target)
+    ) {
+      return;
+    }
+    // Kucukten buyuge: Manta yerine once Yasha. Adim yalnizca oyun saati
+    // biliniyorsa ve gec oyunda degilsek uretilir.
+    const step = exact
+      ? { key: target, buildsInto: null }
+      : nextBuildStep(target, { have: owned, gameTime, blocked });
+    const key = step.key;
+    if (candidates.has(key)) {
       return;
     }
     candidates.set(key, {
       key,
       group,
-      reason,
+      reason: step.buildsInto
+        ? `${itemDisplayName(step.buildsInto)} için ara parça. ${reason}`
+        : reason,
       predicted,
+      buildsInto: step.buildsInto,
       order: candidates.size,
     });
   };
@@ -503,8 +567,7 @@ export function buildPlayerItemAdvice(input) {
       const seen = effectiveOwned(row);
       for (const enemyItem of assumedOwned(row)) {
         const predicted = !seen.has(enemyItem);
-        for (const key of itemCounters[enemyItem]?.counters || []) {
-          const normalized = normalizeItemKey(key);
+        for (const normalized of ITEM_COUNTERS.get(enemyItem) || []) {
           const current = itemCounterReasons.get(normalized);
           // Gorulen esya, tahmin edileni EZER: ayni cevabi iki rakip
           // tetikliyorsa kesin olani yazmak gerekcenin degerini korur.
@@ -567,7 +630,33 @@ export function buildPlayerItemAdvice(input) {
 
   // 1. ELLE EKLENENLER — kullanicinin beyani her kuralin onundedir.
   for (const key of input.override?.add || []) {
-    push(key, "core", "Elle eklendi.");
+    push(key, "core", "Elle eklendi.", false, true);
+  }
+
+  // 1b. KISISEL ERKEN CEVAPLAR — hero'nun planinda olmasa bile rakibe gore
+  //     eklenen ucuz itemler (Wand, Raindrop). Rakip + hero rolu + oyun saati
+  //     birlikte bakilir; saat bilinmiyorsa uretilmez (eski davranis).
+  if (hasGameTime(gameTime)) {
+    const roles = record?.laneRoles || [];
+    for (const threat of threats) {
+      if (!threat.personal) {
+        continue;
+      }
+      if (threat.until !== null && Number(gameTime) >= threat.until) {
+        continue;
+      }
+      const roleFits =
+        !threat.roles ||
+        threat.roles.some((role) => roles.includes(role)) ||
+        (threat.minHeroes > 0 && threat.heroes.length >= threat.minHeroes);
+      if (!roleFits) {
+        continue;
+      }
+      const names = threat.heroes.map(heroDisplayName).join(", ");
+      for (const key of threat.items) {
+        push(key, "counter", `${threat.reason}: ${names}.`);
+      }
+    }
   }
 
   // 2. HERO PLANI — her veri seviyesinde calisir, tek gereken hero bilgisi.
@@ -587,6 +676,13 @@ export function buildPlayerItemAdvice(input) {
     reason: row.reason,
     name: itemDisplayName(row.key),
     groupLabel: GROUP_LABELS[row.group] || row.group,
+    // Ara parca onerisiyse hedef item; arayuz "→ Manta" gosterebilsin.
+    ...(row.buildsInto
+      ? {
+          buildsInto: row.buildsInto,
+          buildsIntoName: itemDisplayName(row.buildsInto),
+        }
+      : {}),
   }));
 }
 
@@ -724,7 +820,7 @@ function gapsAndItems(bars, rows, against, overrides) {
     .filter((row) => row.score < WEAKNESS_MAX_SCORE)
     .sort((a, b) => a.score - b.score);
 
-  const owned = new Set(
+  const owned = ownedWithComponents(
     (rows || []).flatMap((row) => [...effectiveOwned(row)]),
   );
 
@@ -817,6 +913,11 @@ function gapsAndItems(bars, rows, against, overrides) {
   //    onermek, maca bakmadan konusmak olurdu.
   const threats = detectThreats(against || [], overrides);
   for (const threat of threats) {
+    // Kisisel erken cevaplar (Wand, Raindrop) takim onerisi degil; her
+    // oyuncuya kendi satirinda verilir.
+    if (threat.personal) {
+      continue;
+    }
     const names = threat.heroes.map(heroDisplayName).join(", ");
     for (const key of threat.items) {
       offer(
@@ -994,6 +1095,8 @@ export function buildLiveItemAdvice(input = {}) {
         override: legacy[normalizeHeroKey(row?.hero)] || null,
         teamTaken,
         minTotal: input.minAdvice,
+        // Ham deger gecer: "saat bilinmiyor" ile "0. saniye" ayni sey degil.
+        gameTime: hasGameTime(input.gameTime) ? Number(input.gameTime) : null,
       });
       for (const card of advice) {
         if (TEAM_UNIQUE_ITEMS.has(card.key)) {

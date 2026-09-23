@@ -69,7 +69,11 @@ export function heroThreats(hero, overrides = {}) {
  *   tooltip: string,
  *   reason: string,
  *   items: string[],
- *   heroes: string[]
+ *   heroes: string[],
+ *   personal: boolean,
+ *   until: number|null,
+ *   roles: string[]|null,
+ *   minHeroes: number
  * }>}
  */
 export function detectThreats(rows, overrides = {}) {
@@ -98,6 +102,12 @@ export function detectThreats(rows, overrides = {}) {
     reason: threat.reason,
     items: threat.items.map(normalizeItemKey),
     heroes: [...found.get(threat.key)],
+    // Kisisel erken cevap alanlari (bkz. data/hero-traits.js). Tanimda yoksa
+    // tehdit eskisi gibi davranir.
+    personal: Boolean(threat.personal),
+    until: Number.isFinite(threat.until) ? threat.until : null,
+    roles: Array.isArray(threat.roles) ? [...threat.roles] : null,
+    minHeroes: Number(threat.minHeroes) || 0,
   }));
 }
 

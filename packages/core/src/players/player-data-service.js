@@ -18,6 +18,8 @@ import { createStratzClient } from "../providers/stratz.js";
 import { resolveRankTier } from "./player-types.js";
 import { listRoster } from "./roster.js";
 import { buildPlayerEvaluation, toRosterCard } from "./evaluation.js";
+import { buildMatchDetailView } from "./match-detail.js";
+import { buildMatchSquads } from "./match-squads.js";
 
 /** Mac gecmisi onbellek suresi. */
 export const MATCH_TTL_MS = 6 * 60 * 60 * 1000;
@@ -222,6 +224,12 @@ export function mergeMatchHistory(kept, incoming, options = {}) {
     )
     .slice(0, limit);
 }
+
+/**
+ * Kaynak maci henuz vermediyse (OpenDota yeni maclari gec isliyor) ayni mac
+ * icin tekrar denemeden once beklenen sure.
+ */
+const MATCH_DETAIL_RETRY_MS = 15 * 60 * 1000;
 
 /** Panel isteginde en fazla kac oyuncu icin taze veri cekilir. */
 const MAX_REFRESH_PER_REQUEST = 4;
@@ -850,14 +858,190 @@ export function createPlayerDataService(options) {
     return Object.fromEntries(entries.filter((row) => row[1]));
   }
 
+  /**
+   * Oyuncunun maclarinda kadrodan kimlerin oldugu (bkz. match-squads.js).
+   *
+   * Ag istegi YAPMAZ: diger kadro uyelerinin mac listesi yalnizca onbellekten
+   * okunur (`allowFetch: false`). Bir uyenin verisi yoksa o uye eslesmede
+   * gorunmez; hata sayilmaz.
+   *
+   * @param {import("./player-types.js").Player} player
+   * @param {{ matches?: Array<Record<string, any>>, evaluations?: Array<Record<string, any>> }} bundle
+   */
+  async function getMatchSquads(player, bundle) {
+    const others = await Promise.all(
+      listRoster()
+        .filter((row) => row.id !== player.id)
+        .map(async (row) => {
+          try {
+            const result = await getPlayerMatches(row, { allowFetch: false });
+            return { id: row.id, name: row.name, matches: result.matches };
+          } catch {
+            return null;
+          }
+        }),
+    );
+    return buildMatchSquads({
+      playerId: player.id,
+      matches: bundle?.matches || [],
+      roster: [
+        {
+          id: player.id,
+          name: player.name,
+          matches: bundle?.matches || [],
+          evaluations: bundle?.evaluations || [],
+        },
+        ...others.filter(Boolean),
+      ],
+    });
+  }
+
+  /**
+   * Tek macin tam kadrosu (on oyuncu + PR).
+   *
+   * AG ISTEGI POLITIKASI
+   *   - Yalnizca kullanici bir maci actiginda cagrilir.
+   *   - Bitmis mac degismez: sonuc SURESIZ onbellege yazilir, ayni mac bir
+   *     daha hicbir ziyaretci icin cekilmez.
+   *   - Yalnizca KADRONUN oynadigi maclar cekilir (onbellekteki mac
+   *     listelerinde gecen kimlikler). Rastgele bir kimlikle gunluk kotayi
+   *     tuketmek mumkun olmamali.
+   *   - Kaynak maci henuz vermiyorsa kisa bir sure tekrar denenmez.
+   *
+   * @param {string} matchId
+   * @param {{
+   *   readForcedRoles?: (accountId: string) => Promise<Record<string, string>>,
+   *   heroOverrides?: Record<string, Record<string, any>>
+   * }} [detailOptions] `readForcedRoles`: kadro uyesinin elle girdigi
+   *   pozisyonlar (matchId -> rol). Verilirse o pozisyon takim dagiliminda
+   *   kesin kabul edilir ve kalanlar ona gore dagitilir.
+   * @returns {Promise<{ match: Record<string, any>|null, fromCache: boolean, error: string }>}
+   */
+  async function getMatchDetail(matchId, detailOptions = {}) {
+    const id = String(matchId || "");
+    if (!/^\d{1,20}$/.test(id)) {
+      return { match: null, fromCache: true, error: "gecersiz-mac" };
+    }
+    const key = "match:" + id;
+    const roster = listRoster();
+
+    let detail = await storage.get(key);
+    const fromCache = Boolean(detail);
+
+    /** @type {Array<Record<string, any>>|null} Kadronun bu mactaki satirlari */
+    let listRows = null;
+    const rosterRows = async () => {
+      if (!listRows) {
+        const lists = await Promise.all(
+          roster.map((row) =>
+            getPlayerMatches(row, { allowFetch: false }).catch(() => null),
+          ),
+        );
+        listRows = lists
+          .flatMap((result) => result?.matches || [])
+          .filter((row) => String(row?.matchId) === id);
+      }
+      return listRows;
+    };
+
+    if (!detail) {
+      const known = (await rosterRows()).length > 0;
+      if (!known) {
+        return { match: null, fromCache: true, error: "mac-kadroda-degil" };
+      }
+      if (await storage.get(key + ":attempted")) {
+        return { match: null, fromCache: true, error: "mac-henuz-yok" };
+      }
+
+      try {
+        detail = await client.getMatchDetail(id);
+      } catch (error) {
+        await storage.set(
+          key + ":attempted",
+          { at: new Date().toISOString() },
+          { ttlMs: MATCH_DETAIL_RETRY_MS },
+        );
+        return {
+          match: null,
+          fromCache: false,
+          error: String(error?.message || "mac-detayi-alinamadi"),
+        };
+      }
+      if (!detail) {
+        await storage.set(
+          key + ":attempted",
+          { at: new Date().toISOString() },
+          { ttlMs: MATCH_DETAIL_RETRY_MS },
+        );
+        return { match: null, fromCache: false, error: "mac-henuz-yok" };
+      }
+      await storage.set(key, detail);
+    }
+
+    // MAC SEVIYESI: OpenDota'nin resmi ortalamasi (`average_rank`) mac
+    // detayinda yok, oyuncunun mac listesinde var. Pencere ile Son Maclar'in
+    // ayni sayiyi gostermesi icin o deger tercih edilir. Bir kez bakilir ve
+    // sonuc kayda yazilir; sonraki acilislar listeleri okumaz.
+    if (!detail.averageRankChecked) {
+      const official = (await rosterRows())
+        .map((row) => Number(row?.averageRankTier))
+        .find((tier) => Number.isFinite(tier) && tier > 0);
+      detail = {
+        ...detail,
+        averageRankTier: official || detail.averageRankTier || null,
+        averageRankSource: official ? "opendota" : "players",
+        averageRankChecked: true,
+      };
+      await storage.set(key, detail);
+    }
+
+    // Macta bulunan kadro uyelerinin bu mac icin ELLE girdigi pozisyonlar.
+    // Okunamazsa dagilim yalnizca istatistikten yapilir.
+    const accounts = new Set(
+      (detail.players || []).map((row) => String(row?.accountId || "")),
+    );
+    const members = roster.filter((row) => accounts.has(String(row.player_id)));
+    /** @type {Record<string, string>} */
+    const forcedRolesByAccount = {};
+    if (typeof detailOptions.readForcedRoles === "function") {
+      await Promise.all(
+        members.map(async (row) => {
+          try {
+            const roles = await detailOptions.readForcedRoles(
+              String(row.player_id),
+            );
+            if (roles?.[id]) {
+              forcedRolesByAccount[String(row.player_id)] = String(roles[id]);
+            }
+          } catch {
+            // Beyan okunamadi: bu oyuncu icin istatistikten tahmin edilir.
+          }
+        }),
+      );
+    }
+
+    return {
+      match: buildMatchDetailView({
+        detail,
+        roster,
+        forcedRolesByAccount,
+        heroOverrides: detailOptions.heroOverrides || {},
+      }),
+      fromCache,
+      error: "",
+    };
+  }
+
   return {
     client,
+    getMatchDetail,
     getPlayerMatches,
     getPlayerProfile,
     getHeroPerformance,
     getPlayerBundle,
     getRosterDashboard,
     getCachedStatsByPlayerId,
+    getMatchSquads,
     /** Hangi kaynaklar yapilandirilmis, en son hangisi cevap verdi? */
     providerStatus: () => ({
       providers: client.providers,

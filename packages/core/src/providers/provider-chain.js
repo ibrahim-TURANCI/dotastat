@@ -24,6 +24,8 @@ const CHAINED_METHODS = [
   "getRecentMatches",
   "getPlayerStats",
   "getHeroPerformance",
+  // Yalnizca OpenDota uygular; metodu olmayan saglayici atlanir.
+  "getMatchDetail",
 ];
 
 /**

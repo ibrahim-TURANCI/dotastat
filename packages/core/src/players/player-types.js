@@ -92,6 +92,7 @@
  * @property {string} hero          normalize hero key (ör. "dark_seer")
  * @property {RoleKey|""} role
  * @property {MatchResult} result
+ * @property {"radiant"|"dire"|""} [side] Takim tarafi; eski kayitlarda yok
  * @property {number} kills
  * @property {number} deaths
  * @property {number} assists
