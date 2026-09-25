@@ -7,18 +7,25 @@
  *                   (roster'daki arkadaslar) onlarin rol/hero havuzuna gore
  *                   pick onerisi verir. Oyuncu taninmiyorsa genel meta onerisi.
  *   2. "active"   - Pickler suruyor. Kendi takimin + rakip takimin secimlerine
- *                   gore skorlanir; counter, sinerji ve rol bosluklari birlikte
- *                   degerlendirilir.
+ *                   gore skorlanir; counter, sinerji ve rakibin ozellikleri
+ *                   birlikte degerlendirilir.
  *   3. "complete" - 10 pick tamamlandi. Asistan GORUNMEZ (visible: false).
+ *
+ * PICK BITENE KADAR BES POZISYONUN HEPSI GOSTERILIR. Secilen bir hero'nun
+ * hangi pozisyon icin alindigini bilmiyoruz: Pudge pos3 icin de pos5 icin de
+ * secilebilir. Eskiden "dolu" tahmin edilen pozisyonun onerisi gizleniyordu;
+ * tahmin yanlis ciktiginda (Pudge pos3 alinmis, pos5 dolu sanilmis) asil bos
+ * pozisyonun onerisi ekrandan kayboluyordu.
  *
  * Bu modul saftir: ag istegi yapmaz, dosya okumaz.
  */
 
-import heroProfiles from "../data/hero-profiles.js";
-import heroRoles from "../data/hero-roles.js";
+import { heroKeys, heroPositions, heroRecord } from "../heroes/hero-catalog.js";
 import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
+import { detectThreats } from "../live/threats.js";
+import { shrunkWinRate } from "../players/hero-pool.js";
 import { ROLE_KEYS, ROLE_LABELS } from "../players/player-types.js";
-import { getDraftMetrics, scoreDraftPick } from "./draft-analyzer.js";
+import { scoreDraftPick } from "./draft-analyzer.js";
 
 /** Bir takimin toplam pick sayisi. */
 const PICKS_PER_TEAM = 5;
@@ -27,89 +34,47 @@ const TOTAL_PICKS = PICKS_PER_TEAM * 2;
 /** Rol basina gosterilecek oneri sayisi. */
 const DEFAULT_SUGGESTIONS_PER_ROLE = 4;
 
-/** hero-roles.json rol adlari -> pos anahtari. */
-const ROLE_NAME_TO_SLOTS = {
-  carry: ["pos1"],
-  mid: ["pos2"],
-  offlane: ["pos3"],
-  support: ["pos4", "pos5"],
-  sup4: ["pos4"],
-  sup5: ["pos5"],
-};
-
-/** hero-roles.json lane adlari -> pos anahtari. */
-const LANE_TO_SLOT = {
-  safe: "pos1",
-  mid: "pos2",
-  offlane: "pos3",
-  soft: "pos4",
-  hard: "pos5",
-  carry: "pos1",
-  sup4: "pos4",
-  sup5: "pos5",
-};
-
-/** Tum bilinen hero anahtarlari (iki veri kaynaginin birlesimi). */
-const ALL_HERO_KEYS = Array.from(
-  new Set([...Object.keys(heroProfiles), ...Object.keys(heroRoles)]),
-).filter(Boolean);
+/**
+ * Rakibin tasidigi bir ozellige CEVAP veren hero'nun puan bonusu.
+ *
+ * Sabit degil, rakipte o ozelligi tasiyan hero sayisiyla buyur: tek bir
+ * Bounty Hunter'a karsi Oracle secmek zorunlu degil, ama Viper + Silencer +
+ * Venomancer'a karsi dispel neredeyse sart. Tavan, bonusun oyuncunun hero
+ * havuzunu (imza kahramani +34) tamamen ezmemesi icin.
+ */
+const ANSWER_BONUS_BASE = 10;
+const ANSWER_BONUS_PER_HERO = 6;
+const ANSWER_BONUS_MAX = 28;
 
 /**
  * Bir hero'nun oynanabilecegi pozisyonlar.
+ *
+ * KATALOGDAN okunur (uretilmis tohum + kullanicinin "Tavsiyeleri yonet"
+ * duzenlemesi): canli mac tavsiyesi de ayni lane rollerini kullaniyor ve
+ * kullanici bir hero'ya rol eklediginde draft da bunu gormeli.
+ *
  * @param {string} heroKey
+ * @param {Record<string, Record<string, any>>} [overrides] hero -> duzenleme
  * @returns {Set<string>}
  */
-function heroSlots(heroKey) {
+function heroSlots(heroKey, overrides = {}) {
   const key = normalizeHeroKey(heroKey);
-  const slots = new Set();
-
-  const roleRow = heroRoles[key];
-  if (roleRow) {
-    for (const role of roleRow.roles || []) {
-      for (const slot of ROLE_NAME_TO_SLOTS[role] || []) {
-        slots.add(slot);
-      }
-    }
-    const laneSlot = LANE_TO_SLOT[String(roleRow.lane || "")];
-    if (laneSlot) {
-      slots.add(laneSlot);
-    }
-  }
-
-  const profileRow = heroProfiles[key];
-  if (profileRow) {
-    for (const role of profileRow.roles || []) {
-      for (const slot of ROLE_NAME_TO_SLOTS[role] || []) {
-        slots.add(slot);
-      }
-    }
-    for (const lane of profileRow.lane || []) {
-      const laneSlot = LANE_TO_SLOT[String(lane)];
-      if (laneSlot) {
-        slots.add(laneSlot);
-      }
-    }
-  }
-
-  return slots;
+  return heroPositions(heroRecord(key, overrides?.[key] || null));
 }
 
 /**
- * Bu hero'yu counter'layan hero listesi.
- * Iki veri kaynagindaki `counters` alani da "bu hero'ya karsi guclu olanlar"
- * anlamindadir.
+ * Bu hero'yu counter'layan hero listesi ("bu hero'ya karsi guclu olanlar").
+ *
+ * Katalogdaki `counterHeroes` alanindan okunur; kullanicinin duzenlemesi
+ * tohumun uzerine biner.
+ *
  * @param {string} heroKey
+ * @param {Record<string, Record<string, any>>} [overrides] hero -> duzenleme
  * @returns {string[]}
  */
-function countersOf(heroKey) {
+function countersOf(heroKey, overrides = {}) {
   const key = normalizeHeroKey(heroKey);
-  const fromRoles = heroRoles[key]?.counters || [];
-  const fromProfiles = heroProfiles[key]?.counters || [];
-  return Array.from(
-    new Set(
-      [...fromRoles, ...fromProfiles].map((row) => normalizeHeroKey(row)),
-    ),
-  ).filter(Boolean);
+  return [...(heroRecord(key, overrides?.[key] || null)?.counterHeroes || [])];
 }
 
 /**
@@ -140,7 +105,7 @@ export function resolveDraftStage(input = {}) {
  * Oyuncunun hero havuzundan gelen ilgi puani.
  *
  * @param {import("../players/player-types.js").Player|null} player
- * @param {{ heroes?: Array<{ hero: string, matches: number, winRate: number }> }|null} stats
+ * @param {{ heroes?: Array<{ hero: string, matches: number, wins?: number, winRate: number }> }|null} stats
  * @param {string} heroKey
  * @returns {{ score: number, reasons: string[] }}
  */
@@ -178,7 +143,15 @@ function playerAffinity(player, stats, heroKey) {
     (row) => normalizeHeroKey(row.hero) === key,
   );
   if (played && played.matches >= 2) {
-    const winBonus = Math.round((Number(played.winRate || 0) - 0.5) * 40);
+    // Kazanma orani 0.5'e dogru YUMUSATILIR (bkz. hero-pool.js): ham oran
+    // 2 macta %100 ile +20 puan veriyordu ve kucuk ornegin gurultusu oneriyi
+    // yonetiyordu.
+    const wins = Number.isFinite(Number(played.wins))
+      ? Number(played.wins)
+      : Math.round(Number(played.winRate || 0) * played.matches);
+    const winBonus = Math.round(
+      (shrunkWinRate(wins, played.matches) - 0.5) * 40,
+    );
     score += Math.min(18, played.matches * 2) + winBonus;
     reasons.push(
       "Son maçlarda " +
@@ -195,17 +168,25 @@ function playerAffinity(player, stats, heroKey) {
 /**
  * Tek bir hero adayini puanlar.
  *
+ * Combo puani `scoreDraftPick` icinde hesaplanir ve burada TEKRAR
+ * eklenmez: eskiden iki kez sayiliyordu ve combo ortagi basina +30 puan
+ * counter ile hero havuzunun onune geciyordu.
+ *
  * @param {Object} input
  * @param {string} input.hero
  * @param {string[]} input.teamHeroes
  * @param {string[]} input.enemyHeroes
  * @param {import("../players/player-types.js").Player|null} [input.player]
  * @param {Object|null} [input.stats]
+ * @param {ReturnType<typeof detectThreats>} [input.enemyThreats] Rakibin
+ *   tasidigi, hero cevabi olan ozellikler
+ * @param {Record<string, Record<string, any>>} [input.overrides]
  */
 function scoreCandidate(input) {
   const hero = normalizeHeroKey(input.hero);
   const teamHeroes = input.teamHeroes || [];
   const enemyHeroes = input.enemyHeroes || [];
+  const overrides = input.overrides || {};
 
   const base = scoreDraftPick({
     candidateHero: hero,
@@ -218,29 +199,19 @@ function scoreCandidate(input) {
 
   // Rakip pickleri: aday, rakibin counter listesinde mi?
   for (const enemy of enemyHeroes) {
-    if (countersOf(enemy).includes(hero)) {
+    if (countersOf(enemy, overrides).includes(hero)) {
       score += 16;
       reasons.push(heroDisplayName(enemy) + " için iyi cevap");
     }
   }
 
   // Ters yon: adayi counter'layan bir rakip zaten secilmis mi?
-  const ownCounters = countersOf(hero);
+  const ownCounters = countersOf(hero, overrides);
   for (const enemy of enemyHeroes) {
     if (ownCounters.includes(enemy)) {
       score -= 14;
       reasons.push(heroDisplayName(enemy) + " bu seçime karşı güçlü");
     }
-  }
-
-  // Kendi takimindaki combo eslesmeleri.
-  const metrics = getDraftMetrics(hero);
-  const comboHits = (metrics.comboWithHeroes || [])
-    .map(normalizeHeroKey)
-    .filter((partner) => teamHeroes.includes(partner));
-  if (comboHits.length) {
-    score += comboHits.length * 12;
-    reasons.push("Combo: " + comboHits.map(heroDisplayName).join(", "));
   }
 
   const affinity = playerAffinity(
@@ -251,6 +222,25 @@ function scoreCandidate(input) {
   score += affinity.score;
   reasons.push(...affinity.reasons);
 
+  // Rakibin tasidigi ozellige cevap veren hero (ornek: debuff'a karsi
+  // dispel). Gerekce listenin BASINA yazilir; dort gerekcelik sinirda
+  // kesilirse "neden bu hero" sorusunun asil cevabi kaybolurdu.
+  for (const threat of input.enemyThreats || []) {
+    if (!threat.answerHeroes.includes(hero)) {
+      continue;
+    }
+    score += Math.min(
+      ANSWER_BONUS_MAX,
+      ANSWER_BONUS_BASE + ANSWER_BONUS_PER_HERO * threat.heroes.length,
+    );
+    reasons.unshift(
+      threat.answerReason +
+        ": " +
+        threat.heroes.map(heroDisplayName).join(", "),
+    );
+  }
+
+  const metrics = base.draftMetrics;
   return {
     hero,
     heroName: heroDisplayName(hero),
@@ -267,32 +257,40 @@ function scoreCandidate(input) {
 }
 
 /**
- * Takimda hangi pozisyonlarin bos oldugunu tahmin eder.
+ * Taninan oyunculari pozisyonlara esler.
  *
- * @param {string[]} teamHeroes
- * @returns {string[]}
+ * Once oyuncunun BU MACTAKI pozisyonu (`role`; Overwolf verdiyse oradan,
+ * yoksa kadrodaki birincil rol), sonra ikincil rolleri denenir.
+ *
+ * @param {Array<{ player: Record<string, any>, role?: string, stats?: Object }>} knownPlayers
+ * @returns {Map<string, { player: Record<string, any>, role?: string, stats?: Object }>}
  */
-function missingSlots(teamHeroes) {
-  const taken = new Set();
-  for (const hero of teamHeroes) {
-    const slots = Array.from(heroSlots(hero));
-    // Tek pozisyona sabitlenmis hero o pozisyonu kesin doldurur.
-    if (slots.length === 1 && !taken.has(slots[0])) {
-      taken.add(slots[0]);
+function assignPlayers(knownPlayers) {
+  const assigned = new Map();
+  const usedPlayers = new Set();
+  /** @param {(row: Record<string, any>, slot: string) => boolean} fits */
+  const pass = (fits) => {
+    for (const slot of ROLE_KEYS) {
+      if (assigned.has(slot)) {
+        continue;
+      }
+      const match = knownPlayers.find(
+        (row) => !usedPlayers.has(row.player.id) && fits(row, slot),
+      );
+      if (match) {
+        assigned.set(slot, match);
+        usedPlayers.add(match.player.id);
+      }
     }
-  }
-  // Kalan hero'lari acgozlu sekilde bos slotlara yerlestir.
-  for (const hero of teamHeroes) {
-    const slots = Array.from(heroSlots(hero));
-    if (slots.length <= 1) {
-      continue;
-    }
-    const free = slots.find((slot) => !taken.has(slot));
-    if (free) {
-      taken.add(free);
-    }
-  }
-  return ROLE_KEYS.filter((slot) => !taken.has(slot));
+  };
+  pass(
+    (row, slot) =>
+      row.role === slot || row.player.dotaProfile?.primaryRole === slot,
+  );
+  pass((row, slot) =>
+    (row.player.dotaProfile?.secondaryRoles || []).includes(slot),
+  );
+  return assigned;
 }
 
 /**
@@ -305,9 +303,12 @@ function missingSlots(teamHeroes) {
  * @param {string} [input.phase] GSI `map.game_state`
  * @param {Array<{ player: import("../players/player-types.js").Player, team?: string, role?: string, stats?: Object }>} [input.knownPlayers]
  * @param {number} [input.suggestionsPerRole]
+ * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero ->
+ *   duzenleme; rol, counter ve ozellikler kullanicinin kaydina gore okunur
  */
 export function buildDraftAdvice(input = {}) {
   const myTeam = input.myTeam === "dire" ? "dire" : "radiant";
+  const overrides = input.heroOverrides || {};
   const picks = (Array.isArray(input.picks) ? input.picks : []).filter(
     (row) => row?.hero,
   );
@@ -336,6 +337,14 @@ export function buildDraftAdvice(input = {}) {
     .filter((row) => row.team !== myTeam)
     .map((row) => normalizeHeroKey(row.hero))
     .filter(Boolean);
+  // Rakip picklerin tasidigi ve bir HERO cevabi olan ozellikler (Debuff ->
+  // dispel hero'lari). Katalogdan okunur: kullanicinin isaretledigi kutucuk
+  // tohumu ezer.
+  const enemyThreats = detectThreats(
+    enemyHeroes.map((hero) => ({ hero })),
+    overrides,
+  ).filter((threat) => threat.answerHeroes.length);
+
   const unavailable = new Set([
     ...teamHeroes,
     ...enemyHeroes,
@@ -346,46 +355,14 @@ export function buildDraftAdvice(input = {}) {
   const knownPlayers = (
     Array.isArray(input.knownPlayers) ? input.knownPlayers : []
   ).filter((row) => row?.player && (!row.team || row.team === myTeam));
+  const assigned = assignPlayers(knownPlayers);
 
-  const openSlots = missingSlots(teamHeroes);
-  const slotsToFill = openSlots.length ? openSlots : ROLE_KEYS;
+  const candidates = heroKeys().filter((hero) => !unavailable.has(hero));
 
-  // Her bos pozisyona, o pozisyonu oynayan taninan bir oyuncuyu esle.
-  const assigned = new Map();
-  const usedPlayers = new Set();
-  for (const slot of slotsToFill) {
-    const match = knownPlayers.find(
-      (row) =>
-        !usedPlayers.has(row.player.id) &&
-        (row.role === slot || row.player.dotaProfile?.primaryRole === slot),
-    );
-    if (match) {
-      assigned.set(slot, match);
-      usedPlayers.add(match.player.id);
-    }
-  }
-  for (const slot of slotsToFill) {
-    if (assigned.has(slot)) {
-      continue;
-    }
-    const match = knownPlayers.find(
-      (row) =>
-        !usedPlayers.has(row.player.id) &&
-        (row.player.dotaProfile?.secondaryRoles || []).includes(slot),
-    );
-    if (match) {
-      assigned.set(slot, match);
-      usedPlayers.add(match.player.id);
-    }
-  }
-
-  const blocks = slotsToFill.map((slot) => {
+  const blocks = ROLE_KEYS.map((slot) => {
     const owner = assigned.get(slot) || null;
-    const candidates = ALL_HERO_KEYS.filter(
-      (hero) => !unavailable.has(hero) && heroSlots(hero).has(slot),
-    );
-
     const suggestions = candidates
+      .filter((hero) => heroSlots(hero, overrides).has(slot))
       .map((hero) =>
         scoreCandidate({
           hero,
@@ -393,6 +370,8 @@ export function buildDraftAdvice(input = {}) {
           enemyHeroes,
           player: owner?.player || null,
           stats: owner?.stats || null,
+          enemyThreats,
+          overrides,
         }),
       )
       .sort((a, b) => b.score - a.score)
@@ -419,7 +398,7 @@ export function buildDraftAdvice(input = {}) {
         teamHeroes.length +
         " pickinize ve rakibin " +
         enemyHeroes.length +
-        " pickine göre güncellendi.",
+        " pickine göre güncellendi. Seçilen hero'nun hangi pozisyona alındığı kesin bilinmediği için pick bitene kadar tüm pozisyonlar gösterilir.",
     );
   }
   if (bans.length) {
@@ -435,11 +414,10 @@ export function buildDraftAdvice(input = {}) {
     bannedHeroes: Array.from(
       new Set(bans.map((row) => normalizeHeroKey(row.hero))),
     ),
-    openSlots,
     knownPlayerCount: knownPlayers.length,
     notes,
     blocks,
   };
 }
 
-export { heroSlots, countersOf, ALL_HERO_KEYS };
+export { heroSlots, countersOf };

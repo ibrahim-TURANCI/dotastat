@@ -252,6 +252,9 @@ function normalizePlayer(input, options = {}) {
     rank: normalizeRank(source.rank),
     rankFetchedAt: toText(source.rankFetchedAt),
     source: toText(source.source) || options.source || "manual",
+    // Ortak tavsiye katalogundaki duzenlemeleri "varsayilan" olarak
+    // kaydedebilir (bkz. roster.js -> isCatalogAdmin).
+    catalogAdmin: source.catalogAdmin === true,
   };
 }
 

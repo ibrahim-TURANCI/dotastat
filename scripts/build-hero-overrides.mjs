@@ -7,26 +7,24 @@
  * buradan uretir.
  *
  * NEDEN URETILIYOR, ELLE YAZILMIYOR: hero-profiles.js 99 hero tasiyor, oysa
- * oyunda 127 var. Eksik 28 hero (Lina, Pudge, Shadow Fiend, Rubick...) canli
- * macta hicbir tavsiye almiyordu ve takim analizinde HIC SAYILMIYORDU — yani
- * radar bes kisilik takimi uc kisi uzerinden olcuyordu. Bu uretici bosluklari
- * sirayla asagidaki kaynaklardan doldurur.
+ * oyunda 127 var. Eksik heroler (Lina, Pudge, Shadow Fiend, Rubick...) canli
+ * macta tavsiye almiyor ve takim analizinde sayilmiyordu. Bu uretici her hero
+ * icin bir kayit kurar ve bosluklari sirayla asagidaki kaynaklardan doldurur.
  *
  * KAYNAKLAR (oncelik sirasiyla)
  * -----------------------------
- *   1. dotabaff projesi  : hero-overrides.json (roleValues, laneRoles,
- *                          counterHeroes, counterItems) ve ti2026-pro-items.json
- *                          (TI 2026 ana etkinliginden gercek item kullanimi)
- *   2. hero-profiles.js  : bu depodaki mevcut kurgu (tags, counters, coreItems)
- *   3. OpenDota sabitleri: heroes.json `roles` alani — yalnizca ilk ikisi de
- *                          susuyorsa kullanilir; kaba, ama hero'yu analiz
- *                          disinda birakmaktan iyi
+ *   1. hero-overrides.js : bu dosyanin MEVCUT hali. Uretim artimlidir; eldeki
+ *                          veri korunur, yalnizca eksikler tamamlanir.
+ *   2. hero-profiles.js  : bu depodaki kurgu (tags, counters, coreItems)
+ *   3. hero-roles.js     : roller ve counter listeleri
+ *   4. OpenDota          : hero rol etiketleri ve son maclardaki item alim
+ *                          sirasi — yalnizca yukaridakiler susuyorsa
  *
  * CALISTIRMA
- *   node scripts/build-hero-overrides.mjs [dotabaff-dizini]
+ *   node scripts/build-hero-overrides.mjs
  *
- * Cikti dosyasi depoya COMMITLENIR: uretici disaridaki bir projeye ve aga
- * bagli, ama uygulamanin calismasi bagli olmamali.
+ * Cikti dosyasi depoya COMMITLENIR: uretici aga bagli (OpenDota), ama
+ * uygulamanin calismasi bagli olmamali.
  *
  * ELLE YAPILAN DUZENLEME BURAYA YAZILMAZ: bu dosya her calistirmada bastan
  * yazilir. "Tavsiyeleri yonet" ekraninda yapilip kalici kilinmak istenen kayit
@@ -39,6 +37,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import heroIds from "../packages/core/src/data/hero-ids.js";
+import currentOverrides from "../packages/core/src/data/hero-overrides.js";
 import heroProfiles from "../packages/core/src/data/hero-profiles.js";
 import heroRoles from "../packages/core/src/data/hero-roles.js";
 import { normalizeHeroKey } from "../packages/core/src/heroes/hero-names.js";
@@ -48,7 +47,6 @@ import {
 } from "../packages/core/src/live/item-keys.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DOTABAFF = process.argv[2] || path.resolve(ROOT, "..", "dotabaff");
 const OUTPUT = path.join(
   ROOT,
   "packages",
@@ -71,6 +69,21 @@ const NAMES_OUTPUT = path.join(
   "src",
   "data",
   "hero-localized.js",
+);
+
+/**
+ * Hero'larin ANA OZELLIGI (Strength / Agility / Intelligence / Universal).
+ *
+ * "Tavsiyeleri yonet" penceresindeki Ozellik gorunumu hero'lari buna gore
+ * grupluyor. Ad tablosu gibi tavsiye kaydindan bagimsiz bir bilgi.
+ */
+const ATTRIBUTES_OUTPUT = path.join(
+  ROOT,
+  "packages",
+  "core",
+  "src",
+  "data",
+  "hero-attributes.js",
 );
 
 /** OpenDota sabitleri (yalnizca uretim sirasinda cekilir). */
@@ -121,7 +134,7 @@ const OPENDOTA_ROLE_TO_VALUE = {
 /** Bu depoda kullanilan lane rol anahtarlari. */
 const LANE_ROLES = ["carry", "mid", "offlane", "sup4", "sup5"];
 
-/** dotabaff'in lane rol adlarini bu depodakine cevirir. */
+/** Kaynaklardaki lane rol adlarini bu depodakine cevirir. */
 const LANE_ROLE_ALIASES = {
   support4: "sup4",
   support5: "sup5",
@@ -144,14 +157,6 @@ const MIN_REQUIRED_ITEMS = 4;
 
 /** Gecerli hero anahtarlari (oyunda gercekten var olanlar). */
 const KNOWN_HEROES = new Set(Object.values(heroIds).map(String));
-
-/**
- * @param {string} file
- * @returns {any}
- */
-function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, "utf8"));
-}
 
 /**
  * @param {string} url
@@ -235,31 +240,12 @@ function clampScore(value) {
 }
 
 /**
- * dotabaff'in HIC DOKUNULMAMIS hero kaydinda birakti varsayilan kalip.
- *
- * 13 hero bu kalibi tasiyor ve bu "her eksende zayif hero" demek degil,
- * "bu hero hic duzenlenmedi" demek. Oldugu gibi alinsaydi Shadow Fiend, Pudge,
- * Rubick gibi heroler takim radarini asagi cekerdi. Kalip taninip veri yokmus
- * gibi davranilir; siradaki kaynaga (hero-profiles) duselim.
- */
-const DOTABAFF_PLACEHOLDER = JSON.stringify({
-  carry: 25,
-  support: 20,
-  burst: 25,
-  catch: 25,
-  escape: 20,
-  durability: 20,
-  initiation: 20,
-  push: 20,
-});
-
-/**
- * dotabaff kaydindan radar degerleri.
- * @param {Record<string, any>|null} override
+ * Mevcut kayittan radar degerleri; hic dolu eksen yoksa null.
+ * @param {Record<string, any>|null} current
  * @returns {Record<string, number>|null}
  */
-function roleValuesFromDotabaff(override) {
-  const source = override?.roleValues;
+function roleValuesFromCurrent(current) {
+  const source = current?.roleValues;
   if (!source || typeof source !== "object") {
     return null;
   }
@@ -272,10 +258,7 @@ function roleValuesFromDotabaff(override) {
       filled += 1;
     }
   }
-  if (!filled || JSON.stringify(out) === DOTABAFF_PLACEHOLDER) {
-    return null;
-  }
-  return out;
+  return filled ? out : null;
 }
 
 /**
@@ -419,23 +402,6 @@ function stringify(value, indent) {
 }
 
 async function main() {
-  const overridesFile = path.join(
-    DOTABAFF,
-    "src/data/overrides/hero-overrides.json",
-  );
-  const proFile = path.join(DOTABAFF, "src/data/items/ti2026-pro-items.json");
-
-  if (!fs.existsSync(overridesFile)) {
-    throw new Error(
-      "dotabaff verisi bulunamadi: " +
-        overridesFile +
-        "\nKullanim: node scripts/build-hero-overrides.mjs <dotabaff-dizini>",
-    );
-  }
-
-  const dotabaffOverrides = readJson(overridesFile).heroes || {};
-  const proItems = fs.existsSync(proFile) ? readJson(proFile).heroes || {} : {};
-
   const openDotaHeroes = await fetchJson(
     OPENDOTA_HEROES,
     "OpenDota hero sabitleri",
@@ -449,20 +415,7 @@ async function main() {
     Object.entries(openDotaItems).map(([key, row]) => [Number(row?.id), key]),
   );
 
-  const dotabaffByKey = {};
-  const proByKey = {};
   const openDotaByKey = {};
-
-  const index = (source, into) => {
-    for (const [raw, value] of Object.entries(source || {})) {
-      const key = heroKey(raw);
-      if (key) {
-        into[key] = value;
-      }
-    }
-  };
-  index(dotabaffOverrides, dotabaffByKey);
-  index(proItems, proByKey);
   for (const hero of Object.values(openDotaHeroes)) {
     const key = heroKey(hero?.name);
     if (key) {
@@ -470,7 +423,7 @@ async function main() {
     }
   }
 
-  const stats = { dotabaff: 0, profile: 0, opendota: 0, itemFallback: 0 };
+  const stats = { current: 0, profile: 0, opendota: 0, itemFallback: 0 };
   /** @type {Record<string, Record<string, any>>} */
   const byKey = {};
   /** hero anahtari -> OpenDota hero id (itemPopularity sorgusu icin). */
@@ -479,15 +432,14 @@ async function main() {
   );
 
   for (const hero of [...KNOWN_HEROES].sort()) {
-    const override = dotabaffByKey[hero] || null;
+    const current = currentOverrides[hero] || null;
     const profile = heroProfiles[hero] || null;
     const roles = heroRoles[hero] || null;
-    const pro = proByKey[hero] || null;
     const openDotaRoles = openDotaByKey[hero]?.roles || [];
 
-    let roleValues = roleValuesFromDotabaff(override);
+    let roleValues = roleValuesFromCurrent(current);
     if (roleValues) {
-      stats.dotabaff += 1;
+      stats.current += 1;
     } else {
       roleValues = roleValuesFromProfile(profile);
       if (roleValues) {
@@ -500,7 +452,7 @@ async function main() {
 
     const laneRoles = (() => {
       const merged = [
-        ...laneRoleList(override?.laneRoles),
+        ...laneRoleList(current?.laneRoles),
         ...laneRoleList(profile?.roles),
         ...laneRoleList(profile?.lane),
         ...laneRoleList(roles?.roles),
@@ -519,29 +471,31 @@ async function main() {
       counterHeroes: mergeLists(
         heroKey,
         MAX_COUNTER_HEROES,
-        override?.counterHeroes,
+        current?.counterHeroes,
         profile?.counters,
+        // hero-roles `counters` alani da "bu hero'yu zorlayanlar" anlaminda
+        // (counteredBy hep bos). Draft artik counter'i YALNIZCA katalogdan
+        // okuyor; bu liste disarida kalirsa o veri kaybolurdu.
+        roles?.counters,
         roles?.counteredBy,
       ),
       counterItems: mergeLists(
         itemKey,
         MAX_ITEMS,
-        override?.counterItems,
+        current?.counterItems,
         profile?.counterItems,
       ),
-      // Pro veri ONCE gelir: TI 2026 ana etkinliginde bu hero'ya gercekten
-      // alinan itemler, elle yazilmis bir plandan daha guvenilir.
+      // Mevcut plan ONCE gelir (daha once pro mac verisiyle kurulmustu).
       requiredItems: mergeLists(
         itemKey,
         MAX_ITEMS,
-        pro?.requiredItems,
+        current?.requiredItems,
         profile?.coreItems,
-        override?.requiredItems,
       ),
       situationalItems: mergeLists(
         itemKey,
         MAX_ITEMS,
-        pro?.situationalItems,
+        current?.situationalItems,
         profile?.situationalItems,
       ),
     };
@@ -550,10 +504,9 @@ async function main() {
   // Item plani ZAYIF kalan heroler OpenDota'nin son maclardan cikardigi alim
   // sirasindan tamamlanir.
   //
-  // Neden "bos" degil de "zayif": TI 2026 verisi bazi herolar icin tek bir
-  // item tasiyor (Lina: yalnizca Boots of Travel). Oyuncu o tek itemi aldigi
-  // anda cekirdek plan tukeniyor ve tavsiyenin tamami durumsal listeye
-  // dusuyordu — yani mac ilerledikce oneri KOTULESIYORDU.
+  // Neden "bos" degil de "zayif": plani bir iki itemden ibaret bir hero'da
+  // oyuncu o itemleri aldigi anda cekirdek plan tukeniyor ve tavsiyenin
+  // tamami durumsal listeye dusuyordu — mac ilerledikce oneri KOTULESIYORDU.
   for (const [hero, row] of Object.entries(byKey)) {
     if (row.requiredItems.length >= MIN_REQUIRED_ITEMS) {
       continue;
@@ -583,8 +536,7 @@ async function main() {
         .map(([id]) => itemKeyById.get(Number(id)))
         .filter((key) => key && isRecommendableItem(openDotaItems[key]));
 
-    // Eldeki plan ONDE kalir: pro veri ve elle yazilmis kurgu, ham alim
-    // sayiminden daha guvenilir.
+    // Eldeki plan ONDE kalir: ham alim sayimindan daha guvenilir.
     const before = row.requiredItems.length;
     row.requiredItems = dropUpgradedComponents(
       mergeLists(
@@ -620,8 +572,8 @@ async function main() {
  * Hero basina tavsiye ve analiz kaydi (URETILMIS VERI — elle duzenlemeyin).
  *
  * Uretici: scripts/build-hero-overrides.mjs
- * Kaynaklar: dotabaff hero-overrides + TI 2026 pro item kullanimi, bu depodaki
- * hero-profiles.js ve OpenDota hero rol etiketleri.
+ * Kaynaklar: bu dosyanin onceki hali, hero-profiles.js, hero-roles.js ve
+ * OpenDota (hero rol etiketleri, item alim sirasi).
  *
  * ALANLAR
  *   roleValues       0-100 arasi sekiz eksen; takim radarinin ham girdisi
@@ -644,11 +596,12 @@ ${body},
   console.log("yazildi:", path.relative(ROOT, OUTPUT));
 
   writeNames(openDotaByKey);
+  writeAttributes(openDotaByKey);
 
   console.log("hero sayisi:", Object.keys(byKey).length);
   console.log(
-    "roleValues kaynagi -> dotabaff:",
-    stats.dotabaff,
+    "roleValues kaynagi -> mevcut kayit:",
+    stats.current,
     "| hero-profiles:",
     stats.profile,
     "| opendota:",
@@ -695,6 +648,40 @@ function writeNames(openDotaByKey) {
 
   fs.writeFileSync(NAMES_OUTPUT, header + "\n" + rows + "\n};\n", "utf8");
   console.log("yazildi:", path.relative(ROOT, NAMES_OUTPUT));
+}
+
+/**
+ * Hero anahtari -> ana ozellik (`str` | `agi` | `int` | `all`) tablosunu yazar.
+ * @param {Record<string, any>} openDotaByKey
+ */
+function writeAttributes(openDotaByKey) {
+  const rows = [...KNOWN_HEROES]
+    .sort()
+    .map((hero) => {
+      const attr = String(openDotaByKey[hero]?.primary_attr || "").trim();
+      if (!attr) {
+        console.warn("  ! " + hero + " icin ana ozellik yok");
+        return null;
+      }
+      return "  " + JSON.stringify(hero) + ": " + JSON.stringify(attr) + ",";
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  const header = [
+    "/**",
+    " * Hero anahtari -> ana ozellik (URETILMIS VERI — elle duzenlemeyin).",
+    " *",
+    " * Uretici: scripts/build-hero-overrides.mjs",
+    " * Kaynak: OpenDota hero sabitleri (primary_attr).",
+    " *",
+    " * Degerler: str = Strength, agi = Agility, int = Intelligence, all = Universal.",
+    " */",
+    "export default {",
+  ].join("\n");
+
+  fs.writeFileSync(ATTRIBUTES_OUTPUT, header + "\n" + rows + "\n};\n", "utf8");
+  console.log("yazildi:", path.relative(ROOT, ATTRIBUTES_OUTPUT));
 }
 
 main().catch((error) => {

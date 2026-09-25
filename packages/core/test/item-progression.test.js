@@ -196,11 +196,15 @@ test("Raindrop: mid hero'ya tek burst rakipte bile onerilir", () => {
 });
 
 test("Raindrop: carry'ye yalnizca birden fazla burst rakip varsa", () => {
+  // Kural hero'nun ROLUNE bakiyor; tohum veri duzenlendikce Chaos Knight'in
+  // rolleri degisebilir, bu yuzden rol testte sabitlenir.
+  const heroOverrides = { chaos_knight: { laneRoles: ["carry"] } };
   const single = advise({
     player: { hero: "chaos_knight" },
     enemies: rows(["lina"], "dire"),
     dataLevel: "heroes",
     gameTime: 6 * MIN,
+    heroOverrides,
   });
   assert.ok(!keysOf(single).includes("infused_raindrop"));
 
@@ -209,6 +213,7 @@ test("Raindrop: carry'ye yalnizca birden fazla burst rakip varsa", () => {
     enemies: rows(["lina", "zuus"], "dire"),
     dataLevel: "heroes",
     gameTime: 6 * MIN,
+    heroOverrides,
   });
   assert.ok(keysOf(double).includes("infused_raindrop"));
 });

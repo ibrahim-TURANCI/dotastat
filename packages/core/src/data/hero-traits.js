@@ -36,6 +36,14 @@
  *   roles      yalnizca bu lane rollerindeki hero'lara onerilir...
  *   minHeroes  ...ya da rakipte en az bu kadar tasiyici varsa herkese.
  *
+ * PLANA BAGLI CEVAPLAR VE HERO CEVAPLARI (istege bagli alanlar)
+ *   planOnly      true ise cevap itemi TAKIM onerisinde de yalnizca planinda
+ *                 (gerekli/durumsal) o item olan hero'ya onerilir; kimsenin
+ *                 planinda yoksa "Duruma göre"ye DUSMEZ, hic onerilmez.
+ *   answerHeroes  pick sirasinda rakipte bu ozellik varsa one cikarilan
+ *                 hero'lar (bkz. draft/draft-advisor.js).
+ *   answerReason  o hero'larin pick onerisinde gorunen gerekce kalibi.
+ *
  * Kisisel cevaplar yalnizca OYUN SAATI biliniyorsa uretilir (bkz.
  * live/item-advice.js); saat yoksa eski davranis korunur.
  *
@@ -310,6 +318,57 @@ export default [
       "broodmother",
       "marci",
       "primal_beast",
+    ],
+  },
+  {
+    // Yalnizca ONEMLI debufflar: Viper'in zehri, Silencer'in Global Silence'i,
+    // Slardar'in zirh kirmasi gibi dispel edilmeden dovusu kaybettiren
+    // etkiler. Blood Grenade, Orb of Frost ya da kucuk bir slow gibi herkesin
+    // tasiyabilecegi genel debufflar bu listeye GIRMEZ; onlar icin dispel
+    // itemi onermek her macta ayni gereksiz oneriyi uretirdi.
+    key: "debuff",
+    label: "Debuff",
+    tooltip: "Eul's, Manta, Lotus, Greaves, BKB, Disperser önerilir",
+    reason: "Rakipte güçlü debuff basan hero var",
+    items: [
+      "cyclone",
+      "manta",
+      "lotus_orb",
+      "guardian_greaves",
+      "black_king_bar",
+      "disperser",
+    ],
+    planOnly: true,
+    answerReason: "Rakipteki debuffları dispel eder",
+    answerHeroes: [
+      "abaddon",
+      "legion_commander",
+      "vengefulspirit",
+      "omniknight",
+      "oracle",
+    ],
+    heroes: [
+      "venomancer",
+      "drow_ranger",
+      "silencer",
+      "skywrath_mage",
+      "slardar",
+      "axe",
+      "bounty_hunter",
+      "disruptor",
+      "dazzle",
+      "enigma",
+      "puck",
+      "queenofpain",
+      "ogre_magi",
+      "batrider",
+      "viper",
+      "shadow_demon",
+      "riki",
+      "death_prophet",
+      "bloodseeker",
+      "ancient_apparition",
+      "jakiro",
     ],
   },
   {

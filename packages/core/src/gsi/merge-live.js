@@ -123,8 +123,11 @@ const STAT_FIELDS = [
   "lastHits",
   "denies",
   "netWorth",
+  "gold",
   "gpm",
   "xpm",
+  // Overwolf'tan gelir; 0 "bilinmiyor" demektir ve dolu degeri ezmemeli.
+  "position",
 ];
 
 /**
@@ -273,6 +276,9 @@ function overwolfPlayerRows(snapshot) {
       heroConfirmed: row.heroConfirmed !== false,
       rank: resolveRankTier(row.rank) || null,
       rankTier: Number(row.rank) || 0,
+      // Oyuncunun BU MACTAKI pozisyonu (1-5; bilinmiyorsa 0). Tavsiye, hero'nun
+      // oynanabildigi tum rollere gore degil bu pozisyona gore uretilir.
+      position: row.position >= 1 && row.position <= 5 ? row.position : 0,
       source: "overwolf",
       sources: ["overwolf"],
       anonymous: !row.accountId,

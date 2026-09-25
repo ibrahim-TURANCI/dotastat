@@ -39,10 +39,14 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  /* Liste uzun; baslik ve arama kutusu kaydirmada yerinde kalmali. */
+  /* Liste uzun; baslik ve arama kutusu kaydirmada yerinde kalmali.
+     Pencerenin ust ic boslugunu da (14px) kaplar: kaplamazsa kayan icerik
+     basligin ustundeki o bosluktan gorunuyordu. */
   position: sticky;
-  top: 0;
-  z-index: 1;
+  top: -14px;
+  z-index: 2;
+  margin-top: -14px;
+  padding-top: 14px;
   padding-bottom: 10px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
@@ -153,6 +157,20 @@
   display: block;
 }
 
+/* Duzenlemeleri varsayilan olarak kaydetme dugmesi. Duzenlenmis hero'larin
+   yesil vurgusuyla ayni renk ailesi: dugme o isaretleri kaydediyor. */
+.btn.hero-manager-save {
+  border-color: rgba(41, 201, 122, 0.4);
+  background: var(--good-soft);
+  color: #8ff0bf;
+}
+
+.btn.hero-manager-save:hover:not(:disabled) {
+  border-color: var(--good);
+  background: rgba(41, 201, 122, 0.24);
+  color: #c4f7dc;
+}
+
 /* --- Hero detayi --------------------------------------------------------- */
 
 .hero-detail {
@@ -173,9 +191,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Ust ic boslugu da kaplar; bkz. .hero-manager-head. */
   position: sticky;
-  top: 0;
-  z-index: 1;
+  top: -14px;
+  z-index: 2;
+  margin-top: -14px;
+  padding-top: 14px;
   padding-bottom: 10px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
@@ -410,9 +431,14 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  /* Alt ic boslugu da kaplar: kayan icerik dugmelerin altindan
+     gorunmesin. */
   position: sticky;
-  bottom: 0;
+  bottom: -14px;
+  z-index: 2;
+  margin-bottom: -14px;
   padding-top: 10px;
+  padding-bottom: 14px;
   background: var(--bg-1);
   border-top: 1px dashed var(--line);
 }

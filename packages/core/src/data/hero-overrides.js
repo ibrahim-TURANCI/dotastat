@@ -2,8 +2,8 @@
  * Hero basina tavsiye ve analiz kaydi (URETILMIS VERI — elle duzenlemeyin).
  *
  * Uretici: scripts/build-hero-overrides.mjs
- * Kaynaklar: dotabaff hero-overrides + TI 2026 pro item kullanimi, bu depodaki
- * hero-profiles.js ve OpenDota hero rol etiketleri.
+ * Kaynaklar: bu dosyanin onceki hali, hero-profiles.js, hero-roles.js ve
+ * OpenDota (hero rol etiketleri, item alim sirasi).
  *
  * ALANLAR
  *   roleValues       0-100 arasi sekiz eksen; takim radarinin ham girdisi
@@ -3056,6 +3056,10 @@ export default {
       "night_stalker",
       "slardar",
       "nyx_assassin",
+      "ancient_apparition",
+      "doom_bringer",
+      "sniper",
+      "drow_ranger",
     ],
     counterItems: [
       "nullifier",

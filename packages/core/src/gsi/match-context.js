@@ -199,6 +199,9 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  * @param {Object} input
  * @param {Record<string, any>|null} input.liveState normalizeGsiPayload ciktisi
  * @param {Record<string, Object>} [input.statsByPlayerId] roster id -> PlayerStats
+ * @param {Record<string, Object>} [input.profilesByPlayerId] roster id -> mac
+ *   verisinden TURETILMIS dotaProfile (imza/tercih/zayif hero listeleri; bkz.
+ *   players/evaluation.js). Verilmezse tohum profil kullanilir.
  * @param {string} [input.viewerSteamId] Sayfayi acan kisinin SteamID64'u
  * @param {Record<string, Record<string, any>>} [input.heroOverrides]
  *   Hero basina elle duzenlenmis kayit ("Tavsiyeleri yonet": roleValues,
@@ -212,6 +215,7 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
 export function buildLiveMatchContext(input = {}) {
   const liveState = input.liveState || null;
   const statsByPlayerId = input.statsByPlayerId || {};
+  const profilesByPlayerId = input.profilesByPlayerId || {};
 
   if (!liveState) {
     return { active: false, reason: "no-live-state" };
@@ -226,7 +230,22 @@ export function buildLiveMatchContext(input = {}) {
   /** @type {Array<{ player: Object, team: string, slot: number|null, hero: string, live: Object, stats: Object|null }>} */
   const knownPlayers = [];
   const decorated = allPlayers.map((livePlayer) => {
-    const rosterPlayer = matchToRoster(livePlayer);
+    const seedPlayer = matchToRoster(livePlayer);
+    // Oyuncu kartinda gorunen hero havuzu mac verisinden turetiliyor; draft da
+    // AYNI havuzu kullanmali, yoksa iki ekran farkli "imza kahraman" soyler.
+    const derivedProfile = seedPlayer
+      ? profilesByPlayerId[seedPlayer.id]
+      : null;
+    const rosterPlayer =
+      seedPlayer && derivedProfile
+        ? { ...seedPlayer, dotaProfile: derivedProfile }
+        : seedPlayer;
+    // Oyuncunun BU MACTAKI pozisyonu (Overwolf) kadrodaki birincil rolunden
+    // once gelir: pos1 oynayan bir oyuncu bu macta pos3 alabilir.
+    const matchRole =
+      livePlayer.position >= 1 && livePlayer.position <= 5
+        ? "pos" + livePlayer.position
+        : "";
     const row = {
       ...livePlayer,
       heroName: heroDisplayName(livePlayer.hero),
@@ -247,7 +266,7 @@ export function buildLiveMatchContext(input = {}) {
         team: livePlayer.team,
         slot: livePlayer.slot,
         hero: normalizeHeroKey(livePlayer.hero),
-        role: rosterPlayer.dotaProfile?.primaryRole || "",
+        role: matchRole || rosterPlayer.dotaProfile?.primaryRole || "",
         stats: statsByPlayerId[rosterPlayer.id] || null,
         live: livePlayer,
       });
@@ -281,6 +300,7 @@ export function buildLiveMatchContext(input = {}) {
     bans: liveState.draft?.bans || [],
     phase: liveState.phase,
     knownPlayers,
+    heroOverrides: input.heroOverrides || {},
   });
 
   return {

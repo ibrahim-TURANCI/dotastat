@@ -60,6 +60,20 @@ export function findRosterPlayer(identifier) {
 }
 
 /**
+ * Tavsiye katalogundaki duzenlemeleri VARSAYILAN olarak kaydedebilir mi?
+ *
+ * Kadrodaki herkes katalogu duzenleyebilir; duzenlemeleri kalici varsayilana
+ * cevirmek ise yalnizca `catalogAdmin` isaretli oyuncunun isidir (bkz.
+ * data/players.seed.js).
+ *
+ * @param {string|number} identifier Slug, account id ya da SteamID64
+ * @returns {boolean}
+ */
+export function isCatalogAdmin(identifier) {
+  return Boolean(findRosterPlayer(identifier)?.catalogAdmin);
+}
+
+/**
  * @returns {import("./player-types.js").PlayerSynergy[]}
  */
 export function listSynergies() {

@@ -252,6 +252,14 @@ button {
   font-weight: 650;
 }
 
+/* Genel .btn:hover yari saydam arka plan veriyor; primary'de yazi koyu oldugu
+   icin okunmaz hale geliyordu. Primary kendi gradyanini acarak vurgular. */
+.btn.primary:hover:not(:disabled) {
+  background: linear-gradient(140deg, #5bbcff, #2e93e6);
+  border-color: transparent;
+  color: #041625;
+}
+
 .btn.ghost {
   background: transparent;
   border-color: var(--line);

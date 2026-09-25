@@ -250,7 +250,10 @@ function extractSpectatorPlayers(raw) {
         assists: Number(player?.assists || 0),
         lastHits: Number(player?.last_hits || 0),
         denies: Number(player?.denies || 0),
-        netWorth: Number(player?.net_worth || player?.gold || 0),
+        // Net worth ile cepteki altin AYRI alanlardir: net worth gelmediginde
+        // altini net worth diye yazmak oyuncuyu oldugundan fakir gosterirdi.
+        netWorth: Number(player?.net_worth || 0),
+        gold: Number(player?.gold || 0),
         gpm: Number(player?.gpm || 0),
         xpm: Number(player?.xpm || 0),
         items: items.main,
@@ -295,7 +298,10 @@ function extractPlayers(raw) {
       assists: Number(player?.assists || 0),
       lastHits: Number(player?.last_hits || 0),
       denies: Number(player?.denies || 0),
-      netWorth: Number(player?.net_worth || player?.gold || 0),
+      // Net worth ile cepteki altin AYRI alanlardir: net worth gelmediginde
+      // altini net worth diye yazmak oyuncuyu oldugundan fakir gosterirdi.
+      netWorth: Number(player?.net_worth || 0),
+      gold: Number(player?.gold || 0),
       gpm: Number(player?.gpm || 0),
       xpm: Number(player?.xpm || 0),
       items: items.main,
@@ -332,7 +338,8 @@ function extractPlayers(raw) {
       assists: Number(raw?.player?.assists || 0),
       lastHits: Number(raw?.player?.last_hits || 0),
       denies: Number(raw?.player?.denies || 0),
-      netWorth: Number(raw?.player?.net_worth || raw?.player?.gold || 0),
+      netWorth: Number(raw?.player?.net_worth || 0),
+      gold: Number(raw?.player?.gold || 0),
       gpm: Number(raw?.player?.gpm || 0),
       xpm: Number(raw?.player?.xpm || 0),
       items: items.main,

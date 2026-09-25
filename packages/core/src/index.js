@@ -14,11 +14,14 @@
 
 // --- Kahramanlar -----------------------------------------------------------
 export {
+  HERO_ATTRIBUTES,
+  HERO_ATTRIBUTE_LABELS,
   HERO_CDN,
   heroDisplayName,
   heroIdFromKey,
   heroImageUrl,
   heroKeyFromId,
+  heroPrimaryAttribute,
   heroRoleProfile,
   normalizeHeroKey,
 } from "./heroes/hero-names.js";
@@ -45,6 +48,7 @@ export {
 // --- Roster ----------------------------------------------------------------
 export {
   findRosterPlayer,
+  isCatalogAdmin,
   listAllRoster,
   listRoster,
   listSynergies,
@@ -251,10 +255,13 @@ export { exactHeroKey, searchHeroes, searchItems } from "./heroes/search.js";
 export {
   heroCatalog,
   heroKeys,
+  changesHeroSeed,
+  editedHeroKeys,
   heroPlansFromItemPlans,
   heroRecord,
   heroSeed,
   isKnownHero,
+  sameHeroOverride,
   normalizeHeroOverride,
   normalizeHeroPlans,
   HERO_LIST_FIELDS,

@@ -59,6 +59,32 @@ export function heroThreats(hero, overrides = {}) {
 }
 
 /**
+ * Satirlarin tehdit AGIRLIGI: hero basina 1, net worth biliniyorsa takim
+ * ortalamasina oranla olceklenir.
+ *
+ * Tehdit var/yok diye bakmak 0/10 giden bir rakiple oyunu tasiyan rakibi ayni
+ * kefeye koyuyordu. Net worth yalnizca izleme/GSI verisinde geliyor;
+ * gelmeyen satir notr (1) sayilir, tahmin uydurulmaz.
+ *
+ * @param {Array<Record<string, any>>} rows
+ * @returns {Map<Record<string, any>, number>}
+ */
+export function rowWeights(rows) {
+  const worths = rows
+    .map((row) => Number(row?.netWorth) || 0)
+    .filter((value) => value > 0);
+  const average = worths.length
+    ? worths.reduce((sum, value) => sum + value, 0) / worths.length
+    : 0;
+  return new Map(
+    rows.map((row) => {
+      const worth = Number(row?.netWorth) || 0;
+      return [row, average && worth ? worth / average : 1];
+    }),
+  );
+}
+
+/**
  * Bir takimin TASIDIGI tehditler.
  *
  * @param {Array<Record<string, any>>} rows Rakip satirlari
@@ -73,14 +99,22 @@ export function heroThreats(hero, overrides = {}) {
  *   personal: boolean,
  *   until: number|null,
  *   roles: string[]|null,
- *   minHeroes: number
+ *   minHeroes: number,
+ *   planOnly: boolean,
+ *   answerHeroes: string[],
+ *   answerReason: string,
+ *   weight: number
  * }>}
  */
 export function detectThreats(rows, overrides = {}) {
   /** @type {Map<string, Set<string>>} tehdit -> onu tasiyan hero'lar */
   const found = new Map();
+  /** @type {Map<string, number>} tehdit -> toplam agirlik */
+  const weights = new Map();
+  const list = (rows || []).filter(Boolean);
+  const weightOf = rowWeights(list);
 
-  for (const row of rows || []) {
+  for (const row of list) {
     const hero = normalizeHeroKey(row?.hero);
     if (!hero) {
       continue;
@@ -90,6 +124,7 @@ export function detectThreats(rows, overrides = {}) {
         found.set(key, new Set());
       }
       found.get(key).add(hero);
+      weights.set(key, (weights.get(key) || 0) + weightOf.get(row));
     }
   }
 
@@ -108,6 +143,16 @@ export function detectThreats(rows, overrides = {}) {
     until: Number.isFinite(threat.until) ? threat.until : null,
     roles: Array.isArray(threat.roles) ? [...threat.roles] : null,
     minHeroes: Number(threat.minHeroes) || 0,
+    // Takim onerisinde plansiz itemi "Duruma göre"ye dusurme; pick sirasinda
+    // one cikarilacak hero'lar (bkz. data/hero-traits.js).
+    planOnly: Boolean(threat.planOnly),
+    answerHeroes: (threat.answerHeroes || [])
+      .map(normalizeHeroKey)
+      .filter(Boolean),
+    answerReason: String(threat.answerReason || threat.reason),
+    // Tasiyan hero sayisi (net worth biliniyorsa guce gore olceklenmis).
+    // Oneri onceligi buna bakar; ekrandaki tehdit sirasi degismez.
+    weight: Math.round((weights.get(threat.key) || 0) * 100) / 100,
   }));
 }
 
@@ -115,10 +160,11 @@ export function detectThreats(rows, overrides = {}) {
  * Tehditlerden item -> gerekce eslesmesi.
  *
  * Bir item birden fazla tehdide cevap verebilir (BKB hem buyusel hasara hem
- * hedefli buyuye); hepsi toplanir ki gerekce eksik kalmasin.
+ * hedefli buyuye); hepsi toplanir ki gerekce eksik kalmasin. Her itemin
+ * listesi AGIRLIGA gore siralidir: gerekcede en guclu tehdit yazilir.
  *
  * @param {ReturnType<typeof detectThreats>} threats
- * @returns {Map<string, Array<{ key: string, label: string, reason: string, heroes: string[] }>>}
+ * @returns {Map<string, Array<{ key: string, label: string, reason: string, heroes: string[], weight: number }>>}
  */
 export function threatAnswers(threats) {
   /** @type {Map<string, Array<Record<string, any>>>} */
@@ -133,8 +179,12 @@ export function threatAnswers(threats) {
         label: threat.label,
         reason: threat.reason,
         heroes: threat.heroes,
+        weight: Number(threat.weight) || 0,
       });
     }
+  }
+  for (const list of answers.values()) {
+    list.sort((a, b) => b.weight - a.weight);
   }
   return answers;
 }

@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  editedHeroKeys,
   heroCatalog,
   heroDisplayName,
   heroKeys,
+  heroPrimaryAttribute,
   itemDisplayName,
   itemIconUrl,
   searchHeroes,
   searchItems,
+  HERO_ATTRIBUTES,
+  HERO_ATTRIBUTE_LABELS,
   LANE_ROLES,
   LANE_ROLE_LABELS,
   ROLE_VALUE_KEYS,
@@ -35,7 +39,8 @@ import "./HeroManagerDialog.css";
  * macta olmasi gerekiyordu. Artik tum katalog her zaman acilabiliyor.
  *
  * IKI EKRAN
- *   1. Liste  : lane rolune gore gruplanmis hero'lar + arama kutusu
+ *   1. Liste  : ana ozellige (Ozellik) ya da lane rolune (Pozisyon) gore
+ *               gruplanmis hero'lar + arama kutusu
  *   2. Detay  : bir hero'ya tiklaninca acilir; roller, counter listeleri ve
  *               item planlari
  *
@@ -44,6 +49,12 @@ import "./HeroManagerDialog.css";
  * arkadas grubunun ortak oyun bilgisi; gruba ait olmayan birinin duzenleyecegi
  * bir sey yok.
  *
+ * VARSAYILAN: "N hero duzenlenmis" ve vurgu, gecerli duzenlemenin VARSAYILAN
+ * kayittan farkini gosterir. Katalog yoneticisi (catalogAdmin) basliktaki
+ * "Kaydet" ile gecerli duzenlemeleri varsayilan yapar; isaretler sifirlanir
+ * ve yalnizca SONRAKI duzenlemeler gorunur. Dugme yalnizca ona ve yalnizca
+ * duzenlenmis hero varken gorunur; sunucu da ayni yetkiyi uygular.
+ *
  * @param {Object} props
  * @param {() => void} props.onClose
  * @param {() => void} [props.onSaved] Kayit sonrasi canli paneli tazelemek icin
@@ -51,6 +62,13 @@ import "./HeroManagerDialog.css";
 export function HeroManagerDialog({ onClose, onSaved }) {
   /** hero -> kullanicinin kaydettigi duzenleme. */
   const [plans, setPlans] = useState({});
+  /** hero -> varsayilan duzenleme ("Kaydet" anindaki). */
+  const [defaults, setDefaults] = useState({});
+  const [canSaveDefaults, setCanSaveDefaults] = useState(false);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  // Masaustunde site erisilemezse duzenleme yerelde bekler; kullanici bunu
+  // bilmeli, yoksa "kaydettim" sanip siteye gitmedigini fark etmez.
+  const [syncNote, setSyncNote] = useState("");
   // Yalnizca GERCEKTEN bir istek atilacaksa yukleniyor durumundan baslanir.
   // Giris yapmamis kullanici icin okunacak bir kayit yok ve katalog zaten
   // pakette; "Yukleniyor…" yazip sonra listeyi acmak bos bir bekleme olurdu.
@@ -58,6 +76,7 @@ export function HeroManagerDialog({ onClose, onSaved }) {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("");
+  const [view, setView] = useState(DEFAULT_VIEW);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +84,7 @@ export function HeroManagerDialog({ onClose, onSaved }) {
       .heroPlans()
       .then((response) => {
         if (!cancelled) {
-          setPlans(response?.heroes || {});
+          apply(response);
           setError("");
         }
       })
@@ -88,8 +107,27 @@ export function HeroManagerDialog({ onClose, onSaved }) {
   // degistiginde yeniden kurulur; 127 hero'luk bir tabloyu her tusa basista
   // yeniden uretmek arama kutusunu hissedilir sekilde yavaslatiyordu.
   const catalog = useMemo(() => heroCatalog(plans), [plans]);
+  // Varsayilandan farkli hero'lar: baslik sayisi ve vurgu bunu gosterir.
+  const edited = useMemo(
+    () => new Set(editedHeroKeys(plans, defaults)),
+    [plans, defaults],
+  );
 
-  const grouped = useMemo(() => groupByLane(catalog), [catalog]);
+  const groups = useMemo(
+    () =>
+      view === "attribute" ? groupByAttribute(catalog) : groupByLane(catalog),
+    [catalog, view],
+  );
+
+  /** Sunucu yanitini duruma yazar. */
+  function apply(response) {
+    setPlans(response?.heroes || {});
+    setDefaults(response?.defaults || {});
+    setSyncNote(response?.synced === false ? response?.message || "" : "");
+    if (typeof response?.canSaveDefaults === "boolean") {
+      setCanSaveDefaults(response.canSaveDefaults);
+    }
+  }
 
   const needle = query.trim().toLocaleLowerCase("tr");
   const matches = (hero) =>
@@ -103,9 +141,29 @@ export function HeroManagerDialog({ onClose, onSaved }) {
    * @param {Record<string, any>|null} patch
    */
   const save = async (hero, patch) => {
-    const response = await api.setHeroPlan(hero, patch || {});
-    setPlans(response?.heroes || {});
+    apply(await api.setHeroPlan(hero, patch || {}));
     onSaved?.();
+  };
+
+  /** Gecerli duzenlemeleri varsayilan yapar (yalnizca katalog yoneticisi). */
+  const saveDefaults = async () => {
+    if (
+      !window.confirm(
+        edited.size +
+          " hero'nun düzenlemesi varsayılan olarak kaydedilecek. Devam edilsin mi?",
+      )
+    ) {
+      return;
+    }
+    setSavingDefaults(true);
+    setError("");
+    try {
+      apply(await api.saveHeroDefaults());
+    } catch (caught) {
+      setError(caught?.message || "Varsayılan kaydedilemedi");
+    } finally {
+      setSavingDefaults(false);
+    }
   };
 
   return (
@@ -128,9 +186,10 @@ export function HeroManagerDialog({ onClose, onSaved }) {
           <div>
             <strong>Tavsiyeleri yönet</strong>
             <span className="muted micro">
-              {Object.keys(plans).length} hero düzenlenmiş · {HERO_COUNT} hero
+              {edited.size} hero düzenlenmiş · {HERO_COUNT} hero
             </span>
           </div>
+          <ViewSwitch value={view} onChange={setView} />
           <div className="hero-manager-search">
             <span className="combobox-icon" aria-hidden="true">
               🔎
@@ -152,6 +211,18 @@ export function HeroManagerDialog({ onClose, onSaved }) {
               </button>
             ) : null}
           </div>
+          {/* Yalnizca kaydedilecek bir degisiklik varken gorunur. */}
+          {canSaveDefaults && edited.size ? (
+            <button
+              type="button"
+              className="btn small hero-manager-save"
+              disabled={savingDefaults}
+              onClick={saveDefaults}
+              title="Düzenlenmiş hero'ları varsayılan olarak kaydet; işaretler sıfırlanır"
+            >
+              {savingDefaults ? "Kaydediliyor…" : "Kaydet"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn small"
@@ -167,17 +238,22 @@ export function HeroManagerDialog({ onClose, onSaved }) {
             {error}
           </p>
         ) : null}
+        {syncNote ? (
+          <p className="chip warn" role="status">
+            {syncNote}
+          </p>
+        ) : null}
 
         {loading ? (
           <p className="muted">Yükleniyor…</p>
         ) : (
           <div className="hero-manager-body">
-            {LANE_ROLES.map((role) => {
-              const heroes = (grouped[role] || []).filter(matches);
+            {groups.map((group) => {
+              const heroes = group.heroes.filter(matches);
               return (
-                <section key={role} className="hero-group">
+                <section key={group.key} className="hero-group">
                   <h4>
-                    {LANE_ROLE_LABELS[role]}
+                    {group.label}
                     <span className="muted micro"> {heroes.length}</span>
                   </h4>
                   {heroes.length ? (
@@ -187,7 +263,7 @@ export function HeroManagerDialog({ onClose, onSaved }) {
                           key={hero}
                           type="button"
                           className={
-                            "hero-chip" + (plans[hero] ? " edited" : "")
+                            "hero-chip" + (edited.has(hero) ? " edited" : "")
                           }
                           title={heroDisplayName(hero)}
                           onClick={() => setSelected(hero)}
@@ -209,7 +285,7 @@ export function HeroManagerDialog({ onClose, onSaved }) {
       {selected ? (
         <HeroDetailDialog
           record={catalog[selected]}
-          edited={Boolean(plans[selected])}
+          edited={edited.has(selected)}
           onClose={() => setSelected("")}
           onSave={(patch) => save(selected, patch)}
         />
@@ -221,6 +297,45 @@ export function HeroManagerDialog({ onClose, onSaved }) {
 /** Katalogdaki toplam hero sayisi (baslikta gosteriliyor). */
 const HERO_COUNT = heroKeys().length;
 
+/** Liste gorunumleri: Ozellik (ana ozellik) ya da Pozisyon (lane rolu). */
+const VIEWS = [
+  { key: "attribute", label: "Özellik" },
+  { key: "lane", label: "Pozisyon" },
+];
+
+const DEFAULT_VIEW = "attribute";
+
+/**
+ * Ozellik / Pozisyon secici. Oyuncu Degerlendirme'deki donem seciciyle ayni
+ * gorunumu kullanir.
+ *
+ * @param {{ value: string, onChange: (value: string) => void }} props
+ */
+function ViewSwitch({ value, onChange }) {
+  return (
+    <div className="period-switch" role="group" aria-label="Gruplama">
+      {VIEWS.map((row) => (
+        <button
+          key={row.key}
+          type="button"
+          className={"period-btn" + (value === row.key ? " on" : "")}
+          aria-pressed={value === row.key}
+          onClick={() => onChange(row.key)}
+        >
+          {row.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ */
+const byDisplayName = (a, b) =>
+  heroDisplayName(a).localeCompare(heroDisplayName(b), "tr");
+
 /**
  * Hero'lari lane rolune gore gruplar.
  *
@@ -230,7 +345,7 @@ const HERO_COUNT = heroKeys().length;
  * bir hero duzenlenemez.
  *
  * @param {Record<string, Record<string, any>>} catalog
- * @returns {Record<string, string[]>}
+ * @returns {{ key: string, label: string, heroes: string[] }[]}
  */
 function groupByLane(catalog) {
   /** @type {Record<string, string[]>} */
@@ -243,12 +358,35 @@ function groupByLane(catalog) {
       }
     }
   }
-  for (const role of LANE_ROLES) {
-    groups[role].sort((a, b) =>
-      heroDisplayName(a).localeCompare(heroDisplayName(b), "tr"),
-    );
+  return LANE_ROLES.map((role) => ({
+    key: role,
+    label: LANE_ROLE_LABELS[role],
+    heroes: groups[role].sort(byDisplayName),
+  }));
+}
+
+/**
+ * Hero'lari ana ozellige gore gruplar (Strength / Agility / Intelligence / Universal).
+ *
+ * Her hero tam olarak bir grupta gorunur. Ana ozelligi bilinmeyen hero
+ * listeden DUSMEZ, "Universal" grubuna alinir — gorunmeyen bir hero
+ * duzenlenemez.
+ *
+ * @param {Record<string, Record<string, any>>} catalog
+ * @returns {{ key: string, label: string, heroes: string[] }[]}
+ */
+function groupByAttribute(catalog) {
+  /** @type {Record<string, string[]>} */
+  const groups = Object.fromEntries(HERO_ATTRIBUTES.map((attr) => [attr, []]));
+  for (const hero of Object.keys(catalog)) {
+    const attr = heroPrimaryAttribute(hero);
+    (groups[attr] || groups.all).push(hero);
   }
-  return groups;
+  return HERO_ATTRIBUTES.map((attr) => ({
+    key: attr,
+    label: HERO_ATTRIBUTE_LABELS[attr],
+    heroes: groups[attr].sort(byDisplayName),
+  }));
 }
 
 /**
@@ -337,7 +475,9 @@ function HeroDetailDialog({ record, edited, onClose, onSave }) {
           <div>
             <strong>{heroDisplayName(record.hero) || record.hero}</strong>
             <span className="muted micro">
-              {edited ? "elle düzenlenmiş" : "varsayılan kayıt"}
+              {edited
+                ? "düzenlenmiş (varsayılandan farklı)"
+                : "varsayılan kayıt"}
             </span>
           </div>
           <button
@@ -500,7 +640,7 @@ function HeroDetailDialog({ record, edited, onClose, onSave }) {
             type="button"
             className="btn small"
             disabled={saving || !edited}
-            // Bos govde kaydi siler; hero uretilmis tohum veriye geri doner.
+            // Bos govde hero'yu varsayilan kaydina dondurur.
             onClick={() => commit(null)}
             title="Bu hero'yu varsayılan kayda döndür"
           >

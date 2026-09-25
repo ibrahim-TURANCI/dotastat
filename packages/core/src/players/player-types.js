@@ -81,6 +81,7 @@
  * @property {PlayerRank|null} rank Gercek Dota rank madalyasi (provider'dan)
  * @property {string} rankFetchedAt
  * @property {string} source        "seed" | "manual" | provider adı
+ * @property {boolean} catalogAdmin Tavsiye katalogunun varsayilanini kaydedebilir
  */
 
 /**

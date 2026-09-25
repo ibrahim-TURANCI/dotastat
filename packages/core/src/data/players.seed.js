@@ -13,6 +13,9 @@ export default {
       name: "Janissary",
       player_id: "201008262",
       active: true,
+      // "Tavsiyeleri yonet" ekraninda duzenlemeleri varsayilan olarak
+      // kaydedebilen tek kisi.
+      catalogAdmin: true,
       dotaProfile: {
         primaryRole: "pos3",
         secondaryRoles: ["pos2", "pos4", "pos1", "pos5"],

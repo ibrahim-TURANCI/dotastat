@@ -840,22 +840,39 @@ export function createPlayerDataService(options) {
   }
 
   /**
-   * Draft asistaninin kullanacagi hero havuzu istatistikleri.
+   * Canli mac baglaminin oyuncu girdileri, TEK bir onbellek taramasiyla:
+   * istatistik ve mac verisinden TURETILMIS profil (imza/tercih/zayif hero).
    * Ag istegi YAPMAZ; yalnizca onbellekten okur.
-   * @returns {Promise<Record<string, Object>>}
+   *
+   * Ikisi ayni paketten geliyor; ayri fonksiyonlarla iki kez taramak her
+   * yoklamada depo okumalarini ikiye katlardi.
+   *
+   * @returns {Promise<{ statsByPlayerId: Record<string, Object>, profilesByPlayerId: Record<string, Object> }>}
    */
-  async function getCachedStatsByPlayerId() {
+  async function getCachedLiveInputs() {
     const entries = await Promise.all(
       listRoster().map(async (player) => {
         try {
           const bundle = await getPlayerBundle(player, { allowFetch: false });
-          return [player.id, bundle.stats];
+          return [player.id, bundle];
         } catch {
           return [player.id, null];
         }
       }),
     );
-    return Object.fromEntries(entries.filter((row) => row[1]));
+    /** @type {Record<string, Object>} */
+    const statsByPlayerId = {};
+    /** @type {Record<string, Object>} */
+    const profilesByPlayerId = {};
+    for (const [id, bundle] of entries) {
+      if (bundle?.stats) {
+        statsByPlayerId[id] = bundle.stats;
+      }
+      if (bundle?.player?.dotaProfile) {
+        profilesByPlayerId[id] = bundle.player.dotaProfile;
+      }
+    }
+    return { statsByPlayerId, profilesByPlayerId };
   }
 
   /**
@@ -1040,7 +1057,7 @@ export function createPlayerDataService(options) {
     getHeroPerformance,
     getPlayerBundle,
     getRosterDashboard,
-    getCachedStatsByPlayerId,
+    getCachedLiveInputs,
     getMatchSquads,
     /** Hangi kaynaklar yapilandirilmis, en son hangisi cevap verdi? */
     providerStatus: () => ({

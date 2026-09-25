@@ -16,7 +16,7 @@ import {
   normalizeGsiPayload,
   selectLiveStateForViewer,
 } from "@dotastat/core";
-import { getCachedStatsByPlayerId } from "./_lib/player-data.mjs";
+import { getCachedLiveInputs } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
 import { readSession } from "./_lib/session.mjs";
 import { readHeroPlans } from "./_lib/hero-plans.mjs";
@@ -199,10 +199,11 @@ export default async (request) => {
       fresh: url.searchParams.get("plans") === "fresh",
     });
 
-    const statsByPlayerId = await getCachedStatsByPlayerId();
+    const { statsByPlayerId, profilesByPlayerId } = await getCachedLiveInputs();
     const context = buildLiveMatchContext({
       liveState,
       statsByPlayerId,
+      profilesByPlayerId,
       viewerSteamId,
       heroOverrides,
     });

@@ -21,24 +21,30 @@
  * SAFTIR: ag istegi yapmaz, saat okumaz.
  */
 
+import itemCosts from "../data/item-costs.js";
 import itemCounters from "../data/item-counters.js";
 import itemIds from "../data/item-ids.js";
 import {
   ROLE_VALUE_KEYS,
   ROLE_VALUE_LABELS,
   heroRecord,
+  laneRoleOf,
 } from "../heroes/hero-catalog.js";
 import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { isRetiredItem, normalizeItemKey } from "./item-keys.js";
 import {
   hasGameTime,
+  heldBoots,
+  isBootItem,
+  isBootUpgradeOf,
   isLateGame,
   isSmallItem,
   nextBuildStep,
   ownedWithComponents,
+  sortByCost,
 } from "./item-progression.js";
 import { predictInventory } from "./predicted-items.js";
-import { detectThreats, threatAnswers } from "./threats.js";
+import { detectThreats, rowWeights, threatAnswers } from "./threats.js";
 
 /**
  * Veri seviyesine gore tavsiye KOTASI.
@@ -376,6 +382,37 @@ function assumedOwned(row) {
 }
 
 /**
+ * Oyuncunun BU MACTAKI lane rolu (tek elemanli dizi) ya da bilinmiyorsa
+ * hero'nun katalogdaki tum rolleri.
+ *
+ * Oncelik: Overwolf'un bildirdigi pozisyon, sonra kadrodaki birincil rol
+ * (yalnizca hero o rolde oynanabiliyorsa), en son hero'nun tum rolleri.
+ * Eskiden hep sonuncusu kullaniliyordu: sup5 oynanan Pudge'un butcesi offlane
+ * gibi hesaplaniyor, destege mid/offlane icin tanimli erken itemler
+ * oneriliyordu.
+ *
+ * @param {Record<string, any>} row
+ * @param {Record<string, any>|null} record
+ * @returns {string[]}
+ */
+export function playerLaneRoles(row, record) {
+  const heroRoles = record?.laneRoles || [];
+  const measured = laneRoleOf(row?.position);
+  if (measured) {
+    return [measured];
+  }
+  const usual = laneRoleOf(row?.roster?.primaryRole);
+  if (usual && heroRoles.includes(usual)) {
+    return [usual];
+  }
+  return [...heroRoles];
+}
+
+/** Lane rolleri destek pozisyonu mu? */
+const isSupportRoles = (roles) =>
+  roles.some((role) => role === "sup4" || role === "sup5");
+
+/**
  * Satirlara tahmini envanter ekler (predictedItems alani).
  *
  * Satirlar DEGISTIRILMEZ; yeni nesneler donulur. Envanteri gorunen satir
@@ -401,6 +438,7 @@ function withPredictedItems(rows, gameTime, overrides) {
         record,
         gameTime,
         owned: effectiveOwned(row),
+        laneRoles: playerLaneRoles(row, record),
       }),
     };
   });
@@ -419,6 +457,111 @@ export function resolveDataLevel(allies, enemies) {
     return "self";
   }
   return enemies.some(hasInventoryData) ? "full" : "heroes";
+}
+
+/**
+ * Rakibe karsi alinacak itemlerin KANITLARI, tek yerde.
+ *
+ * Uc kaynak birlikte degerlendirilir:
+ *
+ *   1. Tehditler (hero-traits)      : "rakipte gorunmez hero var" -> dust
+ *   2. Rakibin itemleri              : "rakipte BKB var" -> Nullifier
+ *                                      (gorulen ya da tahmin edilen envanter)
+ *   3. Rakip hero'nun counterItems'i : katalogdaki "bu hero'ya karsi alinan
+ *                                      itemler" listesi; kullanici "Tavsiyeleri
+ *                                      yonet" ekraninda duzenleyebiliyor.
+ *
+ * Ucuncusu eskiden hic okunmuyordu: kullanici listeye item ekliyor, tavsiye
+ * degismiyordu. Kisisel oneri ve takim analizi ayni kaniti kullanir; iki
+ * panel ayni itemi farkli gerekceyle onermesin diye.
+ *
+ * AGIRLIK: tehdit agirligi (tasiyan hero sayisi, net worth biliniyorsa guce
+ * gore), gorulen item 1, tahmin edilen item 0.5, counterItems'inda item
+ * gecen her rakip hero 1 (net worth'e gore olceklenir). Toplam agirlik
+ * kotadaki counter sirasini, EN GUCLU tek kanit gerekceyi belirler.
+ *
+ * @param {Array<Record<string, any>>} enemies
+ * @param {Record<string, Record<string, any>>} overrides
+ * @returns {{
+ *   threats: ReturnType<typeof detectThreats>,
+ *   byItem: Map<string, { reason: string, predicted: boolean, weight: number }>
+ * }}
+ */
+function counterEvidence(enemies, overrides) {
+  const rows = (enemies || []).filter((row) => normalizeHeroKey(row?.hero));
+  const threats = detectThreats(rows, overrides);
+  /** @type {Map<string, Array<{ reason: string, predicted: boolean, weight: number }>>} */
+  const found = new Map();
+  const add = (key, evidence) => {
+    if (!key) {
+      return;
+    }
+    if (!found.has(key)) {
+      found.set(key, []);
+    }
+    found.get(key).push(evidence);
+  };
+
+  for (const [key, matched] of threatAnswers(threats)) {
+    for (const threat of matched) {
+      add(key, {
+        reason: `${threat.reason}: ${threat.heroes.map(heroDisplayName).join(", ")}.`,
+        predicted: false,
+        weight: threat.weight,
+      });
+    }
+  }
+
+  const weights = rowWeights(rows);
+  /** @type {Map<string, { heroes: string[], weight: number }>} */
+  const byHeroList = new Map();
+  for (const row of rows) {
+    const seen = effectiveOwned(row);
+    for (const enemyItem of assumedOwned(row)) {
+      const predicted = !seen.has(enemyItem);
+      for (const key of ITEM_COUNTERS.get(enemyItem) || []) {
+        add(key, {
+          reason: predicted
+            ? `Rakipte ${itemDisplayName(enemyItem)} bekleniyor.`
+            : `Rakipte ${itemDisplayName(enemyItem)} var.`,
+          predicted,
+          weight: predicted ? 0.5 : 1,
+        });
+      }
+    }
+    const hero = normalizeHeroKey(row.hero);
+    for (const raw of recordOf(hero, overrides)?.counterItems || []) {
+      const key = normalizeItemKey(raw);
+      const entry = byHeroList.get(key) || { heroes: [], weight: 0 };
+      entry.heroes.push(hero);
+      entry.weight += weights.get(row) || 1;
+      byHeroList.set(key, entry);
+    }
+  }
+  for (const [key, entry] of byHeroList) {
+    add(key, {
+      reason: `${entry.heroes.map(heroDisplayName).join(", ")} karşısında etkili.`,
+      predicted: false,
+      weight: entry.weight,
+    });
+  }
+
+  /** @type {Map<string, { reason: string, predicted: boolean, weight: number }>} */
+  const byItem = new Map();
+  for (const [key, list] of found) {
+    // Gorulen kanit tahmini EZER; esitlikte ilk eklenen (tehdit) kalir.
+    const best = [...list].sort(
+      (a, b) =>
+        Number(a.predicted) - Number(b.predicted) || b.weight - a.weight,
+    )[0];
+    byItem.set(key, {
+      reason: best.reason,
+      predicted: list.every((row) => row.predicted),
+      weight:
+        Math.round(list.reduce((sum, row) => sum + row.weight, 0) * 100) / 100,
+    });
+  }
+  return { threats, byItem };
 }
 
 /**
@@ -474,7 +617,22 @@ export function buildPlayerItemAdvice(input) {
       normalizeItemKey,
     ),
   );
-  const teamTaken = input.teamTaken || new Set();
+  // Takimda tek kisinin almasi anlamli itemler: baskasina onerilmis OLANLAR
+  // ve takim arkadasinin zaten TASIDIGI (gorulen ya da tahmin edilen)
+  // olanlar. Ikincisi eskiden bakilmiyordu; takimda Pipe varken bir baskasina
+  // yine Pipe oneriliyordu.
+  const teamTaken = new Set(input.teamTaken || []);
+  for (const ally of input.allies || []) {
+    if (ally === input.player) {
+      continue;
+    }
+    for (const key of ownedWithComponents(assumedOwned(ally))) {
+      if (TEAM_UNIQUE_ITEMS.has(key)) {
+        teamTaken.add(key);
+      }
+    }
+  }
+  const lanes = playerLaneRoles(player, record);
   const baseQuota = ADVICE_QUOTA[input.dataLevel] || ADVICE_QUOTA.self;
   const quota = {
     ...baseQuota,
@@ -482,11 +640,19 @@ export function buildPlayerItemAdvice(input) {
   };
 
   /** Aday havuzu; secim en sonda kotaya gore yapilir. */
-  /** @type {Map<string, { key: string, group: string, reason: string, order: number }>} */
+  /** @type {Map<string, { key: string, group: string, reason: string, order: number, predicted: boolean, manual: boolean, weight: number }>} */
   const candidates = new Map();
 
   const gameTime = input.gameTime;
   const late = isLateGame(gameTime);
+
+  // Oyuncunun elindeki bot (gorulen ya da tahmin edilen). Bot varken yalnizca
+  // ONUN ust surumu onerilir: Phase alana Arcane/Tranquil, Tranquil alana
+  // Arcane onerilmez; Tranquil varsa Boots of Bearing, Arcane varsa Guardian
+  // Greaves olabilir. Yalnizca Boots of Speed varsa her bot onun ust surumudur.
+  const boots = heldBoots(assumedOwned(player));
+  const bootAllowed = (key) =>
+    !boots.length || boots.some((boot) => isBootUpgradeOf(key, boot));
 
   /**
    * Bu item (ya da ara parcasi) onerilemez mi?
@@ -500,17 +666,20 @@ export function buildPlayerItemAdvice(input) {
     // altin biriktirmeye iter ve listenin tamamini supheli hale getirir.
     isRetiredItem(key) ||
     // Aura/benzersiz itemler takimda tek kisiye onerilir.
-    (TEAM_UNIQUE_ITEMS.has(key) && teamTaken.has(key));
+    (TEAM_UNIQUE_ITEMS.has(key) && teamTaken.has(key)) ||
+    (isBootItem(key) && !bootAllowed(key));
 
   /**
    * @param {string} rawKey
    * @param {string} group
    * @param {string} reason
-   * @param {boolean} [predicted]
-   * @param {boolean} [exact] Ara parcaya cevirme ve gec oyun filtresi
-   *   uygulanmaz (kullanicinin elle ekledigi item oldugu gibi kalir).
+   * @param {{ predicted?: boolean, manual?: boolean, weight?: number }} [options]
+   *   `predicted`: gerekce tahmine dayaniyor; `manual`: kullanicinin elle
+   *   ekledigi item — ara parcaya cevrilmez, gec oyun filtresine takilmaz ve
+   *   kotadan bagimsiz en one alinir; `weight`: counter onceligi.
    */
-  const push = (rawKey, group, reason, predicted = false, exact = false) => {
+  const push = (rawKey, group, reason, options = {}) => {
+    const { predicted = false, manual = false, weight = 0 } = options;
     const target = normalizeItemKey(rawKey);
     if (!target || blocked(target)) {
       return;
@@ -519,7 +688,7 @@ export function buildPlayerItemAdvice(input) {
     // israfi. Dedektorler muaf; gorunmez rakip her dakikada tehdit.
     if (
       late &&
-      !exact &&
+      !manual &&
       !ALWAYS_BUYABLE_ITEMS.has(target) &&
       isSmallItem(target)
     ) {
@@ -527,7 +696,7 @@ export function buildPlayerItemAdvice(input) {
     }
     // Kucukten buyuge: Manta yerine once Yasha. Adim yalnizca oyun saati
     // biliniyorsa ve gec oyunda degilsek uretilir.
-    const step = exact
+    const step = manual
       ? { key: target, buildsInto: null }
       : nextBuildStep(target, { have: owned, gameTime, blocked });
     const key = step.key;
@@ -541,74 +710,37 @@ export function buildPlayerItemAdvice(input) {
         ? `${itemDisplayName(step.buildsInto)} için ara parça. ${reason}`
         : reason,
       predicted,
+      manual,
+      weight,
       buildsInto: step.buildsInto,
       order: candidates.size,
     });
   };
 
-  // Rakip kompozisyonunun tasidigi tehditler ve onlara cevap veren itemler.
-  // Yalnizca rakip hero'lari goruluyorsa anlamli.
-  const threats =
+  // Rakibe karsi kanitlar (tehditler, rakibin itemleri, rakip hero'nun
+  // counterItems listesi; bkz. counterEvidence). Yalnizca rakip hero'lari
+  // goruluyorsa anlamli. Rakibin itemlerine bakan kural eskiden yalnizca
+  // "full" seviyesinde calisiyordu; Overwolf kurulumunda rakip envanteri HIC
+  // gorunmedigi icin tahmini envanter de kullanilir ("bekleniyor").
+  const evidence =
     input.dataLevel === "self"
-      ? []
-      : detectThreats(input.enemies || [], overrides);
-  const answers = threatAnswers(threats);
-
-  // Rakibin ELINDEKI (ya da alacagi) itemlere karsi kurallar.
-  //
-  // Envanteri gercekten gorulen item "var", tahmin edilen "bekleniyor" der ve
-  // secimde geride kalir (bkz. selectByQuota). Kural eskiden yalnizca "full"
-  // seviyesinde calisiyordu; Overwolf kurulumunda rakip envanteri HIC
-  // gorunmedigi icin de hicbir zaman devreye girmiyordu.
-  /** @type {Map<string, { reason: string, predicted: boolean }>} */
-  const itemCounterReasons = new Map();
-  if (input.dataLevel !== "self") {
-    for (const row of input.enemies || []) {
-      const seen = effectiveOwned(row);
-      for (const enemyItem of assumedOwned(row)) {
-        const predicted = !seen.has(enemyItem);
-        for (const normalized of ITEM_COUNTERS.get(enemyItem) || []) {
-          const current = itemCounterReasons.get(normalized);
-          // Gorulen esya, tahmin edileni EZER: ayni cevabi iki rakip
-          // tetikliyorsa kesin olani yazmak gerekcenin degerini korur.
-          if (current && !(current.predicted && !predicted)) {
-            continue;
-          }
-          itemCounterReasons.set(normalized, {
-            predicted,
-            reason: predicted
-              ? `Rakipte ${itemDisplayName(enemyItem)} bekleniyor.`
-              : `Rakipte ${itemDisplayName(enemyItem)} var.`,
-          });
-        }
-      }
-    }
-  }
+      ? { threats: [], byItem: new Map() }
+      : counterEvidence(input.enemies || [], overrides);
+  const threats = evidence.threats;
 
   /**
    * Bir aday, rakip kompozisyonuna cevap veriyor mu?
    *
-   * Veriyorsa grubu "counter" olur ve gerekcesi tehdidi anlatir; bu hem
-   * kullaniciya NEDEN sorusunu cevaplar hem kotada counter yerinden pay alarak
-   * cekirdek planin onune gecmesini saglar.
+   * Veriyorsa grubu "counter" olur ve gerekcesi en guclu kaniti anlatir; bu
+   * hem kullaniciya NEDEN sorusunu cevaplar hem kotada counter yerinden pay
+   * alarak cekirdek planin onune gecmesini saglar.
    *
    * @param {string} key
-   * @returns {{ group: string, reason: string, predicted?: boolean }|null}
+   * @returns {{ group: string, reason: string, predicted: boolean, weight: number }|null}
    */
   const counterOf = (key) => {
-    const matched = answers.get(key);
-    if (matched?.length) {
-      const names = matched[0].heroes.map(heroDisplayName).join(", ");
-      return { group: "counter", reason: `${matched[0].reason}: ${names}.` };
-    }
-    const byItem = itemCounterReasons.get(key);
-    return byItem
-      ? {
-          group: "counter",
-          reason: byItem.reason,
-          predicted: byItem.predicted,
-        }
-      : null;
+    const found = evidence.byItem.get(key);
+    return found ? { group: "counter", ...found } : null;
   };
 
   /**
@@ -620,24 +752,24 @@ export function buildPlayerItemAdvice(input) {
   const pushOwn = (rawKey, group, reason) => {
     const key = normalizeItemKey(rawKey);
     const counter = counterOf(key);
-    push(
-      key,
-      counter?.group || group,
-      counter?.reason || reason,
-      Boolean(counter?.predicted),
-    );
+    push(key, counter?.group || group, counter?.reason || reason, {
+      predicted: Boolean(counter?.predicted),
+      weight: counter?.weight || 0,
+    });
   };
 
   // 1. ELLE EKLENENLER — kullanicinin beyani her kuralin onundedir.
   for (const key of input.override?.add || []) {
-    push(key, "core", "Elle eklendi.", false, true);
+    push(key, "core", "Elle eklendi.", { manual: true });
   }
 
   // 1b. KISISEL ERKEN CEVAPLAR — hero'nun planinda olmasa bile rakibe gore
   //     eklenen ucuz itemler (Wand, Raindrop). Rakip + hero rolu + oyun saati
   //     birlikte bakilir; saat bilinmiyorsa uretilmez (eski davranis).
   if (hasGameTime(gameTime)) {
-    const roles = record?.laneRoles || [];
+    // Oyuncunun bu mactaki rolu (bkz. playerLaneRoles); bilinmiyorsa hero'nun
+    // tum rolleri.
+    const roles = lanes;
     for (const threat of threats) {
       if (!threat.personal) {
         continue;
@@ -654,13 +786,21 @@ export function buildPlayerItemAdvice(input) {
       }
       const names = threat.heroes.map(heroDisplayName).join(", ");
       for (const key of threat.items) {
-        push(key, "counter", `${threat.reason}: ${names}.`);
+        push(key, "counter", `${threat.reason}: ${names}.`, {
+          weight: threat.weight,
+        });
       }
     }
   }
 
   // 2. HERO PLANI — her veri seviyesinde calisir, tek gereken hero bilgisi.
-  for (const key of record?.requiredItems || []) {
+  //    Plan pro kullanim SIKLIGINA gore dizili; oyun saati biliniyorsa alim
+  //    sirasina (ucuzdan pahaliya) cekilir. Tahmini envanter de plani boyle
+  //    okuyor (bkz. sortByCost): 5. dakikada Riki'ye Skadi onerilmez.
+  const plan = hasGameTime(gameTime)
+    ? sortByCost(record?.requiredItems || [])
+    : record?.requiredItems || [];
+  for (const key of plan) {
     pushOwn(key, "core", "Hero'nun çekirdek item planında.");
   }
 
@@ -670,7 +810,15 @@ export function buildPlayerItemAdvice(input) {
     pushOwn(key, "situational", "Hero'nun duruma göre item planında.");
   }
 
-  return selectByQuota([...candidates.values()], quota).map((row) => ({
+  const pool = singleBoot([...candidates.values()], {
+    late,
+    planOrder: [
+      ...(record?.requiredItems || []),
+      ...(record?.situationalItems || []),
+    ].map(normalizeItemKey),
+  });
+
+  return selectByQuota(pool, quota).map((row) => ({
     key: row.key,
     group: row.group,
     reason: row.reason,
@@ -687,19 +835,65 @@ export function buildPlayerItemAdvice(input) {
 }
 
 /**
+ * Adaylar arasinda TEK bir bot birakir.
+ *
+ * Hero planinda birden fazla bot olabilir (Arcane, Treads, Travel); oyuncuya
+ * ayni anda ikisini onermek anlamsiz, bot yuvasi tek. Ara parca onerisi de
+ * (Mekansm -> Guardian Greaves) hedefinin botu sayilir.
+ *
+ * Secim sirasi:
+ *   1. Elle eklenen bot (kullanicinin beyani)
+ *   2. Rakibe cevap veren bot (counter), kanit agirligi yuksek olan
+ *   3. Gec oyunda pahali olan (Travel); erken oyunda hero planinda once gelen
+ *      (plan pro kullanim sikligina gore dizili, yani hero'nun en cok alinan
+ *      botu)
+ *
+ * @param {Array<Record<string, any>>} candidates
+ * @param {{ late: boolean, planOrder: string[] }} context
+ * @returns {Array<Record<string, any>>}
+ */
+function singleBoot(candidates, { late, planOrder }) {
+  const bootOf = (row) =>
+    isBootItem(row.key)
+      ? row.key
+      : row.buildsInto && isBootItem(row.buildsInto)
+        ? normalizeItemKey(row.buildsInto)
+        : "";
+  const boots = candidates.filter((row) => bootOf(row));
+  if (boots.length < 2) {
+    return candidates;
+  }
+  const planRank = (row) => {
+    const index = planOrder.indexOf(bootOf(row));
+    return index < 0 ? Infinity : index;
+  };
+  const cost = (row) => Number(itemCosts[bootOf(row)] || 0);
+  const [keep] = [...boots].sort(
+    (a, b) =>
+      Number(Boolean(b.manual)) - Number(Boolean(a.manual)) ||
+      Number(b.group === "counter") - Number(a.group === "counter") ||
+      Number(b.weight || 0) - Number(a.weight || 0) ||
+      (late ? cost(b) - cost(a) : 0) ||
+      planRank(a) - planRank(b) ||
+      a.order - b.order,
+  );
+  return candidates.filter((row) => !bootOf(row) || row === keep);
+}
+
+/**
  * Adaylardan kotaya gore secim yapar.
  *
  * Once her gruba ayrilmis yer doldurulur (boylece counter onerisi cekirdek
  * planin altinda kaybolmaz), sonra bos kalan yerler ilk siradaki adaylarla
- * tamamlanir. Elle eklenenler ("Elle eklendi.") kotadan bagimsiz olarak en
- * one alinir; kullanicinin beyani kuralin onundedir.
+ * tamamlanir. Elle eklenenler (`manual`) kotadan bagimsiz olarak en one
+ * alinir; kullanicinin beyani kuralin onundedir.
  *
- * @param {Array<{ key: string, group: string, reason: string, order: number }>} candidates
+ * @param {Array<{ key: string, group: string, reason: string, order: number, predicted?: boolean, manual?: boolean, weight?: number }>} candidates
  * @param {{ total: number, core: number, counter: number, situational: number }} quota
  */
 function selectByQuota(candidates, quota) {
-  const manual = candidates.filter((row) => row.reason === "Elle eklendi.");
-  const rest = candidates.filter((row) => row.reason !== "Elle eklendi.");
+  const manual = candidates.filter((row) => row.manual);
+  const rest = candidates.filter((row) => !row.manual);
 
   /** @type {typeof candidates} */
   const chosen = [...manual];
@@ -709,10 +903,15 @@ function selectByQuota(candidates, quota) {
     const room = Number(quota[group] || 0);
     const fromGroup = rest
       .filter((row) => row.group === group && !taken.has(row.key))
-      // Gorulen veriye dayanan oneri, tahmine dayanandan ONCE gelir: kotada
-      // yalnizca iki counter yeri var ve "rakipte BKB VAR" ile "BKB
-      // BEKLENIYOR" ayni yeri hak etmiyor.
-      .sort((a, b) => Number(a.predicted) - Number(b.predicted))
+      // Gorulen veriye dayanan oneri, tahmine dayanandan ONCE gelir: "rakipte
+      // BKB VAR" ile "BKB BEKLENIYOR" ayni yeri hak etmiyor. Sonra kanit
+      // agirligi: uc rakibe cevap veren item, tek rakibe cevap verenin onunde.
+      .sort(
+        (a, b) =>
+          Number(Boolean(a.predicted)) - Number(Boolean(b.predicted)) ||
+          Number(b.weight || 0) - Number(a.weight || 0) ||
+          a.order - b.order,
+      )
       .slice(0, room);
     for (const row of fromGroup) {
       if (chosen.length >= quota.total) {
@@ -805,13 +1004,15 @@ function advantagesOf(bars, against) {
  * @param {Array<Record<string, any>>} rows Bu takimin satirlari
  * @param {Array<Record<string, any>>} against KARSI takimin satirlari
  * @param {Record<string, Record<string, any>>} overrides hero -> duzenleme
+ * @param {number|null} [gameTime] Saniye; gec oyunda kucuk item onerilmez
+ *   (kisisel oneriyle ayni kural, bkz. item-progression.js)
  * @returns {{
  *   gaps: Array<{ key: string, label: string, score: number }>,
  *   threats: ReturnType<typeof detectThreats>,
  *   items: Array<Record<string, any>>
  * }}
  */
-function gapsAndItems(bars, rows, against, overrides) {
+function gapsAndItems(bars, rows, against, overrides, gameTime = null) {
   const gaps = TEAM_ATTRIBUTES.map((attribute) => ({
     key: attribute.key,
     label: attribute.label,
@@ -820,9 +1021,13 @@ function gapsAndItems(bars, rows, against, overrides) {
     .filter((row) => row.score < WEAKNESS_MAX_SCORE)
     .sort((a, b) => a.score - b.score);
 
+  // Tahmini envanter de sayilir: kisisel oneri de oyle yapiyor. Aksi halde
+  // takim paneli, tahmine gore coktan alinmis bir itemi onermeye devam
+  // ederdi ve iki panel celisirdi.
   const owned = ownedWithComponents(
-    (rows || []).flatMap((row) => [...effectiveOwned(row)]),
+    (rows || []).flatMap((row) => [...assumedOwned(row)]),
   );
+  const late = isLateGame(gameTime);
 
   // item -> onu planinda tasiyan hero'lar.
   /** @type {Map<string, string[]>} */
@@ -854,12 +1059,15 @@ function gapsAndItems(bars, rows, against, overrides) {
   // Belirli bir hero'ya BAGLANAMAYAN onerilerin (dedektorler, plansiz kalan
   // "duruma göre" itemleri) alicisi: once destekler, yoksa takimin tamami.
   // Alici adi olmadan oneri "birisi alsin" demeye duserdi.
+  // Destek, oyuncunun BU MACTAKI rolune gore belirlenir (bkz.
+  // playerLaneRoles); bilinmiyorsa hero'nun oynanabildigi rollere bakilir.
   const heroesOf = (filter) =>
     (rows || [])
-      .map((row) => normalizeHeroKey(row?.hero))
-      .filter((hero) => hero && filter(recordOf(hero, overrides)));
-  const supports = heroesOf((record) =>
-    record?.laneRoles?.some((role) => role === "sup4" || role === "sup5"),
+      .filter((row) => normalizeHeroKey(row?.hero))
+      .filter((row) => filter(recordOf(row.hero, overrides), row))
+      .map((row) => normalizeHeroKey(row.hero));
+  const supports = heroesOf((record, row) =>
+    isSupportRoles(playerLaneRoles(row, record)),
   );
   const detectionBuyers = supports.length ? supports : heroesOf(Boolean);
 
@@ -870,10 +1078,15 @@ function gapsAndItems(bars, rows, against, overrides) {
    * @param {string} rawKey
    * @param {string} group
    * @param {string} reason
+   * @param {boolean} [planOnly] Yalnizca planinda tasiyan hero'ya oner;
+   *   kimsenin planinda yoksa "Duruma göre"ye dusurme.
    */
-  const offer = (rawKey, group, reason) => {
+  const offer = (rawKey, group, reason, planOnly = false) => {
     const key = normalizeItemKey(rawKey);
     if (!key || items.has(key) || owned.has(key) || isRetiredItem(key)) {
+      return;
+    }
+    if (late && !ALWAYS_BUYABLE_ITEMS.has(key) && isSmallItem(key)) {
       return;
     }
 
@@ -882,6 +1095,12 @@ function gapsAndItems(bars, rows, against, overrides) {
     let canBuy = planned;
 
     if (!canBuy?.length) {
+      if (planOnly) {
+        // Dispel itemleri (Eul's, Manta, Lotus...) hero'nun build'ine
+        // siki bagli: Lotus'u planinda olmayan bir carry'ye onermek yanlis
+        // bir vaat olurdu. Plan disinda otomatik oneri uretilmez.
+        return;
+      }
       if (ALWAYS_BUYABLE_ITEMS.has(key)) {
         // Dedektor: hicbir zaman bir hero'nun build'ine baglanmaz, her zaman
         // destege yazilir (bkz. ALWAYS_BUYABLE_ITEMS tanimi).
@@ -910,8 +1129,10 @@ function gapsAndItems(bars, rows, against, overrides) {
   };
 
   // 1. RAKIP KOMPOZISYONU — asil oneri kaynagi. Tehdit gorulmeden item
-  //    onermek, maca bakmadan konusmak olurdu.
-  const threats = detectThreats(against || [], overrides);
+  //    onermek, maca bakmadan konusmak olurdu. Kanit kisisel oneriyle ayni
+  //    yerden gelir (bkz. counterEvidence).
+  const evidence = counterEvidence(against || [], overrides);
+  const threats = evidence.threats;
   for (const threat of threats) {
     // Kisisel erken cevaplar (Wand, Raindrop) takim onerisi degil; her
     // oyuncuya kendi satirinda verilir.
@@ -924,8 +1145,20 @@ function gapsAndItems(bars, rows, against, overrides) {
         key,
         ITEM_GROUPS[key] || "situational",
         threat.reason + ": " + names + ".",
+        threat.planOnly,
       );
     }
+  }
+
+  // 1b. RAKIP HERO'LARA KARSI ITEMLER — rakibin itemleri ve rakip hero'nun
+  //     katalogdaki counterItems listesi. Bu itemler hero'nun build'ine
+  //     bagli (Nullifier, Lotus...), bu yuzden yalnizca planinda tasiyan
+  //     hero'ya onerilir; kimsenin planinda yoksa uretilmez. Guclu kanit once.
+  const heroCounters = [...evidence.byItem.entries()]
+    .filter(([, row]) => !row.predicted)
+    .sort((a, b) => b[1].weight - a[1].weight);
+  for (const [key, row] of heroCounters) {
+    offer(key, ITEM_GROUPS[key] || "situational", row.reason, true);
   }
 
   // 2. KENDI EKSIGIMIZ — tehdit yoksa ya da tehdide cevap veren item kimsenin
@@ -963,6 +1196,7 @@ function gapsAndItems(bars, rows, against, overrides) {
  * @param {"self"|"heroes"|"full"} input.dataLevel
  * @param {"radiant"|"dire"} [input.myTeam]
  * @param {Record<string, Record<string, any>>} [input.heroOverrides]
+ * @param {number|null} [input.gameTime] Saniye; bilinmiyorsa null
  */
 export function buildTeamAnalysis(input) {
   const overrides = input?.heroOverrides || {};
@@ -980,8 +1214,15 @@ export function buildTeamAnalysis(input) {
 
   // Her tarafin ONERISI KARSI tarafin kompozisyonundan turer: "biz ne alalim"
   // sorusunun cevabi onlarda ne oldugu.
-  const ourSide = gapsAndItems(ourBars, allies, enemies, overrides);
-  const theirSide = gapsAndItems(theirBars, enemies, allies, overrides);
+  const gameTime = hasGameTime(input?.gameTime) ? Number(input.gameTime) : null;
+  const ourSide = gapsAndItems(ourBars, allies, enemies, overrides, gameTime);
+  const theirSide = gapsAndItems(
+    theirBars,
+    enemies,
+    allies,
+    overrides,
+    gameTime,
+  );
 
   const advantages = comparable ? advantagesOf(ourBars, theirBars) : [];
   const theirAdvantages = comparable ? advantagesOf(theirBars, ourBars) : [];
@@ -1077,16 +1318,31 @@ export function buildLiveItemAdvice(input = {}) {
   const allies = myTeam === "radiant" ? radiant : dire;
   const enemies = myTeam === "radiant" ? dire : radiant;
 
+  // Ham deger gecer: "saat bilinmiyor" ile "0. saniye" ayni sey degil.
+  const knownTime = hasGameTime(input.gameTime) ? Number(input.gameTime) : null;
+
   /**
    * Bir takimin satirlarini tavsiyeyle donatir.
+   *
+   * TAKIMDA TEK KISININ ALMASI ANLAMLI ITEMLER (Pipe, Mekansm, Vessel...)
+   * iki gecisle dagitilir. Eskiden satir sirasinda ilk gelen oyuncu itemi
+   * kapiyordu: Pipe, durumsal listesinde Pipe olan carry'ye gidiyor, asil
+   * alacak destek onu hic gormuyordu. Simdi once herkesin onerisi cikarilir,
+   * her tekil item onu isteyenler arasindan ROLU UYAN oyuncuya verilir
+   * (destek itemi destege, cekirdek itemi cekirdege), esitlikte itemi
+   * listesinde daha one koyan oyuncuya. Ikinci geciste digerleri o itemi
+   * almaz, yerine siradaki oneri gelir.
+   *
    * @param {Array<Record<string, any>>} rows
    * @param {Array<Record<string, any>>} against
    */
   const decorate = (rows, against) => {
-    // Aura itemleri takimda tek kisiye onerilsin diye takim capinda takip edilir.
-    const teamTaken = new Set();
-    return rows.map((row) => {
-      const advice = buildPlayerItemAdvice({
+    /**
+     * @param {Record<string, any>} row
+     * @param {Set<string>} [teamTaken]
+     */
+    const advise = (row, teamTaken) =>
+      buildPlayerItemAdvice({
         player: row,
         allies: rows,
         enemies: against,
@@ -1095,15 +1351,61 @@ export function buildLiveItemAdvice(input = {}) {
         override: legacy[normalizeHeroKey(row?.hero)] || null,
         teamTaken,
         minTotal: input.minAdvice,
-        // Ham deger gecer: "saat bilinmiyor" ile "0. saniye" ayni sey degil.
-        gameTime: hasGameTime(input.gameTime) ? Number(input.gameTime) : null,
+        gameTime: knownTime,
       });
-      for (const card of advice) {
-        if (TEAM_UNIQUE_ITEMS.has(card.key)) {
-          teamTaken.add(card.key);
+
+    // Destek itemi destege, cekirdek itemi cekirdege: uyan 0, uymayan 1.
+    const roleMismatch = (row, key) => {
+      const group = ITEM_GROUPS[key];
+      if (group !== "support" && group !== "core") {
+        return 0;
+      }
+      const support = isSupportRoles(
+        playerLaneRoles(row, recordOf(row?.hero, heroOverrides)),
+      );
+      return (group === "support") === support ? 0 : 1;
+    };
+
+    // 1. gecis: tekil item kisitlamasi olmadan herkes ne isterdi?
+    const wishes = rows.map((row) => advise(row));
+    /** @type {Map<string, number>} tekil item -> alacak satirin sirasi */
+    const owner = new Map();
+    for (const key of TEAM_UNIQUE_ITEMS) {
+      const [best] = wishes
+        .map((cards, index) => ({
+          index,
+          position: cards.findIndex((card) => card.key === key),
+        }))
+        .filter((row) => row.position >= 0)
+        .sort(
+          (a, b) =>
+            roleMismatch(rows[a.index], key) -
+              roleMismatch(rows[b.index], key) ||
+            a.position - b.position ||
+            a.index - b.index,
+        );
+      if (best) {
+        owner.set(key, best.index);
+      }
+    }
+
+    // 2. gecis: her satir BASKASINA verilmis tekil itemleri alamaz. Yerine
+    // giren yedek tekil item de (running) tek kisiye kalir.
+    const running = new Set();
+    return rows.map((row, index) => {
+      const taken = new Set(running);
+      for (const [key, holder] of owner) {
+        if (holder !== index) {
+          taken.add(key);
         }
       }
-      return { ...row, itemAdvice: advice };
+      const itemAdvice = advise(row, taken);
+      for (const card of itemAdvice) {
+        if (TEAM_UNIQUE_ITEMS.has(card.key)) {
+          running.add(card.key);
+        }
+      }
+      return { ...row, itemAdvice };
     });
   };
 
@@ -1122,6 +1424,7 @@ export function buildLiveItemAdvice(input = {}) {
       dataLevel,
       myTeam,
       heroOverrides,
+      gameTime: knownTime,
     }),
   };
 }

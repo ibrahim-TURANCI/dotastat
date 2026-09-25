@@ -144,6 +144,17 @@ export const api = {
       body: JSON.stringify({ hero, ...(patch || {}) }),
     }),
 
+  /**
+   * Gecerli duzenlemeleri VARSAYILAN olarak kaydeder (yalnizca katalog
+   * yoneticisi). Tavsiye degismez; "duzenlenmis" isaretleri sifirlanir.
+   */
+  saveHeroDefaults: () =>
+    request("/api/me/hero-plans", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "save-defaults" }),
+    }),
+
   /** Online listesi. */
   presence: () => request("/api/presence"),
 

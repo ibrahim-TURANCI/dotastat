@@ -45,13 +45,13 @@ export const getRosterDashboard = (options) =>
 /**
  * Roster istatistiklerinin surec ici hafizasi.
  *
- * NEDEN VAR: `getCachedStatsByPlayerId` kadrodaki HER oyuncu icin ayri bir
+ * NEDEN VAR: `getCachedLiveInputs` kadrodaki HER oyuncu icin ayri bir
  * paket aciyor; olculdu, tek cagri 10 oyuncuda 70 Blobs okumasi yapiyor
  * (onbellek sogukken 110). Bu cagri `/api/live` icinde, mac aktifken HER
  * yoklamada calisiyor ve panel 5 saniyede bir yokluyor — yani izleyici basina
  * dakikada ~850 Blobs okumasi.
  *
- * Donen veri hero istatistigi: dakikalar boyunca sabit. Netlify fonksiyon
+ * Donen veri hero istatistigi ve turetilmis profil: dakikalar boyunca sabit. Netlify fonksiyon
  * kabini cagrilar arasinda yeniden kullandigi icin (ayni sebeple `cachedService`
  * de burada duruyor) kisa omurlu bir hafiza yoklamalarin ezici cogunlugunu
  * depoya hic gitmeden karsilar.
@@ -61,12 +61,12 @@ export const getRosterDashboard = (options) =>
  */
 const MEMO_TTL_MS = 60 * 1000;
 
-/** @type {{ at: number, value: Record<string, unknown> }|null} */
+/** @type {{ at: number, value: Record<string, any> }|null} */
 let statsMemo = null;
-/** @type {Promise<Record<string, unknown>>|null} */
+/** @type {Promise<Record<string, any>>|null} */
 let statsInFlight = null;
 
-export const getCachedStatsByPlayerId = () => {
+export const getCachedLiveInputs = () => {
   if (statsMemo && Date.now() - statsMemo.at < MEMO_TTL_MS) {
     return Promise.resolve(statsMemo.value);
   }
@@ -75,7 +75,7 @@ export const getCachedStatsByPlayerId = () => {
   // kabda es zamanli 5 istek 5 kez 110 okuma yapardi.
   if (!statsInFlight) {
     statsInFlight = playerDataService()
-      .getCachedStatsByPlayerId()
+      .getCachedLiveInputs()
       .then((value) => {
         statsMemo = { at: Date.now(), value };
         return value;

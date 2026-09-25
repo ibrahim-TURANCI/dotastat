@@ -43,6 +43,7 @@
 
 import itemCosts from "../data/item-costs.js";
 import { normalizeItemKey } from "./item-keys.js";
+import { sortByCost } from "./item-progression.js";
 
 /**
  * Lane rolune gore GEC OYUNDA item'e giden altin / dakika.
@@ -125,9 +126,11 @@ export function itemBudget(laneRoles, gameTime) {
  * @param {Record<string, any>|null} input.record Hero katalog kaydi
  * @param {number} input.gameTime Saniye cinsinden oyun saati
  * @param {Iterable<string>} [input.owned] Gercekten gorulen itemler
+ * @param {string[]} [input.laneRoles] Oyuncunun BU MACTAKI rolu biliniyorsa
+ *   yalnizca o; verilmezse hero'nun katalogdaki tum rolleri
  * @returns {string[]} Tahmini item anahtarlari (alim sirasina yakin)
  */
-export function predictInventory({ record, gameTime, owned = [] }) {
+export function predictInventory({ record, gameTime, owned = [], laneRoles }) {
   if (!record) {
     return [];
   }
@@ -139,19 +142,21 @@ export function predictInventory({ record, gameTime, owned = [] }) {
 
   // Gorunen itemlerin plandaki karsiligi butceyi zaten tuketmis sayilir;
   // yoksa elinde Manta gorunen bir hero'ya ayrica Manta tahmin ederdik.
-  let budget = itemBudget(record.laneRoles, gameTime);
+  let budget = itemBudget(
+    laneRoles?.length ? laneRoles : record.laneRoles,
+    gameTime,
+  );
   for (const key of plan) {
     if (have.has(key)) {
       budget -= Number(itemCosts[key] || 0);
     }
   }
 
-  const candidates = plan
-    .filter((key) => !have.has(key))
-    .map((key) => ({ key, cost: Number(itemCosts[key] || 0) }))
-    // Fiyati bilinmeyen item en sona: bedava sayip basa almak, tahmini
-    // envanteri tanimadigimiz itemlerle doldururdu.
-    .sort((a, b) => (a.cost || Infinity) - (b.cost || Infinity));
+  // Fiyati bilinmeyen item en sona (bkz. sortByCost): bedava sayip basa
+  // almak, tahmini envanteri tanimadigimiz itemlerle doldururdu.
+  const candidates = sortByCost(plan.filter((key) => !have.has(key))).map(
+    (key) => ({ key, cost: Number(itemCosts[key] || 0) }),
+  );
 
   /** @type {string[]} */
   const predicted = [];

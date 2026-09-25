@@ -54,6 +54,28 @@ function costOf(key) {
 }
 
 /**
+ * Item listesini ALIM SIRASINA yaklastirir: ucuz olan once.
+ *
+ * Hero planlari alim sirasinda degil pro maclardaki kullanim sikligina gore
+ * dizili (Riki'nin listesi Skadi ile basliyor). Hem tahmini envanter hem
+ * "simdi ne alsin" onerisi plani AYNI sekilde okumali; biri maliyete digeri
+ * liste sirasina bakarsa tahmin Riki'ye Diffusal yazarken oneri Skadi der.
+ * Fiyati bilinmeyen item en sona gider; sira esitlikte korunur.
+ *
+ * @param {Iterable<string>} keys
+ * @returns {string[]}
+ */
+export function sortByCost(keys) {
+  return [...(keys || [])]
+    .map((key, index) => ({ key, index, cost: costOf(normalizeItemKey(key)) }))
+    .sort(
+      (a, b) =>
+        (a.cost || Infinity) - (b.cost || Infinity) || a.index - b.index,
+    )
+    .map((row) => row.key);
+}
+
+/**
  * Bir itemin (recipe haric) dogrudan parcalari.
  * @param {string} key
  * @returns {string[]}
@@ -85,6 +107,55 @@ export function ownedWithComponents(owned) {
     stack.push(...itemComponentsOf(key));
   }
   return out;
+}
+
+/**
+ * Bot ailesi: Boots of Speed ve onu (ozyinelemeli) iceren her item.
+ *
+ * Liste yazilmaz, bilesen verisinden turer: Phase, Treads, Arcane, Tranquil,
+ * Travel ve ust surumleri (Guardian Greaves, Boots of Bearing, Travel 2)
+ * yamayla degisse de dogru kalir.
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isBootItem(key) {
+  const normalized = normalizeItemKey(key);
+  return Boolean(normalized) && ownedWithComponents([normalized]).has("boots");
+}
+
+/**
+ * Bir itemin, verilen botun UST SURUMU olup olmadigi (bot onun bileseni mi).
+ * Tranquil -> Boots of Bearing, Arcane -> Guardian Greaves, Boots of Speed ->
+ * her bot.
+ *
+ * @param {string} key
+ * @param {string} boot
+ * @returns {boolean}
+ */
+export function isBootUpgradeOf(key, boot) {
+  const target = normalizeItemKey(key);
+  const base = normalizeItemKey(boot);
+  return (
+    Boolean(target) &&
+    target !== base &&
+    ownedWithComponents([target]).has(base)
+  );
+}
+
+/**
+ * Elde tutulan EN UST botlar: baska bir eldeki botun bileseni olanlar atilir.
+ *
+ * @param {Iterable<string>} held Bilesenleri ACILMAMIS envanter
+ * @returns {string[]}
+ */
+export function heldBoots(held) {
+  const boots = [...new Set([...(held || [])].map(normalizeItemKey))].filter(
+    isBootItem,
+  );
+  return boots.filter(
+    (boot) => !boots.some((other) => isBootUpgradeOf(other, boot)),
+  );
 }
 
 /**
