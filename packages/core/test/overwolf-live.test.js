@@ -437,3 +437,90 @@ test("farkli maclardaki kayitlar birlestirilmez", () => {
   const merged = mergeLiveStatesByMatch([a, b]);
   assert.equal(merged.length, 2);
 });
+
+test("masaustu: arkadasin siteden gelen envanteri ve Overwolf iskeleti yerel duruma eklenir", async () => {
+  const { mergeRemoteLiveState } = await import("../src/gsi/merge-live.js");
+  const local = {
+    matchId: "42",
+    phase: "GAME_IN_PROGRESS",
+    gameTime: 700,
+    localSteamId: "76561198000000001",
+    radiantPlayers: [
+      {
+        steamId: "76561198000000001",
+        team: "radiant",
+        slot: 1,
+        hero: "axe",
+        kills: 5,
+        items: ["blink"],
+      },
+    ],
+    direPlayers: [],
+    draft: { picks: [{ hero: "axe", team: "radiant" }], bans: [] },
+    overwolf: null,
+  };
+  const remote = {
+    matchId: "42",
+    gameTime: 690,
+    uploaders: ["76561198000000002"],
+    radiantPlayers: [
+      {
+        accountId: "",
+        team: "radiant",
+        slot: 1,
+        hero: "axe",
+        position: 3,
+        source: "overwolf",
+      },
+      {
+        accountId: "",
+        team: "radiant",
+        slot: 2,
+        hero: "lion",
+        position: 5,
+        source: "overwolf",
+      },
+      {
+        steamId: "76561198000000002",
+        team: "radiant",
+        slot: 1,
+        hero: "lion",
+        kills: 1,
+        items: ["magic_wand"],
+      },
+    ],
+    direPlayers: [
+      { team: "dire", slot: 6, hero: "pudge", position: 4, source: "overwolf" },
+    ],
+    draft: {
+      picks: [
+        { hero: "axe", team: "radiant" },
+        { hero: "lion", team: "radiant" },
+        { hero: "pudge", team: "dire" },
+      ],
+      bans: [],
+    },
+    overwolf: { matchId: "42", myTeam: "dire", mySlot: 6 },
+  };
+
+  const merged = mergeRemoteLiveState(local, remote);
+  assert.equal(merged.gameTime, 700, "ust duzey alanlar yerel kalir");
+  assert.equal(merged.localSteamId, "76561198000000001");
+  const axe = merged.radiantPlayers.find((row) => row.hero === "axe");
+  const lion = merged.radiantPlayers.find((row) => row.hero === "lion");
+  assert.deepEqual(axe.items, ["blink"]);
+  assert.equal(axe.kills, 5);
+  assert.equal(axe.position, 3, "arkadasin Overwolf pozisyonu gelir");
+  assert.deepEqual(lion.items, ["magic_wand"]);
+  assert.equal(lion.slot, 2, "Overwolf'un gercek slotu korunur");
+  assert.equal(merged.radiantPlayers.length, 2);
+  assert.equal(merged.direPlayers.length, 1);
+  assert.equal(merged.draft.picks.length, 3);
+  assert.equal(merged.overwolf.myTeam, "", "arkadasin tarafi bize tasinmaz");
+
+  assert.equal(
+    mergeRemoteLiveState(local, { ...remote, matchId: "99" }),
+    local,
+  );
+  assert.equal(mergeRemoteLiveState(local, null), local);
+});

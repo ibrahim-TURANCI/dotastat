@@ -81,6 +81,7 @@
  * @property {PlayerRank|null} rank Gercek Dota rank madalyasi (provider'dan)
  * @property {string} rankFetchedAt
  * @property {string} source        "seed" | "manual" | provider adı
+ * @property {boolean} catalogAdmin Tavsiye katalogunun varsayilanini kaydedebilir
  */
 
 /**
@@ -92,6 +93,7 @@
  * @property {string} hero          normalize hero key (ör. "dark_seer")
  * @property {RoleKey|""} role
  * @property {MatchResult} result
+ * @property {"radiant"|"dire"|""} [side] Takim tarafi; eski kayitlarda yok
  * @property {number} kills
  * @property {number} deaths
  * @property {number} assists

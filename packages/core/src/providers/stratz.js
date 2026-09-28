@@ -196,6 +196,12 @@ export function createStratzClient(options = {}) {
       hero: HERO_BY_ID.get(heroId) || (heroId ? `hero_${heroId}` : ""),
       role: POSITION_TO_ROLE_KEY[String(row.position || "")] || "",
       result: row.isVictory ? "win" : "loss",
+      side:
+        typeof row.isRadiant === "boolean"
+          ? row.isRadiant
+            ? "radiant"
+            : "dire"
+          : "",
       kills: Number(row.kills || 0),
       deaths: Number(row.deaths || 0),
       assists: Number(row.assists || 0),

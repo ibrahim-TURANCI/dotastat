@@ -28,6 +28,25 @@
  *   items    ozellige cevap veren itemler (tercih sirasiyla)
  *   heroes   ozelligi TASIYAN hero'lar (tohum)
  *
+ * KISISEL ERKEN CEVAPLAR (istege bagli alanlar)
+ *   personal   true ise cevap itemi TAKIM onerisine girmez; her oyuncuya
+ *              kendi satirinda, hero planinda olmasa bile onerilir (Wand,
+ *              Raindrop gibi herkesin alabilecegi ucuz itemler).
+ *   until      bu saniyeden sonra onerilmez (erken oyun itemi).
+ *   roles      yalnizca bu lane rollerindeki hero'lara onerilir...
+ *   minHeroes  ...ya da rakipte en az bu kadar tasiyici varsa herkese.
+ *
+ * PLANA BAGLI CEVAPLAR VE HERO CEVAPLARI (istege bagli alanlar)
+ *   planOnly      true ise cevap itemi TAKIM onerisinde de yalnizca planinda
+ *                 (gerekli/durumsal) o item olan hero'ya onerilir; kimsenin
+ *                 planinda yoksa "Duruma göre"ye DUSMEZ, hic onerilmez.
+ *   answerHeroes  pick sirasinda rakipte bu ozellik varsa one cikarilan
+ *                 hero'lar (bkz. draft/draft-advisor.js).
+ *   answerReason  o hero'larin pick onerisinde gorunen gerekce kalibi.
+ *
+ * Kisisel cevaplar yalnizca OYUN SAATI biliniyorsa uretilir (bkz.
+ * live/item-advice.js); saat yoksa eski davranis korunur.
+ *
  * JSON yerine ES modulu olarak tutulur: hem Node (Netlify Functions, Electron)
  * hem tarayici (Vite) tarafinda ek yapilandirma olmadan import edilebilsin diye.
  */
@@ -299,6 +318,122 @@ export default [
       "broodmother",
       "marci",
       "primal_beast",
+    ],
+  },
+  {
+    // Yalnizca ONEMLI debufflar: Viper'in zehri, Silencer'in Global Silence'i,
+    // Slardar'in zirh kirmasi gibi dispel edilmeden dovusu kaybettiren
+    // etkiler. Blood Grenade, Orb of Frost ya da kucuk bir slow gibi herkesin
+    // tasiyabilecegi genel debufflar bu listeye GIRMEZ; onlar icin dispel
+    // itemi onermek her macta ayni gereksiz oneriyi uretirdi.
+    key: "debuff",
+    label: "Debuff",
+    tooltip: "Eul's, Manta, Lotus, Greaves, BKB, Disperser önerilir",
+    reason: "Rakipte güçlü debuff basan hero var",
+    items: [
+      "cyclone",
+      "manta",
+      "lotus_orb",
+      "guardian_greaves",
+      "black_king_bar",
+      "disperser",
+    ],
+    planOnly: true,
+    answerReason: "Rakipteki debuffları dispel eder",
+    answerHeroes: [
+      "abaddon",
+      "legion_commander",
+      "vengefulspirit",
+      "omniknight",
+      "oracle",
+    ],
+    heroes: [
+      "venomancer",
+      "drow_ranger",
+      "silencer",
+      "skywrath_mage",
+      "slardar",
+      "axe",
+      "bounty_hunter",
+      "disruptor",
+      "dazzle",
+      "enigma",
+      "puck",
+      "queenofpain",
+      "ogre_magi",
+      "batrider",
+      "viper",
+      "shadow_demon",
+      "riki",
+      "death_prophet",
+      "bloodseeker",
+      "ancient_apparition",
+      "jakiro",
+    ],
+  },
+  {
+    key: "spellspam",
+    label: "Çok Büyü Kullanır",
+    tooltip: "Erken oyunda Magic Wand önerilir",
+    reason: "Rakip sık büyü kullanıyor",
+    items: ["magic_wand"],
+    personal: true,
+    until: 20 * 60,
+    heroes: [
+      "bristleback",
+      "skywrath_mage",
+      "zuus",
+      "batrider",
+      "shredder",
+      "storm_spirit",
+      "puck",
+      "ember_spirit",
+      "void_spirit",
+      "invoker",
+      "tinker",
+      "leshrac",
+      "queenofpain",
+      "ogre_magi",
+      "jakiro",
+      "venomancer",
+      "lich",
+      "rubick",
+      "necrolyte",
+      "dark_willow",
+      "hoodwink",
+      "pugna",
+      "snapfire",
+      "earth_spirit",
+    ],
+  },
+  {
+    key: "burst",
+    label: "Ani Büyü Patlaması",
+    tooltip: "Erken oyunda Infused Raindrop önerilir",
+    reason: "Rakip ani büyü hasarı patlatıyor",
+    items: ["infused_raindrop"],
+    personal: true,
+    until: 20 * 60,
+    roles: ["mid", "offlane"],
+    minHeroes: 2,
+    heroes: [
+      "lina",
+      "zuus",
+      "nevermore",
+      "rubick",
+      "skywrath_mage",
+      "lion",
+      "leshrac",
+      "queenofpain",
+      "tinker",
+      "pugna",
+      "nyx_assassin",
+      "invoker",
+      "puck",
+      "ember_spirit",
+      "storm_spirit",
+      "snapfire",
+      "hoodwink",
     ],
   },
 ];

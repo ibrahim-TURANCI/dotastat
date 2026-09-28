@@ -11,6 +11,7 @@ const { createServerApp } = require("./app.js");
 const { createFileStore } = require("./storage.js");
 const { createSettingsStore } = require("./settings.js");
 const { createCloudRelay } = require("../services/cloud-relay.js");
+const { createCloudLiveWatcher } = require("../services/cloud-live.js");
 const { createMmrWatcher } = require("../services/mmr-watcher.js");
 const { createOverwolfWatcher } = require("../services/overwolf-watcher.js");
 
@@ -75,6 +76,19 @@ async function startServer(options) {
     onChange: () => onOverwolfChange(),
   });
 
+  // Ayni maci siteye gonderen DIGER DotaStat kullanicilarinin verisi (takim
+  // arkadaslarinin envanteri, Overwolf'lu birinin 10 slotu). Yerel durum
+  // sunucu kurulduktan sonra baglanir.
+  let getLocalLiveState = () => null;
+  const cloudLive = createCloudLiveWatcher({
+    logger,
+    getConfig: () => ({
+      cloudUrl: settings.get().cloudUrl,
+      steamId: settings.resolveSteamId(),
+    }),
+    getLocalState: () => getLocalLiveState(),
+  });
+
   const app_ = createServerApp({
     core,
     settings,
@@ -82,6 +96,7 @@ async function startServer(options) {
     relay,
     mmr,
     overwolf,
+    cloudLive,
     webDir: options.webDir || "",
     logger,
     version: options.version || "",
@@ -89,7 +104,9 @@ async function startServer(options) {
   });
   const { app, getLiveState, getOverlayState, playerData } = app_;
   onOverwolfChange = app_.onOverwolfChange;
+  getLocalLiveState = app_.getLocalLiveState;
   overwolf.start();
+  cloudLive.start();
 
   const server = await new Promise((resolve, reject) => {
     const instance = app.listen(port, "127.0.0.1", () => resolve(instance));
@@ -113,6 +130,7 @@ async function startServer(options) {
       relay.stop();
       mmr.stop();
       overwolf.stop();
+      cloudLive.stop();
       await new Promise((resolve) => server.close(resolve));
     },
   };

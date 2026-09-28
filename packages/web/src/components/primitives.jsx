@@ -1,5 +1,9 @@
 import { useEffect, useId, useState } from "react";
-import { heroDisplayName, heroImageUrl } from "@dotastat/core";
+import {
+  heroDisplayName,
+  heroImageUrl,
+  ROLE_SHORT_LABELS,
+} from "@dotastat/core";
 
 /**
  * Tekrar kullanilan kucuk arayuz parcalari.
@@ -208,6 +212,94 @@ export function FormStrip({ form = [], max = 10 }) {
           title={result === "win" ? "Galibiyet" : "Maglubiyet"}
         />
       ))}
+    </span>
+  );
+}
+
+/**
+ * 0-100 arasi puanin halka gostergesi.
+ *
+ * Halka koyu kirmizidan neon yesile giden bir gradyanla dolar: dusuk puan
+ * yalnizca kirmizi ucu gosterir, yuksek puan yesile kadar uzanir. Yani renk
+ * DEGERIN KENDISINI anlatir; ortadaki sayi ayni bilgiyi renge bakmadan da
+ * verir (renk ayrimi zor olan kullanici icin).
+ *
+ * `tone` puanin yonu (bkz. core -> weekly-score tone); yalnizca sayinin
+ * rengini ve hafif parlamayi belirler.
+ *
+ * @param {{ value: number, tone?: "up"|"down"|"flat", size?: number, title?: string }} props
+ */
+export function ScoreRing({ value, tone = "flat", size = 44, title }) {
+  const score = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  return (
+    <span
+      className={"score-ring tone-" + tone}
+      style={{ "--p": score, width: size, height: size }}
+      role="img"
+      aria-label={"Puan " + score + " / 100"}
+      title={title}
+    >
+      <span className="score-ring-value" aria-hidden="true">
+        {score}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Pozisyon rozeti (Pos 1-5), her pozisyon kendi renginde.
+ *
+ * Yesil ve kirmizi BILEREK kullanilmaz: o iki renk ekranda zaten
+ * galibiyet/maglubiyet demek; pozisyon rozeti onlarla karismamali.
+ *
+ * @param {{ role: string, label?: string, small?: boolean, title?: string }} props
+ */
+export function RoleBadge({ role, label, small = false, title }) {
+  const known = Object.prototype.hasOwnProperty.call(ROLE_SHORT_LABELS, role);
+  return (
+    <span
+      className={
+        "role-badge role-" + (known ? role : "unknown") + (small ? " small" : "")
+      }
+      title={title}
+    >
+      {label || ROLE_SHORT_LABELS[role] || role}
+    </span>
+  );
+}
+
+/**
+ * Yukari / asagi okla degisim (MMR, Performance Rank).
+ *
+ * Isaret (+/-) yerine ok kullanilir; ekran okuyucu icin yon ayrica yazilir.
+ * `approximate` tahmini degerlerin basina "~" koyar. `tone` verilirse RENK
+ * ondan gelir (ok yine isarete gore): cekirdek kucuk degisimleri esikle
+ * "sabit" sayiyorsa renk de notr kalmali.
+ *
+ * @param {{ value: number, approximate?: boolean, pill?: boolean, tone?: "up"|"down"|"flat", title?: string }} props
+ */
+export function DeltaArrow({
+  value,
+  approximate = false,
+  pill = false,
+  tone,
+  title,
+}) {
+  const delta = Math.round(Number(value) || 0);
+  const direction = tone || (delta > 0 ? "up" : delta < 0 ? "down" : "flat");
+  return (
+    <span
+      className={"delta-arrow " + direction + (pill ? " pill" : "")}
+      title={title}
+    >
+      <span className="delta-arrow-icon" aria-hidden="true">
+        {delta > 0 ? "▲" : delta < 0 ? "▼" : "•"}
+      </span>
+      <span className="sr-only">
+        {delta > 0 ? "artış " : delta < 0 ? "düşüş " : "değişim yok "}
+      </span>
+      {approximate ? "~" : ""}
+      {Math.abs(delta)}
     </span>
   );
 }

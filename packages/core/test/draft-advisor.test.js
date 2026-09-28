@@ -119,3 +119,81 @@ test("rakip pickleri oneri siralamasini degistirir", () => {
     "rakip pickleri skorlamayi etkilemeli",
   );
 });
+
+test("ayni hero birden fazla pozisyonda onerilmez", () => {
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: picks(["juggernaut"], ["lion", "axe"]),
+    phase: "HERO_SELECTION",
+  });
+  const all = advice.blocks.flatMap((row) =>
+    row.suggestions.map((suggestion) => suggestion.hero),
+  );
+  assert.equal(new Set(all).size, all.length, "tekrar eden: " + all.join(","));
+  for (const block of advice.blocks) {
+    assert.ok(block.suggestions.length > 0, block.role + " bos kalmamali");
+  }
+});
+
+test("Overwolf pozisyonu bilinen ve hero'su secilmis pozisyon dolu gosterilir", () => {
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: picks(["pudge"], ["lion"]),
+    phase: "HERO_SELECTION",
+    lineup: [
+      {
+        team: "radiant",
+        position: 3,
+        hero: "pudge",
+        heroConfirmed: true,
+        name: "Ali",
+      },
+      { team: "radiant", position: 5, hero: "", name: "Veli" },
+    ],
+  });
+  const pos3 = advice.blocks.find((row) => row.role === "pos3");
+  const pos5 = advice.blocks.find((row) => row.role === "pos5");
+  assert.equal(pos3.filled?.hero, "pudge");
+  assert.equal(pos3.suggestions.length, 0);
+  assert.equal(pos5.filled, null);
+  assert.ok(pos5.suggestions.length > 0);
+  assert.equal(pos5.player?.name, "Veli");
+});
+
+test("hover edilen (onaysiz) hero pozisyonu doldurmaz", () => {
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: [],
+    phase: "HERO_SELECTION",
+    lineup: [
+      {
+        team: "radiant",
+        position: 1,
+        hero: "juggernaut",
+        heroConfirmed: false,
+      },
+    ],
+  });
+  assert.equal(advice.blocks.find((row) => row.role === "pos1").filled, null);
+});
+
+test("Overwolf pozisyonu kadrodaki birincil rolun onune gecer", () => {
+  const janissary = listRoster().find((row) => row.id === "janissary");
+  const primary = janissary.dotaProfile.primaryRole;
+  const other = ["pos1", "pos2", "pos3", "pos4", "pos5"].find(
+    (slot) => slot !== primary,
+  );
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: [],
+    phase: "HERO_SELECTION",
+    knownPlayers: [
+      { player: janissary, team: "radiant", role: other, matchRole: other },
+    ],
+  });
+  assert.equal(
+    advice.blocks.find((row) => row.role === other).player?.id,
+    "janissary",
+  );
+  assert.equal(advice.blocks.find((row) => row.role === primary).player, null);
+});

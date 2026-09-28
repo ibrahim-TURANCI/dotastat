@@ -1,12 +1,8 @@
 import heroProfiles from "../data/hero-profiles.js";
-
-function normalizeHeroName(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^npc_dota_hero_/, "")
-    .replace(/\s+/g, "_");
-}
+import {
+  heroDisplayName,
+  normalizeHeroKey as normalizeHeroName,
+} from "../heroes/hero-names.js";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -66,13 +62,9 @@ const FALLBACK_DRAFT_PROFILES = {
   },
 };
 
-const HERO_ALIASES = {
-  magnus: "magnataur",
-};
-
 function getDraftHeroProfile(heroName) {
-  const normalized = normalizeHeroName(heroName);
-  const key = HERO_ALIASES[normalized] || normalized;
+  // Takma adlar (magnus -> magnataur) ortak normalizasyonda cozulur.
+  const key = normalizeHeroName(heroName);
   if (!key) {
     return null;
   }
@@ -293,17 +285,16 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
   addNeed("Tempo", draft.tempo, ownSummary.avg.tempo, 6.5, 2.1);
   addNeed("Scaling", draft.scaling, ownSummary.avg.scaling, 6.5, 2.2);
 
-  const allySet = new Set(ownTeam);
-  let comboHits = 0;
-  for (const partner of draft.comboWithHeroes || []) {
-    if (allySet.has(partner)) {
-      comboHits += 1;
-    }
-  }
-  if (comboHits > 0) {
-    const comboScore = comboHits * 18;
-    score += comboScore;
-    reasons.push(`Combo potansiyeli: ${comboHits} uyumlu kahraman`);
+  // Combo IKI YONDE aranir: veri simetrik tutulmamis, aday takim
+  // arkadasini listelemiyor olsa bile takim arkadasi adayi listeliyor olabilir.
+  const comboPartners = ownTeam.filter(
+    (ally) =>
+      (draft.comboWithHeroes || []).includes(ally) ||
+      getDraftMetrics(ally).comboWithHeroes.includes(candidate),
+  );
+  if (comboPartners.length > 0) {
+    score += comboPartners.length * 18;
+    reasons.push("Combo: " + comboPartners.map(heroDisplayName).join(", "));
   }
 
   if ((draft.synergyTags || []).includes("melee_carry_enable")) {

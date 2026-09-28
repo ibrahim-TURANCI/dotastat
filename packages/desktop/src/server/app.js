@@ -28,7 +28,8 @@ const { cloudFetch, hasCloudSession } = require("../services/cloud-session.js");
  * @param {number} [options.port]
  */
 function createServerApp(options) {
-  const { core, settings, storage, relay, webDir, mmr, overwolf } = options;
+  const { core, settings, storage, relay, webDir, mmr, overwolf, cloudLive } =
+    options;
   const logger = options.logger || console;
 
   const playerData = core.createPlayerDataService({
@@ -112,15 +113,45 @@ function createServerApp(options) {
   }
 
   /**
-   * Su an gosterilecek canli mac durumu.
+   * YALNIZCA bu bilgisayarin gordugu canli mac durumu.
    * Once GSI (taze ise), yoksa yalnizca Overwolf.
+   *
+   * Buluta GIDEN veri budur. Siteden cekilen arkadas verisi buna KATILMAZ;
+   * katilsaydi her kurulum digerlerinin verisini kendi adina yeniden
+   * yayinlar, eski kopyalar birbirini dongu halinde ezerdi.
+   *
    * @returns {Record<string, any>|null}
    */
-  function currentLiveState() {
+  function localLiveState() {
     if (liveState && core.isLiveMatchFresh(liveState)) {
       return enrich(liveState);
     }
     return liveStateFromOverwolfOnly();
+  }
+
+  /**
+   * Ekranda (panel + overlay) gosterilecek canli mac durumu: yerel durum,
+   * ayni maci siteye gonderen DIGER DotaStat kullanicilarinin verisiyle
+   * zenginlestirilmis hali. Takim arkadasinin gercek envanteri ve varsa
+   * Overwolf'unun 10 slot / pozisyon bilgisi bu yolla gelir.
+   *
+   * @returns {Record<string, any>|null}
+   */
+  function currentLiveState() {
+    const local = localLiveState();
+    const remote = local ? cloudLive?.stateFor?.(local.matchId) : null;
+    if (!remote) {
+      return local;
+    }
+    try {
+      return core.mergeRemoteLiveState(local, remote);
+    } catch (error) {
+      logger.warn?.(
+        "Arkadaslarin canli verisi birlestirilemedi",
+        String(error?.message || error),
+      );
+      return local;
+    }
   }
 
   const app = express();
@@ -233,6 +264,8 @@ function createServerApp(options) {
           player: bundle.player,
           matches: bundle.matches,
           evaluations: bundle.evaluations,
+          olderMatches: bundle.olderMatches,
+          olderEvaluations: bundle.olderEvaluations,
           // Yerelde yalnizca bu bilgisayarin oyuncusunun okumasi var;
           // digerlerinin MMR degisimi mac sonucundan tahmin edilir.
           samples: accountId === own ? samples : [],
@@ -342,15 +375,17 @@ function createServerApp(options) {
   // --- Hero tavsiye katalogu ("Tavsiyeleri yonet") ---------------------------
   //
   // KATALOG ORTAKTIR VE SITEDE DURUR. "Bu hero'da bu item alinir" bilgisi
-  // kisiye ozel degil; grubun ortak kaydidir. Bu yuzden masaustu kendi kopyasini
-  // TUTMAZ, siteye gider (bkz. netlify/functions/_lib/hero-plans.mjs). Aksi
-  // halde iki ayri katalog olusuyordu: oyun sirasinda masaustunde yapilan
-  // duzenleme sitede hic gorunmuyordu.
+  // kisiye ozel degil; grubun ortak kaydidir. Bu yuzden masaustu siteye gider
+  // (bkz. netlify/functions/_lib/hero-plans.mjs); boylece site ve masaustu tek
+  // bir katalog paylasir.
   //
-  // Site erisilemezse (internet yok, siteye giris yapilmamis) YEREL AYNA
-  // kullanilir: son okunan katalog diske yazilir, boylece canli mac tavsiyesi
-  // cevrimdisi da dogru calisir. O halde yapilan duzenleme yalnizca yerelde
-  // kalir ve yanitta `synced: false` ile bildirilir.
+  // Site erisilemezse (internet yok, siteye giris yapilmamis, site eski
+  // surumde) YEREL AYNA kullanilir: son okunan katalog diske yazilir ve canli
+  // mac tavsiyesi cevrimdisi da dogru calisir. O sirada yapilan duzenleme
+  // yerelde BEKLEYEN olarak isaretlenir ve site erisilebilir oldugunda
+  // kendiliginden gonderilir. Eskiden bekleyen kavrami yoktu: site ilk kez
+  // cevap verdiginde yerel ayna site kopyasiyla eziliyor ve cevrimdisi yapilan
+  // duzenleme sessizce kayboluyordu.
 
   /** Yerel aynanin anahtari. Site kaydiyla ayni adi tasir. */
   const HERO_PLAN_KEY = "heroes:shared";
@@ -362,10 +397,23 @@ function createServerApp(options) {
    * gitmek hem yavas hem gereksiz. Kullanici kaydettiginde hafiza temizlenir,
    * arayuz de bir sonraki yoklamayi "taze" isaretler.
    *
-   * @type {{ at: number, plans: Record<string, any> }|null}
+   * @type {{ at: number, catalog: HeroCatalog }|null}
    */
   let heroPlanMemo = null;
   const HERO_PLAN_MEMO_MS = 60 * 1000;
+
+  /**
+   * @typedef {Object} HeroCatalog
+   * @property {Record<string, any>} heroes   Gecerli duzenlemeler
+   * @property {Record<string, any>} defaults Varsayilan duzenlemeler
+   * @property {string[]} [pending]           Siteye henuz gitmemis hero'lar
+   */
+
+  /**
+   * Siteyle son esitlemenin neden basarisiz oldugu (kullaniciya gosterilir).
+   * Bos metin: son istek basarili.
+   */
+  let lastCloudError = "";
 
   /** @returns {string} Ayarlardaki site adresi (sondaki bolu isaretleri atilir) */
   function cloudBase() {
@@ -375,14 +423,21 @@ function createServerApp(options) {
   }
 
   /**
-   * Katalog ucuna siteden istek atar.
+   * Katalog ucuna siteden istek atar. Basarisizsa `lastCloudError` nedenini
+   * tasir.
    *
    * @param {{ method?: string, body?: Record<string, any> }} [options]
-   * @returns {Promise<Record<string, any>|null>} basarisizsa null
+   * @returns {Promise<HeroCatalog|null>} basarisizsa null
    */
   async function cloudHeroPlans(options = {}) {
     const base = cloudBase();
-    if (!base || !(await hasCloudSession(base))) {
+    if (!base) {
+      lastCloudError = "Ayarlarda site adresi tanımlı değil.";
+      return null;
+    }
+    if (!(await hasCloudSession(base))) {
+      lastCloudError =
+        "Siteye giriş yapılmamış; sağ üstten Steam ile giriş yapmalısın.";
       return null;
     }
     try {
@@ -391,86 +446,182 @@ function createServerApp(options) {
         headers: options.body ? { "content-type": "application/json" } : {},
         body: options.body ? JSON.stringify(options.body) : undefined,
       });
-      const payload = await response.json();
-      if (!response.ok || payload?.ok === false) {
-        logger.warn?.(
-          "Tavsiye katalogu siteyle esitlenemedi",
-          String(payload?.message || payload?.error || response.status),
-        );
+      // Site bu ucu tanimiyorsa (eski surum) Netlify arayuzun HTML sayfasini
+      // 200 ile dondurur; JSON gibi okumak anlamsiz bir ayristirma hatasi
+      // verirdi.
+      const type = String(response.headers.get("content-type") || "");
+      if (!type.includes("json")) {
+        lastCloudError =
+          "Site tavsiye kataloğunu desteklemiyor; " +
+          base +
+          " eski bir sürümde olabilir (yayına alınması gerekiyor).";
+        logger.warn?.("Tavsiye katalogu siteyle esitlenemedi", lastCloudError);
         return null;
       }
-      return core.normalizeHeroPlans(payload?.heroes || {});
+      const payload = await response.json();
+      if (!response.ok || payload?.ok === false) {
+        lastCloudError = String(
+          payload?.message || payload?.error || "Site " + response.status,
+        );
+        logger.warn?.("Tavsiye katalogu siteyle esitlenemedi", lastCloudError);
+        return null;
+      }
+      lastCloudError = "";
+      return {
+        heroes: core.normalizeHeroPlans(payload?.heroes || {}),
+        defaults: core.normalizeHeroPlans(payload?.defaults || {}),
+      };
     } catch (error) {
-      logger.warn?.(
-        "Tavsiye katalogu siteye ulasamadi",
-        String(error?.message || error),
-      );
+      lastCloudError = "Siteye ulaşılamadı: " + String(error?.message || error);
+      logger.warn?.("Tavsiye katalogu siteye ulasamadi", lastCloudError);
       return null;
     }
   }
 
   /**
-   * Yerel ayna. Site hic okunamadiysa ESKI kisisel kayitlara dusulur, boylece
-   * ortak kataloga gecmeden once yapilmis duzenlemeler kaybolmaz.
+   * Yerel ayna. Hic yoksa ESKI kisisel kayitlara dusulur, boylece ortak
+   * kataloga gecmeden once yapilmis duzenlemeler kaybolmaz.
    *
-   * @returns {Promise<Record<string, Record<string, any>>>}
+   * @returns {Promise<HeroCatalog & { pending: string[] }>}
    */
-  async function localHeroPlans() {
+  async function localHeroCatalog() {
     const row = await storage.get(HERO_PLAN_KEY);
     if (row && typeof row.heroes === "object") {
-      return core.normalizeHeroPlans(row.heroes);
+      const heroes = core.normalizeHeroPlans(row.heroes);
+      return {
+        heroes,
+        defaults: core.normalizeHeroPlans(row.defaults || {}),
+        // Bekleyen listesi olmayan ESKI ayna: hangi duzenlemenin siteye
+        // gittigi bilinmiyor. Hepsi bekleyen sayilir; siteye zaten gitmis olan
+        // ayni degerle yeniden yazilir, gitmemis olan kaybolmaz. Koddaki
+        // varsayilanla ayni sonucu veren kayit (koda tasinmis duzenleme)
+        // gonderilmez; gonderilse sitede bos yere "duzenlenmis" gorunurdu.
+        pending: Array.isArray(row.pending)
+          ? row.pending
+          : Object.keys(heroes).filter((hero) =>
+              core.changesHeroSeed(hero, heroes[hero]),
+            ),
+      };
     }
 
     const accountId = ownAccountId();
-    if (!accountId) {
-      return {};
-    }
-    const personal = await storage.get("heroes:" + accountId);
+    const personal = accountId
+      ? await storage.get("heroes:" + accountId)
+      : null;
     if (personal && typeof personal.heroes === "object") {
-      return core.normalizeHeroPlans(personal.heroes);
+      return {
+        heroes: core.normalizeHeroPlans(personal.heroes),
+        defaults: {},
+        pending: [],
+      };
     }
     // En eski bicim: `{ add, remove }` listeleri.
-    const legacy = await storage.get("plans:" + accountId);
-    return core.heroPlansFromItemPlans(
-      legacy && typeof legacy.plans === "object" ? legacy.plans : {},
-    );
+    const legacy = accountId ? await storage.get("plans:" + accountId) : null;
+    return {
+      heroes: core.heroPlansFromItemPlans(
+        legacy && typeof legacy.plans === "object" ? legacy.plans : {},
+      ),
+      defaults: {},
+      pending: [],
+    };
   }
 
   /**
-   * @param {Record<string, any>} heroes
+   * @param {HeroCatalog} catalog
    */
-  async function mirrorHeroPlans(heroes) {
-    heroPlanMemo = { at: Date.now(), plans: heroes };
+  async function mirrorHeroCatalog(catalog) {
+    const pending = catalog.pending || [];
+    heroPlanMemo = { at: Date.now(), catalog: { ...catalog, pending } };
     await storage.set(HERO_PLAN_KEY, {
-      heroes,
+      heroes: catalog.heroes,
+      defaults: catalog.defaults,
+      pending,
       updatedAt: new Date().toISOString(),
     });
   }
 
   /**
-   * Gecerli katalog: once site, olmazsa yerel ayna.
+   * Yerelde BEKLEYEN duzenlemeleri siteye gonderir.
+   *
+   * Site kopyasi aynaya yazilmadan ONCE cagrilmali; aksi halde bekleyen
+   * duzenleme site kopyasiyla ezilir. Gonderilemeyen hero bekleyen kalir ve
+   * yerel degeri site kopyasinin uzerinde tutulur.
+   *
+   * @param {HeroCatalog} remote Sitenin su anki kopyasi
+   * @returns {Promise<HeroCatalog>} Aynaya yazilacak birlesik katalog
+   */
+  async function withPendingPushed(remote) {
+    const local = await localHeroCatalog();
+    if (!local.pending.length) {
+      return { ...remote, pending: [] };
+    }
+
+    let latest = remote;
+    const left = [];
+    for (const hero of local.pending) {
+      // Yerelde silinmis (sifirlanmis) hero bos govdeyle gider: sitede de
+      // varsayilanina doner.
+      const pushed = await cloudHeroPlans({
+        method: "POST",
+        body: { hero, ...(local.heroes[hero] || {}) },
+      });
+      if (pushed) {
+        latest = pushed;
+      } else {
+        left.push(hero);
+      }
+    }
+
+    const heroes = { ...latest.heroes };
+    for (const hero of left) {
+      if (local.heroes[hero]) {
+        heroes[hero] = local.heroes[hero];
+      } else {
+        delete heroes[hero];
+      }
+    }
+    const sent = local.pending.length - left.length;
+    if (sent) {
+      logger.info?.(
+        "Bekleyen tavsiye duzenlemesi siteye gonderildi: " + sent + " hero",
+      );
+    }
+    return { heroes, defaults: latest.defaults, pending: left };
+  }
+
+  /**
+   * Gecerli katalog (duzenlemeler + varsayilan): once site, olmazsa yerel ayna.
    *
    * @param {{ fresh?: boolean }} [options]
-   * @returns {Promise<Record<string, Record<string, any>>>}
+   * @returns {Promise<HeroCatalog>}
    */
-  async function readHeroPlans(options = {}) {
+  async function readHeroCatalog(options = {}) {
     if (
       !options.fresh &&
       heroPlanMemo &&
       Date.now() - heroPlanMemo.at < HERO_PLAN_MEMO_MS
     ) {
-      return heroPlanMemo.plans;
+      return heroPlanMemo.catalog;
     }
 
     const remote = await cloudHeroPlans();
     if (remote) {
-      await mirrorHeroPlans(remote);
-      return remote;
+      const merged = await withPendingPushed(remote);
+      await mirrorHeroCatalog(merged);
+      return merged;
     }
 
-    const local = await localHeroPlans();
-    heroPlanMemo = { at: Date.now(), plans: local };
+    const local = await localHeroCatalog();
+    heroPlanMemo = { at: Date.now(), catalog: local };
     return local;
+  }
+
+  /**
+   * Tavsiye motorunun girdisi: GECERLI duzenlemeler.
+   * @param {{ fresh?: boolean }} [options]
+   */
+  async function readHeroPlans(options = {}) {
+    return (await readHeroCatalog(options)).heroes;
   }
 
   /**
@@ -480,6 +631,34 @@ function createServerApp(options) {
   function canEditHeroPlans() {
     const accountId = ownAccountId();
     return Boolean(accountId && core.findRosterPlayer(accountId));
+  }
+
+  /**
+   * Arayuze giden katalog yaniti. Bekleyen duzenleme varsa nedeniyle birlikte
+   * bildirilir; arayuz "siteye gonderilemedi" uyarisini buradan gosterir.
+   *
+   * @param {HeroCatalog} catalog
+   */
+  function catalogPayload(catalog) {
+    const pending = catalog.pending || [];
+    return {
+      ok: true,
+      accountId: ownAccountId(),
+      heroes: catalog.heroes,
+      defaults: catalog.defaults,
+      // Asil kontrol sitede; burada yalnizca dugmenin gorunmesi icin.
+      canSaveDefaults: core.isCatalogAdmin(ownAccountId()),
+      synced: pending.length === 0,
+      pending,
+      ...(pending.length
+        ? {
+            message:
+              pending.length +
+              " hero düzenlemesi yalnızca bu bilgisayarda; siteye gönderilemedi. " +
+              lastCloudError,
+          }
+        : {}),
+    };
   }
 
   app.get("/api/me/hero-plans", async (request, response) => {
@@ -492,11 +671,7 @@ function createServerApp(options) {
       });
       return;
     }
-    response.json({
-      ok: true,
-      accountId: ownAccountId(),
-      heroes: await readHeroPlans({ fresh: true }),
-    });
+    response.json(catalogPayload(await readHeroCatalog({ fresh: true })));
   });
 
   app.post("/api/me/hero-plans", async (request, response) => {
@@ -519,6 +694,32 @@ function createServerApp(options) {
       return;
     }
 
+    // Varsayilan ORTAK kayittir; yalnizca sitede kaydedilir (yetkiyi site
+    // oturumu belirler). Once bekleyen duzenlemeler gonderilir ki varsayilana
+    // onlar da girsin.
+    if (request.body?.action === "save-defaults") {
+      const current = await readHeroCatalog({ fresh: true });
+      const remote = current.pending?.length
+        ? null
+        : await cloudHeroPlans({
+            method: "POST",
+            body: { action: "save-defaults" },
+          });
+      if (!remote) {
+        response.status(503).json({
+          ok: false,
+          error: "site-yok",
+          message:
+            "Varsayılan kaydedilemedi. " +
+            (lastCloudError || "Bekleyen düzenlemeler siteye gönderilemedi."),
+        });
+        return;
+      }
+      await mirrorHeroCatalog(remote);
+      response.json(catalogPayload(remote));
+      return;
+    }
+
     const { hero, ...patch } = request.body || {};
     const heroKey = core.normalizeHeroKey(hero);
     if (!heroKey || !core.isKnownHero(heroKey)) {
@@ -526,38 +727,28 @@ function createServerApp(options) {
       return;
     }
 
-    // Once SITEYE yazilir: ortak kaydin sahibi orasi. Site dondurduğu katalogu
-    // ayna olarak saklariz, boylece baskasinin duzenlemesi de buraya iner.
-    const remote = await cloudHeroPlans({
-      method: "POST",
-      body: { hero: heroKey, ...patch },
-    });
-    if (remote) {
-      await mirrorHeroPlans(remote);
-      response.json({ ok: true, accountId, heroes: remote, synced: true });
-      return;
-    }
-
-    // Site yok: duzenleme yerel aynada tutulur ve canli mac tavsiyesinde
-    // kullanilir, ama gruba GITMEZ. Arayuz bunu `synced: false` ile bilir.
+    // Duzenleme ONCE yerel aynaya bekleyen olarak yazilir, sonra siteyle
+    // esitlenir. Site cevap verirse bekleyen listesi bosalir; vermezse
+    // duzenleme kaybolmaz, site erisilebilir oldugunda gonderilir.
     const clean = core.normalizeHeroOverride(patch);
-    const heroes = { ...(await localHeroPlans()) };
-    // Hicbir alan yollanmadiysa kayit SILINIR: arayuzdeki "Sifirla" budur ve
-    // hero uretilmis tohum veriye geri doner.
+    const local = await localHeroCatalog();
+    const heroes = { ...local.heroes };
+    // Hicbir alan yollanmadiysa arayuzdeki "Sifirla"dir: hero varsayilanina,
+    // varsayilanda yoksa uretilmis tohum veriye doner (sitedeki kuralin aynisi).
     if (Object.keys(clean).length) {
       heroes[heroKey] = clean;
+    } else if (local.defaults[heroKey]) {
+      heroes[heroKey] = local.defaults[heroKey];
     } else {
       delete heroes[heroKey];
     }
-    await mirrorHeroPlans(heroes);
-    response.json({
-      ok: true,
-      accountId,
+    await mirrorHeroCatalog({
       heroes,
-      synced: false,
-      message:
-        "Siteye ulasilamadi; duzenleme yalnizca bu bilgisayarda saklandi.",
+      defaults: local.defaults,
+      pending: [...new Set([...local.pending, heroKey])],
     });
+
+    response.json(catalogPayload(await readHeroCatalog({ fresh: true })));
   });
 
   app.get("/api/players/:playerKey", async (request, response) => {
@@ -594,6 +785,10 @@ function createServerApp(options) {
         samples,
         rank: bundle.player?.rank || null,
       });
+      // Her macta kadrodan kimlerin oldugu; yalnizca onbellek okunur.
+      const squads = await playerData
+        .getMatchSquads(player, bundle)
+        .catch(() => ({}));
       response.json({
         ok: true,
         player: bundle.player,
@@ -611,6 +806,7 @@ function createServerApp(options) {
         refreshAvailableInMs: bundle.refreshAvailableInMs,
         mmrByMatch,
         mmrProgress,
+        squads,
         fetchedAt: bundle.fetchedAt,
         fromCache: bundle.fromCache,
         provider: bundle.provider,
@@ -621,6 +817,33 @@ function createServerApp(options) {
       response.status(500).json({
         ok: false,
         error: "oyuncu-detayi-alinamadi",
+        message: String(error?.message || error),
+      });
+    }
+  });
+
+  // Tek macin tam kadrosu (bkz. netlify/functions/match.mjs — ayni sozlesme).
+  app.get("/api/matches/:matchId", async (request, response) => {
+    try {
+      const result = await playerData.getMatchDetail(request.params.matchId, {
+        // Elle girilen pozisyon takim dagiliminda kesin kabul edilir.
+        readForcedRoles: readMatchRoles,
+      });
+      if (!result.match) {
+        response
+          .status(result.error === "gecersiz-mac" ? 400 : 404)
+          .json({ ok: false, error: result.error || "mac-detayi-alinamadi" });
+        return;
+      }
+      response.json({
+        ok: true,
+        match: result.match,
+        fromCache: result.fromCache,
+      });
+    } catch (error) {
+      response.status(500).json({
+        ok: false,
+        error: "mac-detayi-alinamadi",
         message: String(error?.message || error),
       });
     }
@@ -638,10 +861,13 @@ function createServerApp(options) {
    * @param {{ freshPlans?: boolean, minAdvice?: number }} [options]
    */
   async function buildContext(state, options = {}) {
+    const { statsByPlayerId, profilesByPlayerId } =
+      await playerData.getCachedLiveInputs();
     return core.buildLiveMatchContext({
       liveState: state,
       minAdvice: options.minAdvice,
-      statsByPlayerId: await playerData.getCachedStatsByPlayerId(),
+      statsByPlayerId,
+      profilesByPlayerId,
       viewerSteamId: settings.resolveSteamId(),
       // Katalog siteden gelir ve 60 saniye hafizada tutulur; arayuz bir
       // kayit sonrasi `?plans=fresh` ile hafizayi atlatir.
@@ -707,6 +933,8 @@ function createServerApp(options) {
           group: row.group,
           groupLabel: row.groupLabel,
           reason: row.reason,
+          // Ara parca onerisinde hedef item (Yasha -> Manta).
+          buildsIntoName: row.buildsIntoName || "",
           icon: core.itemIconUrl(row.key),
         })),
     };
@@ -913,6 +1141,8 @@ function createServerApp(options) {
           uploaderCount: liveState ? 1 : 0,
           lastPayloadAt: lastRawAt,
           relay: relay.status(),
+          // Ayni maci gonderen diger kullanicilardan cekilen veri.
+          cloudLive: cloudLive?.status?.() || null,
           // Overwolf kurulu degilse `available:false` doner; bu bir hata
           // degildir, yalnizca ek kaynagin yoklugudur.
           overwolf: overwolf?.status?.() || {
@@ -970,6 +1200,8 @@ function createServerApp(options) {
     getLiveState: () => liveState,
     /** Overwolf ile zenginlestirilmis hali (yoksa GSI'nin aynisi). */
     getEnrichedLiveState: currentLiveState,
+    /** Siteden cekilen arkadas verisi OLMADAN yerel durum (bkz. cloud-live.js). */
+    getLocalLiveState: localLiveState,
     /** Oyun ici overlay'in gosterecegi tavsiyeler (bkz. services/overlay.js). */
     getOverlayState: overlayState,
     /**
@@ -977,7 +1209,7 @@ function createServerApp(options) {
      * sessiz kalsa bile yayin guncellensin.
      */
     onOverwolfChange() {
-      const state = currentLiveState();
+      const state = localLiveState();
       if (state) {
         relay.push(state);
       }

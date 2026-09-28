@@ -461,3 +461,39 @@ test("donem ozeti hero seridini karta tasir", () => {
     ["pudge"],
   );
 });
+
+test("Hafta/Ay en yeni 60 macla sinirli kalmaz; eski maclar da pencereye girer", async () => {
+  const { buildWeeklyEntry } = await import("../src/players/weekly-score.js");
+  const now = Date.parse("2026-09-28T12:00:00Z");
+  const hour = 60 * 60 * 1000;
+  // 120 mac, 6 saatte bir: hepsi son 30 gunun icinde.
+  const all = Array.from({ length: 120 }, (_, index) => ({
+    matchId: String(1000 - index),
+    startedAt: new Date(now - (index + 1) * 6 * hour).toISOString(),
+    result: index % 2 ? "loss" : "win",
+  }));
+  const evaluations = all.map((row) => ({
+    matchId: row.matchId,
+    performanceRank: 3000,
+  }));
+  const input = {
+    player: { id: "x", name: "X", player_id: "1" },
+    matches: all.slice(0, 60),
+    evaluations: evaluations.slice(0, 60),
+    olderMatches: all.slice(60),
+    olderEvaluations: evaluations.slice(60),
+    now,
+  };
+
+  const month = buildWeeklyEntry({ ...input, period: "month" });
+  assert.equal(month.matches, 120);
+  assert.equal(month.historyLimited, true, "veri ayin basina ulasmiyor");
+
+  const week = buildWeeklyEntry({ ...input, period: "week" });
+  assert.equal(week.matches, 28);
+  assert.equal(week.historyLimited, false);
+  assert.equal(week.hasBaseline, true);
+
+  const last60 = buildWeeklyEntry({ ...input, period: "all" });
+  assert.equal(last60.matches, 60, "Son 60 en yeni 60 macla sinirli kalir");
+});

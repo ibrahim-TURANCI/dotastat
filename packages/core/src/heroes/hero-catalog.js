@@ -67,6 +67,44 @@ export const LANE_ROLE_LABELS = {
   sup5: "Sup(5)",
 };
 
+/**
+ * Lane rolu <-> pozisyon ("pos1".."pos5").
+ *
+ * Katalog lane rolu, oyuncu verisi ve draft ise pozisyon anahtari konusuyor.
+ * Eslesme TEK yerde durur: draft'in "bu hero hangi pozisyona" sorusu ile canli
+ * tavsiyenin "bu oyuncu hangi rolde" sorusu ayni cevabi vermeli.
+ */
+export const POSITION_BY_LANE_ROLE = {
+  carry: "pos1",
+  mid: "pos2",
+  offlane: "pos3",
+  sup4: "pos4",
+  sup5: "pos5",
+};
+
+const LANE_ROLE_BY_POSITION = Object.fromEntries(
+  Object.entries(POSITION_BY_LANE_ROLE).map(([lane, pos]) => [pos, lane]),
+);
+
+/**
+ * Pozisyon ya da lane rolu yazimindan lane rolu.
+ *
+ * Kabul edilen: `"pos3"`, `3` (Overwolf `position`), `"offlane"`. Taninmazsa
+ * bos metin.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function laneRoleOf(value) {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (LANE_ROLES.includes(raw)) {
+    return raw;
+  }
+  return LANE_ROLE_BY_POSITION[/^[1-5]$/.test(raw) ? "pos" + raw : raw] || "";
+}
+
 /** Duzenlenebilir liste alanlari ve liste basina tavan. */
 export const HERO_LIST_FIELDS = [
   "counterHeroes",
@@ -93,6 +131,19 @@ export function isKnownHero(value) {
 /** Tum hero anahtarlari (alfabetik). */
 export function heroKeys() {
   return [...KNOWN_HEROES].sort();
+}
+
+/**
+ * Bir kaydin oynanabildigi pozisyonlar ("pos1".."pos5").
+ * @param {Record<string, any>|null} record `heroRecord` ciktisi
+ * @returns {Set<string>}
+ */
+export function heroPositions(record) {
+  return new Set(
+    (record?.laneRoles || [])
+      .map((role) => POSITION_BY_LANE_ROLE[role])
+      .filter(Boolean),
+  );
 }
 
 /**
@@ -320,6 +371,76 @@ export function normalizeHeroPlans(plans) {
     }
   }
   return out;
+}
+
+/**
+ * Iki duzenleme AYNI mi? Ikisi de once temizlenir; alan sirasi ve bos alanlar
+ * farki yaratmaz, liste sirasi yaratir (plan sirasi tavsiyeyi etkiliyor).
+ *
+ * @param {Record<string, any>|null|undefined} a
+ * @param {Record<string, any>|null|undefined} b
+ * @returns {boolean}
+ */
+export function sameHeroOverride(a, b) {
+  return (
+    JSON.stringify(normalizeHeroOverride(a || null)) ===
+    JSON.stringify(normalizeHeroOverride(b || null))
+  );
+}
+
+/**
+ * VARSAYILANDAN farkli olan hero'lar ("Tavsiyeleri yonet" ekranindaki
+ * "N hero duzenlenmis" sayisi ve vurgu).
+ *
+ * Varsayilan, katalog yoneticisinin "Varsayilan olarak kaydet" dedigi andaki
+ * duzenleme kumesidir. O andan sonra yapilan ya da geri alinan her duzenleme
+ * burada gorunur; hic kaydedilmediyse tohum veriden farkli olan her hero.
+ *
+ * @param {Record<string, Record<string, any>>} plans Gecerli duzenlemeler
+ * @param {Record<string, Record<string, any>>} [defaults] Varsayilan duzenlemeler
+ * @returns {string[]}
+ */
+export function editedHeroKeys(plans, defaults = {}) {
+  const keys = new Set([
+    ...Object.keys(plans || {}),
+    ...Object.keys(defaults || {}),
+  ]);
+  // Ham kayitlar degil, ETKIN sonuc karsilastirilir: koddaki varsayilanla ayni
+  // sonucu veren bir kayit (ornek: koda tasinmis bir duzenleme) duzenleme
+  // sayilmaz.
+  return [...keys]
+    .filter(
+      (hero) =>
+        effectiveRecordKey(hero, plans?.[hero]) !==
+        effectiveRecordKey(hero, defaults?.[hero]),
+    )
+    .sort();
+}
+
+/**
+ * Kaydin ETKIN hali, karsilastirilabilir metin olarak.
+ * @param {string} hero
+ * @param {Record<string, any>|null|undefined} override
+ * @returns {string}
+ */
+function effectiveRecordKey(hero, override) {
+  const record = heroRecord(hero, override || null);
+  if (!record) {
+    return "";
+  }
+  const { edited, ...rest } = record;
+  return JSON.stringify(rest);
+}
+
+/**
+ * Bu duzenleme koddaki varsayilani (tohum) DEGISTIRIYOR mu?
+ *
+ * @param {string} hero
+ * @param {Record<string, any>|null|undefined} override
+ * @returns {boolean}
+ */
+export function changesHeroSeed(hero, override) {
+  return effectiveRecordKey(hero, override) !== effectiveRecordKey(hero, null);
 }
 
 /**

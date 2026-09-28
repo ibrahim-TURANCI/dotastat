@@ -222,6 +222,8 @@ export function PlayerEvaluationScreen({
           // Detayda "Yenile"ye basildiginda ayni veri kartlari da degistirir;
           // listeyi eski haliyle birakmak "hangisi dogru" sorusunu doguruyordu.
           onDataChanged={() => players.reload()}
+          // Kadroda yeni veri gelince detay da onbellekten yeniden okunur.
+          dataVersion={lastFetchedAt}
         />
       ) : null}
     </CollapsibleSection>
