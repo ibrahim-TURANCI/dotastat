@@ -44,6 +44,9 @@ o pozisyonun ölçütleriyle yeniden puanlanır.
 Skor, süre ve iki takımın oyuncuları. Her oyuncu tek satırda görünür: hero,
 KDA, LH/DN, envanter ve item tavsiyesi. Kadrodaki oyuncular vurgulanır.
 Kadrodan birkaç kişi aynı maçtaysa gönderdikleri veri tek panelde birleşir.
+Masaüstü uygulaması da bu birleşik veriyi siteden çeker: takım arkadaşının
+gerçek envanteri ve (kendinde Overwolf olmasa bile) arkadaşın Overwolf'undan
+gelen hero/pozisyon bilgisi uygulamada ve item tavsiyesinde kullanılır.
 
 **Item tavsiyesi eldeki veriye göre genişler:**
 
@@ -74,9 +77,11 @@ avantaj listesi ve takım için Core / Destek / Duruma göre item önerileri.
 
 Pick başlamadan tanınan oyuncuların hero havuzuna göre, pick sürerken iki
 takımın seçimlerine göre (counter, combo, rakibin özellikleri, oyuncunun hero
-havuzu) her pozisyon için hero önerir. Seçilen bir hero'nun hangi pozisyona
-alındığı kesin bilinemediği için **pick bitene kadar beş pozisyonun hepsi
-görünür**. Pickler bitince asistan gizlenir.
+havuzu) her pozisyon için hero önerir. Bir hero yalnızca en uygun olduğu
+pozisyonda önerilir; pozisyon listeleri birbirini tekrarlamaz. Overwolf'un
+pick sırasındaki pozisyon tahmini varsa oyuncular o pozisyona yerleşir ve
+hero'su seçilmiş pozisyon **dolu** gösterilir; yoksa pick bitene kadar beş
+pozisyonun hepsi açık kalır. Pickler bitince asistan gizlenir.
 
 ### Tavsiyeleri yönet
 

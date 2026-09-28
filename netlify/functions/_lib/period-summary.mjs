@@ -47,6 +47,8 @@ export async function getPeriodScoreboard(options = {}) {
         player: bundle.player,
         matches: bundle.matches,
         evaluations: bundle.evaluations,
+        olderMatches: bundle.olderMatches,
+        olderEvaluations: bundle.olderEvaluations,
         samples: mmrRow?.samples || [],
       };
     }),

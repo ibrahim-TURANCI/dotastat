@@ -83,6 +83,9 @@ export function resolveEffectivePotential(player, form) {
  * @param {Object} input
  * @param {import("./player-types.js").Player} input.player
  * @param {import("./player-types.js").PlayerMatch[]} input.matches
+ * @param {import("./player-types.js").PlayerMatch[]} [input.olderMatches]
+ *   `matches`ten ESKI maclar. Hero havuzuna ve forma KATILMAZ; yalnizca
+ *   donem kiyasinin tabani icin puanlanir.
  * @param {Record<string, string>} [input.forcedRoles] matchId -> RoleKey
  * @param {import("./hero-pool.js").HeroPerformanceRow[]} [input.heroPerformance] Tum zamanlar
  * @param {number} [input.formWindow]
@@ -108,6 +111,16 @@ export function buildPlayerEvaluation(input) {
     matches,
     forcedRoles,
   });
+  const olderMatches = Array.isArray(input?.olderMatches)
+    ? input.olderMatches
+    : [];
+  const olderEvaluations = olderMatches.length
+    ? evaluateMatches({
+        player: evaluatedPlayer,
+        matches: olderMatches,
+        forcedRoles,
+      })
+    : [];
   const formMatches = matches.slice(0, formWindow);
   const formEvaluations = evaluations.slice(0, formWindow);
   const form = summarizeForm(formEvaluations, formMatches);
@@ -116,6 +129,8 @@ export function buildPlayerEvaluation(input) {
     player: evaluatedPlayer,
     matches,
     evaluations,
+    olderMatches,
+    olderEvaluations,
     form,
     heroPool,
     effectivePotential: resolveEffectivePotential(evaluatedPlayer, form),

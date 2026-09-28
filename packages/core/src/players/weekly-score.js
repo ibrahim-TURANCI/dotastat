@@ -204,6 +204,9 @@ function averagePerformanceRank(evaluations, matchIds) {
  * @param {Record<string, any>} input.player
  * @param {Array<Record<string, any>>} [input.matches]      En yeni once
  * @param {Array<Record<string, any>>} [input.evaluations]  matchId ile eslesir
+ * @param {Array<Record<string, any>>} [input.olderMatches] `matches`ten eski
+ *   maclar. Hafta / Ay penceresine ve kiyas tabanina girer; Son 60'a girmez.
+ * @param {Array<Record<string, any>>} [input.olderEvaluations]
  * @param {Array<{ at: string, mmr: number }>} [input.samples]
  * @param {number} [input.now] epoch ms
  * @param {string} [input.period] "week" | "month" | "all"
@@ -215,24 +218,45 @@ export function buildWeeklyEntry(input) {
   const evaluations = Array.isArray(input?.evaluations)
     ? input.evaluations
     : [];
+  const olderMatches = Array.isArray(input?.olderMatches)
+    ? input.olderMatches
+    : [];
+  const olderEvaluations = Array.isArray(input?.olderEvaluations)
+    ? input.olderEvaluations
+    : [];
   const now = Number(input?.now) || Date.now();
   const period = resolvePeriod(input?.period);
   const allTime = isAllTimePeriod(period);
   const since = now - period.windowMs;
   const baselineSince = now - period.windowMs * BASELINE_WINDOW_FACTOR;
 
-  const weekly = matches.filter((row) => {
+  // HAFTA / AY, ELDEKI TUM GECMISTEN secilir (onbellek 200 maca kadar
+  // tutar). Eskiden yalnizca en yeni 60 mac kullaniliyordu: ayda 120 mac
+  // oynayan oyuncunun "Ay" sekmesi 60 mac, ona gore G/M ve MMR gosteriyordu.
+  // Son 60 ise adi uzerinde en yeni 60 macla sinirli kalir.
+  const history = allTime ? matches : [...matches, ...olderMatches];
+  const allEvaluations = allTime
+    ? evaluations
+    : [...evaluations, ...olderEvaluations];
+
+  const weekly = history.filter((row) => {
     const at = timeOf(row?.startedAt);
     // Son 60'ta pencere yok: tarihi cozulebilen her mac sayilir.
     return allTime ? at > 0 : at >= since;
   });
+  // Eldeki en eski mac bile donemin icindeyse veri donemin basina
+  // ULASMIYOR: oyuncu bu donemde gosterilenden fazla oynamis olabilir.
+  // Arayuz sayinin bir alt sinir oldugunu belirtir.
+  const dated = history.filter((row) => timeOf(row?.startedAt) > 0);
+  const historyLimited =
+    !allTime && weekly.length > 0 && weekly.length === dated.length;
   // SON 60'TA TABAN YOKTUR: pencere zaten tum veriyi kapsiyor, "ondan onceki
   // donem" diye bir sey kalmiyor. Performance Rank degisimi bu yuzden Son 60
   // sekmesinde hesaplanmaz (`hasBaseline: false`) — uydurma bir 0 gostermek,
   // "degismedi" demek olurdu.
   const baseline = allTime
     ? []
-    : matches.filter((row) => {
+    : history.filter((row) => {
         const at = timeOf(row?.startedAt);
         return at > 0 && at < since && at >= baselineSince;
       });
@@ -271,11 +295,11 @@ export function buildWeeklyEntry(input) {
         : "estimated";
 
   const weeklyPerformanceRank = averagePerformanceRank(
-    evaluations,
+    allEvaluations,
     weekly.map((row) => String(row.matchId)),
   );
   const baselinePerformanceRank = averagePerformanceRank(
-    evaluations,
+    allEvaluations,
     baseline.map((row) => String(row.matchId)),
   );
   const hasBaseline = baselinePerformanceRank > 0 && weeklyPerformanceRank > 0;
@@ -349,6 +373,11 @@ export function buildWeeklyEntry(input) {
     }),
 
     matches: weekly.length,
+    /**
+     * Eldeki gecmis donemin basina ulasmiyor; `matches` bir ALT SINIRDIR
+     * (oyuncu donemde daha fazla oynamis olabilir).
+     */
+    historyLimited,
     wins,
     losses,
     winRate: weekly.length ? Number((wins / weekly.length).toFixed(4)) : 0,
@@ -491,6 +520,7 @@ export function withPeriodSummary(cards, board) {
             position: row.position || 0,
             ranked: row.ranked,
             matches: row.matches,
+            historyLimited: Boolean(row.historyLimited),
             wins: row.wins,
             losses: row.losses,
             winRate: row.winRate,

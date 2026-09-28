@@ -35,6 +35,17 @@ export const PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
 export const HERO_PERFORMANCE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Tek istekte cekilen mac sayisi (hero havuzu istatistigi de bundan turer). */
 export const MATCH_FETCH_SIZE = 60;
+/**
+ * Onbellekte saklanan mac sayisi. Kartlar, form, hero havuzu ve "Son 60"
+ * yalnizca en yeni `MATCH_FETCH_SIZE` maci kullanir; daha eskileri YALNIZCA
+ * donem kiyasinin tabanina (Performance Rank degisimi) gider.
+ *
+ * NEDEN: cok oynayan bir oyuncunun son 60 maci son 30 gunun icine sigiyordu
+ * ve "Ay" sekmesinde kiyaslanacak onceki mac kalmiyordu; kart "yeni"
+ * yaziyordu (olculdu: kadroda 4 oyuncu). OpenDota ayni istekte 200 maci da
+ * verir; ek istek harcanmaz.
+ */
+export const MATCH_HISTORY_SIZE = 200;
 
 /**
  * Onbellekteki mac kaydinin sema surumu.
@@ -347,7 +358,7 @@ export function createPlayerDataService(options) {
       if (wanted && typeof client.getRecentMatchesExpecting === "function") {
         // Belirli bir mac araniyor (GSI bitis bildirdi).
         matches = await client.getRecentMatchesExpecting(player.player_id, {
-          limit: MATCH_FETCH_SIZE,
+          limit: MATCH_HISTORY_SIZE,
           expectMatchId: wanted,
         });
       } else if (
@@ -358,12 +369,12 @@ export function createPlayerDataService(options) {
         // kaynaklar sorulup EN TAZE liste alinir. Sira korunsaydi OpenDota
         // "basarili ama eski" cevabiyla yeni maci gizlerdi.
         matches = await client.getRecentMatchesFreshest(player.player_id, {
-          limit: MATCH_FETCH_SIZE,
+          limit: MATCH_HISTORY_SIZE,
         });
       } else {
         // Normal acilis: tek kaynak yeter, ekstra istek harcanmaz.
         matches = await client.getRecentMatches(player.player_id, {
-          limit: MATCH_FETCH_SIZE,
+          limit: MATCH_HISTORY_SIZE,
         });
       }
       const fetchedAt = new Date().toISOString();
@@ -385,7 +396,7 @@ export function createPlayerDataService(options) {
         const merged = mergeMatchHistory(
           migrateCachedMatches(kept?.matches || [], kept?.schema),
           matches,
-          { limit: MATCH_FETCH_SIZE },
+          { limit: MATCH_HISTORY_SIZE },
         );
         const row = { matches: merged, fetchedAt, schema: MATCH_SCHEMA };
         await Promise.all([
@@ -641,10 +652,14 @@ export function createPlayerDataService(options) {
       rank: profile?.rank || player.rank,
     };
 
+    // En yeni 60 mac degerlendirmenin kendisidir; daha eskileri yalnizca
+    // donem kiyasinin tabanina gider (bkz. MATCH_HISTORY_SIZE).
+    const allMatches = matchResult.matches || [];
     return {
       ...buildPlayerEvaluation({
         player: merged,
-        matches: matchResult.matches,
+        matches: allMatches.slice(0, MATCH_FETCH_SIZE),
+        olderMatches: allMatches.slice(MATCH_FETCH_SIZE),
         heroPerformance: heroResult.heroes,
         forcedRoles: bundleOptions.forcedRoles || {},
       }),

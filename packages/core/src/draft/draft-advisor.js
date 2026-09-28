@@ -11,11 +11,16 @@
  *                   birlikte degerlendirilir.
  *   3. "complete" - 10 pick tamamlandi. Asistan GORUNMEZ (visible: false).
  *
- * PICK BITENE KADAR BES POZISYONUN HEPSI GOSTERILIR. Secilen bir hero'nun
- * hangi pozisyon icin alindigini bilmiyoruz: Pudge pos3 icin de pos5 icin de
- * secilebilir. Eskiden "dolu" tahmin edilen pozisyonun onerisi gizleniyordu;
- * tahmin yanlis ciktiginda (Pudge pos3 alinmis, pos5 dolu sanilmis) asil bos
- * pozisyonun onerisi ekrandan kayboluyordu.
+ * POZISYONLAR: Overwolf pick sirasinda her oyuncunun pozisyonunu tahmin eder
+ * ve bu tahmin genelde dogrudur. O bilgi varsa (`lineup`) takim arkadasinin
+ * hero'yu hangi pozisyon icin aldigi BILINIR ve o pozisyon "dolu" gosterilir.
+ * Bilinmiyorsa pozisyon acik kalir: secilen bir hero'nun hangi pozisyona
+ * alindigini hero'ya bakarak tahmin etmek yaniltiyordu (Pudge pos3 alinmis,
+ * pos5 dolu sanilmis, asil bos pozisyonun onerisi kaybolmustu).
+ *
+ * AYNI HERO IKI POZISYONDA ONERILMEZ. Her hero en iyi puani aldigi pozisyona
+ * yerlesir (bkz. `distributeSuggestions`); boylece pos4 ile pos5 ayni destek
+ * listesini, pos1 ile pos2 ayni core listesini tekrarlamaz.
  *
  * Bu modul saftir: ag istegi yapmaz, dosya okumaz.
  */
@@ -47,6 +52,19 @@ const ANSWER_BONUS_PER_HERO = 6;
 const ANSWER_BONUS_MAX = 28;
 
 /**
+ * Hero'nun ASIL pozisyonu (katalogdaki ilk lane rolu) icin bonus; yalnizca
+ * o pozisyonda oynanan uzman hero'lara ek bonus. Cok pozisyonlu bir hero'nun
+ * ikincil pozisyonu hafif geri itilir. Amac: pos4 listesinde "pos4 de
+ * oynanabilen" bir pos5 hero'su degil, gercek bir pos4 hero'su one ciksin.
+ */
+const PRIMARY_POSITION_BONUS = 8;
+const SPECIALIST_BONUS = 4;
+const OFF_POSITION_PENALTY = 4;
+
+/** Rakipte bu adayi counter'layan her hero icin ceza. */
+const COUNTERED_PENALTY = 20;
+
+/**
  * Bir hero'nun oynanabilecegi pozisyonlar.
  *
  * KATALOGDAN okunur (uretilmis tohum + kullanicinin "Tavsiyeleri yonet"
@@ -60,6 +78,27 @@ const ANSWER_BONUS_MAX = 28;
 function heroSlots(heroKey, overrides = {}) {
   const key = normalizeHeroKey(heroKey);
   return heroPositions(heroRecord(key, overrides?.[key] || null));
+}
+
+/**
+ * Hero'nun bu pozisyona ne kadar "ait" oldugu.
+ *
+ * @param {string} heroKey
+ * @param {string} slot "pos1".."pos5"
+ * @param {Record<string, Record<string, any>>} [overrides]
+ * @returns {number}
+ */
+function positionFit(heroKey, slot, overrides = {}) {
+  const positions = [...heroSlots(heroKey, overrides)];
+  if (!positions.includes(slot)) {
+    return 0;
+  }
+  if (positions[0] === slot) {
+    return (
+      PRIMARY_POSITION_BONUS + (positions.length === 1 ? SPECIALIST_BONUS : 0)
+    );
+  }
+  return positions.length >= 3 ? -OFF_POSITION_PENALTY : 0;
 }
 
 /**
@@ -181,6 +220,7 @@ function playerAffinity(player, stats, heroKey) {
  * @param {ReturnType<typeof detectThreats>} [input.enemyThreats] Rakibin
  *   tasidigi, hero cevabi olan ozellikler
  * @param {Record<string, Record<string, any>>} [input.overrides]
+ * @param {string} [input.slot] Adayin puanlandigi pozisyon
  */
 function scoreCandidate(input) {
   const hero = normalizeHeroKey(input.hero);
@@ -209,7 +249,7 @@ function scoreCandidate(input) {
   const ownCounters = countersOf(hero, overrides);
   for (const enemy of enemyHeroes) {
     if (ownCounters.includes(enemy)) {
-      score -= 14;
+      score -= COUNTERED_PENALTY;
       reasons.push(heroDisplayName(enemy) + " bu seçime karşı güçlü");
     }
   }
@@ -221,6 +261,10 @@ function scoreCandidate(input) {
   );
   score += affinity.score;
   reasons.push(...affinity.reasons);
+
+  if (input.slot) {
+    score += positionFit(hero, input.slot, overrides);
+  }
 
   // Rakibin tasidigi ozellige cevap veren hero (ornek: debuff'a karsi
   // dispel). Gerekce listenin BASINA yazilir; dort gerekcelik sinirda
@@ -257,20 +301,26 @@ function scoreCandidate(input) {
 }
 
 /**
- * Taninan oyunculari pozisyonlara esler.
+ * Taninan oyunculari ACIK pozisyonlara esler.
  *
- * Once oyuncunun BU MACTAKI pozisyonu (`role`; Overwolf verdiyse oradan,
- * yoksa kadrodaki birincil rol), sonra ikincil rolleri denenir.
+ * Sira: once oyuncunun BU MACTAKI pozisyonu (`matchRole`, Overwolf), sonra
+ * kadrodaki birincil rolu, en son ikincil rolleri. Overwolf'un verdigi
+ * pozisyon kesin sayilir: o oyuncu baska bir pozisyona tahminle yerlestirilmez.
  *
- * @param {Array<{ player: Record<string, any>, role?: string, stats?: Object }>} knownPlayers
+ * ESKIDEN ilk tur "macta pos3 VEYA birincil rolu pos1" diye tek kosuldu;
+ * pozisyonlar sirayla gezildigi icin bu macta pos3 oynayan (normalde pos1)
+ * oyuncu pos1'e oturuyordu.
+ *
+ * @param {Array<{ player: Record<string, any>, role?: string, matchRole?: string, stats?: Object }>} knownPlayers
+ * @param {string[]} [slots] Acik pozisyonlar
  * @returns {Map<string, { player: Record<string, any>, role?: string, stats?: Object }>}
  */
-function assignPlayers(knownPlayers) {
+function assignPlayers(knownPlayers, slots = ROLE_KEYS) {
   const assigned = new Map();
   const usedPlayers = new Set();
   /** @param {(row: Record<string, any>, slot: string) => boolean} fits */
   const pass = (fits) => {
-    for (const slot of ROLE_KEYS) {
+    for (const slot of slots) {
       if (assigned.has(slot)) {
         continue;
       }
@@ -283,14 +333,53 @@ function assignPlayers(knownPlayers) {
       }
     }
   };
+  pass((row, slot) => row.matchRole === slot);
   pass(
     (row, slot) =>
-      row.role === slot || row.player.dotaProfile?.primaryRole === slot,
+      !row.matchRole &&
+      (row.role === slot || row.player.dotaProfile?.primaryRole === slot),
   );
-  pass((row, slot) =>
-    (row.player.dotaProfile?.secondaryRoles || []).includes(slot),
+  pass(
+    (row, slot) =>
+      !row.matchRole &&
+      (row.player.dotaProfile?.secondaryRoles || []).includes(slot),
   );
   return assigned;
+}
+
+/**
+ * Puanlanmis adaylari pozisyonlara dagitir; AYNI HERO YALNIZCA BIR
+ * pozisyonda onerilir.
+ *
+ * Tum (pozisyon, hero) ciftleri puana gore siralanir ve en yuksekten baslanir:
+ * hero en iyi puani aldigi pozisyona yerlesir, o pozisyon doluysa bir
+ * sonrakine. Oyuncunun imza kahramani boylece kendi pozisyonunda cikar;
+ * pos4/pos5 gibi ortak havuzlu pozisyonlar ayni listeyi tekrarlamaz.
+ *
+ * @param {Map<string, Array<{ hero: string, score: number }>>} scoredBySlot
+ * @param {number} perSlot
+ * @returns {Map<string, Array<Record<string, any>>>}
+ */
+function distributeSuggestions(scoredBySlot, perSlot) {
+  const pairs = [];
+  for (const [slot, rows] of scoredBySlot) {
+    for (const row of rows) {
+      pairs.push({ slot, row });
+    }
+  }
+  pairs.sort((a, b) => b.row.score - a.row.score);
+
+  const out = new Map([...scoredBySlot.keys()].map((slot) => [slot, []]));
+  const used = new Set();
+  for (const { slot, row } of pairs) {
+    const list = out.get(slot);
+    if (used.has(row.hero) || list.length >= perSlot) {
+      continue;
+    }
+    list.push(row);
+    used.add(row.hero);
+  }
+  return out;
 }
 
 /**
@@ -301,7 +390,9 @@ function assignPlayers(knownPlayers) {
  * @param {Array<{ hero: string, team: string }>} [input.picks]
  * @param {Array<{ hero: string, team: string }>} [input.bans]
  * @param {string} [input.phase] GSI `map.game_state`
- * @param {Array<{ player: import("../players/player-types.js").Player, team?: string, role?: string, stats?: Object }>} [input.knownPlayers]
+ * @param {Array<{ player: import("../players/player-types.js").Player, team?: string, role?: string, matchRole?: string, hero?: string, stats?: Object }>} [input.knownPlayers]
+ * @param {Array<{ team?: string, position: number, hero?: string, heroConfirmed?: boolean, name?: string }>} [input.lineup]
+ *   Takimin Overwolf'tan gelen pozisyon dizilimi (kadroda olmayanlar dahil)
  * @param {number} [input.suggestionsPerRole]
  * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero ->
  *   duzenleme; rol, counter ve ozellikler kullanicinin kaydina gore okunur
@@ -351,37 +442,90 @@ export function buildDraftAdvice(input = {}) {
     ...bans.map((row) => normalizeHeroKey(row.hero)),
   ]);
 
-  // Taninan oyuncular kendi takimimizda olanlarla sinirlanir.
+  // Takimimizin pozisyon dizilimi (Overwolf'un pick sirasindaki tahmini).
+  // Pozisyonu ve ONAYLI hero'su bilinen oyuncunun pozisyonu doludur.
+  const lineup = (Array.isArray(input.lineup) ? input.lineup : []).filter(
+    (row) =>
+      row &&
+      (!row.team || row.team === myTeam) &&
+      row.position >= 1 &&
+      row.position <= 5,
+  );
+  /** @type {Map<string, { hero: string, heroName: string, playerName: string }>} */
+  const filled = new Map();
+  /** @type {Map<string, string>} pozisyon -> oyuncu adi (kadroda olmasa da) */
+  const lineupNames = new Map();
+  for (const row of lineup) {
+    const slot = "pos" + row.position;
+    if (row.name && !lineupNames.has(slot)) {
+      lineupNames.set(slot, String(row.name));
+    }
+    const hero = normalizeHeroKey(row.hero || "");
+    const picked =
+      hero &&
+      row.heroConfirmed !== false &&
+      (teamHeroes.includes(hero) || row.heroConfirmed === true);
+    if (picked && !filled.has(slot)) {
+      filled.set(slot, {
+        hero,
+        heroName: heroDisplayName(hero),
+        playerName: String(row.name || ""),
+      });
+    }
+  }
+  const openSlots = ROLE_KEYS.filter((slot) => !filled.has(slot));
+
+  // Taninan oyuncular kendi takimimizda olanlarla sinirlanir. Hero'sunu
+  // zaten secmis olan oyuncu bos bir pozisyona atanmaz.
   const knownPlayers = (
     Array.isArray(input.knownPlayers) ? input.knownPlayers : []
   ).filter((row) => row?.player && (!row.team || row.team === myTeam));
-  const assigned = assignPlayers(knownPlayers);
+  const unpickedPlayers = knownPlayers.filter(
+    (row) => !row.hero || !teamHeroes.includes(normalizeHeroKey(row.hero)),
+  );
+  const assigned = assignPlayers(unpickedPlayers, openSlots);
 
   const candidates = heroKeys().filter((hero) => !unavailable.has(hero));
 
+  const scoredBySlot = new Map(
+    openSlots.map((slot) => {
+      const owner = assigned.get(slot) || null;
+      const rows = candidates
+        .filter((hero) => heroSlots(hero, overrides).has(slot))
+        .map((hero) =>
+          scoreCandidate({
+            hero,
+            slot,
+            teamHeroes,
+            enemyHeroes,
+            player: owner?.player || null,
+            stats: owner?.stats || null,
+            enemyThreats,
+            overrides,
+          }),
+        );
+      return [slot, rows];
+    }),
+  );
+  const suggestionsBySlot = distributeSuggestions(
+    scoredBySlot,
+    suggestionsPerRole,
+  );
+
   const blocks = ROLE_KEYS.map((slot) => {
     const owner = assigned.get(slot) || null;
-    const suggestions = candidates
-      .filter((hero) => heroSlots(hero, overrides).has(slot))
-      .map((hero) =>
-        scoreCandidate({
-          hero,
-          teamHeroes,
-          enemyHeroes,
-          player: owner?.player || null,
-          stats: owner?.stats || null,
-          enemyThreats,
-          overrides,
-        }),
-      )
-      .sort((a, b) => b.score - a.score)
-      .slice(0, suggestionsPerRole);
-
+    const lineupName = lineupNames.get(slot) || "";
+    const player = owner
+      ? { id: owner.player.id, name: owner.player.name }
+      : lineupName
+        ? { id: "", name: lineupName, guest: true }
+        : null;
     return {
       role: slot,
       roleLabel: ROLE_LABELS[slot] || slot,
-      player: owner ? { id: owner.player.id, name: owner.player.name } : null,
-      suggestions,
+      player,
+      filled: filled.get(slot) || null,
+      suggestions: suggestionsBySlot.get(slot) || [],
     };
   });
 
@@ -398,7 +542,16 @@ export function buildDraftAdvice(input = {}) {
         teamHeroes.length +
         " pickinize ve rakibin " +
         enemyHeroes.length +
-        " pickine göre güncellendi. Seçilen hero'nun hangi pozisyona alındığı kesin bilinmediği için pick bitene kadar tüm pozisyonlar gösterilir.",
+        " pickine göre güncellendi.",
+    );
+  }
+  if (lineup.length) {
+    notes.push(
+      "Pozisyonlar Overwolf'un pick sırasındaki tahminine göre. Bir hero yalnızca en uygun olduğu pozisyonda önerilir.",
+    );
+  } else if (teamHeroes.length) {
+    notes.push(
+      "Seçilen hero'ların hangi pozisyona alındığı bilinmediği için pick bitene kadar tüm pozisyonlar açık gösterilir.",
     );
   }
   if (bans.length) {

@@ -314,7 +314,7 @@ export function createOpenDotaClient(options = {}) {
      */
     async getRecentMatches(playerId, matchOptions = {}) {
       const limit = Math.min(
-        100,
+        200,
         Math.max(1, Number(matchOptions.limit) || 20),
       );
       const payload =

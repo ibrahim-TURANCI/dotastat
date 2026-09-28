@@ -117,3 +117,13 @@
   color: var(--txt-1);
   flex: none;
 }
+
+.draft-block.filled {
+  opacity: 0.7;
+}
+
+.draft-filled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

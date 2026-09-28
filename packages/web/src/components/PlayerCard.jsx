@@ -141,7 +141,19 @@ export function PlayerCard({ card, selected, onSelect, live = false }) {
               }
               hint={<PerformanceDelta period={period} />}
             />
-            <Metric label="Maç" value={<span>{played}</span>} />
+            <Metric
+              label="Maç"
+              value={<span>{played}</span>}
+              hint={
+                period.historyLimited ? (
+                  <span title="Daha eski maçlar alınamadı; bu dönemde oynanan maç sayısı daha fazla olabilir. Gösterilen, elde duran son maçlar.">
+                    son {played}
+                  </span>
+                ) : (
+                  ""
+                )
+              }
+            />
           </div>
 
           <div className="player-card-form">
@@ -225,7 +237,8 @@ function Metric({ label, value, hint }) {
 const MMR_SOURCE_HINTS = {
   measured: "ölçülen",
   partial: "kısmen ölçülen",
-  estimated: "tahmin",
+  // Tahmin oldugunu degerin onundeki ~ isareti zaten soyluyor.
+  estimated: "",
   none: "",
 };
 

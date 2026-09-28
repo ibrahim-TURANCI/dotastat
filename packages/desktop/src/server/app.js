@@ -28,7 +28,8 @@ const { cloudFetch, hasCloudSession } = require("../services/cloud-session.js");
  * @param {number} [options.port]
  */
 function createServerApp(options) {
-  const { core, settings, storage, relay, webDir, mmr, overwolf } = options;
+  const { core, settings, storage, relay, webDir, mmr, overwolf, cloudLive } =
+    options;
   const logger = options.logger || console;
 
   const playerData = core.createPlayerDataService({
@@ -112,15 +113,45 @@ function createServerApp(options) {
   }
 
   /**
-   * Su an gosterilecek canli mac durumu.
+   * YALNIZCA bu bilgisayarin gordugu canli mac durumu.
    * Once GSI (taze ise), yoksa yalnizca Overwolf.
+   *
+   * Buluta GIDEN veri budur. Siteden cekilen arkadas verisi buna KATILMAZ;
+   * katilsaydi her kurulum digerlerinin verisini kendi adina yeniden
+   * yayinlar, eski kopyalar birbirini dongu halinde ezerdi.
+   *
    * @returns {Record<string, any>|null}
    */
-  function currentLiveState() {
+  function localLiveState() {
     if (liveState && core.isLiveMatchFresh(liveState)) {
       return enrich(liveState);
     }
     return liveStateFromOverwolfOnly();
+  }
+
+  /**
+   * Ekranda (panel + overlay) gosterilecek canli mac durumu: yerel durum,
+   * ayni maci siteye gonderen DIGER DotaStat kullanicilarinin verisiyle
+   * zenginlestirilmis hali. Takim arkadasinin gercek envanteri ve varsa
+   * Overwolf'unun 10 slot / pozisyon bilgisi bu yolla gelir.
+   *
+   * @returns {Record<string, any>|null}
+   */
+  function currentLiveState() {
+    const local = localLiveState();
+    const remote = local ? cloudLive?.stateFor?.(local.matchId) : null;
+    if (!remote) {
+      return local;
+    }
+    try {
+      return core.mergeRemoteLiveState(local, remote);
+    } catch (error) {
+      logger.warn?.(
+        "Arkadaslarin canli verisi birlestirilemedi",
+        String(error?.message || error),
+      );
+      return local;
+    }
   }
 
   const app = express();
@@ -233,6 +264,8 @@ function createServerApp(options) {
           player: bundle.player,
           matches: bundle.matches,
           evaluations: bundle.evaluations,
+          olderMatches: bundle.olderMatches,
+          olderEvaluations: bundle.olderEvaluations,
           // Yerelde yalnizca bu bilgisayarin oyuncusunun okumasi var;
           // digerlerinin MMR degisimi mac sonucundan tahmin edilir.
           samples: accountId === own ? samples : [],
@@ -1108,6 +1141,8 @@ function createServerApp(options) {
           uploaderCount: liveState ? 1 : 0,
           lastPayloadAt: lastRawAt,
           relay: relay.status(),
+          // Ayni maci gonderen diger kullanicilardan cekilen veri.
+          cloudLive: cloudLive?.status?.() || null,
           // Overwolf kurulu degilse `available:false` doner; bu bir hata
           // degildir, yalnizca ek kaynagin yoklugudur.
           overwolf: overwolf?.status?.() || {
@@ -1165,6 +1200,8 @@ function createServerApp(options) {
     getLiveState: () => liveState,
     /** Overwolf ile zenginlestirilmis hali (yoksa GSI'nin aynisi). */
     getEnrichedLiveState: currentLiveState,
+    /** Siteden cekilen arkadas verisi OLMADAN yerel durum (bkz. cloud-live.js). */
+    getLocalLiveState: localLiveState,
     /** Oyun ici overlay'in gosterecegi tavsiyeler (bkz. services/overlay.js). */
     getOverlayState: overlayState,
     /**
@@ -1172,7 +1209,7 @@ function createServerApp(options) {
      * sessiz kalsa bile yayin guncellensin.
      */
     onOverwolfChange() {
-      const state = currentLiveState();
+      const state = localLiveState();
       if (state) {
         relay.push(state);
       }

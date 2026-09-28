@@ -168,25 +168,27 @@ test("pick sirasinda rakipte debuff varsa dispel hero'lari one cikar", () => {
       phase: "DOTA_GAMERULES_STATE_HERO_SELECTION",
       heroOverrides,
     });
-  const pos5 = (advice) => advice.blocks.find((row) => row.role === "pos5");
+  // Bir hero artik yalnizca TEK pozisyonda onerilir (en uygun oldugu yerde);
+  // dispel hero'lari pos3/pos4/pos5'e dagilabilir, bu yuzden tum bloklara
+  // birlikte bakilir.
+  const allSuggestions = (advice) =>
+    advice.blocks.flatMap((row) => row.suggestions);
 
-  const withDebuff = pos5(draft(["viper", "silencer", "venomancer"]));
-  const dispel = withDebuff.suggestions.filter((row) =>
+  const withDebuff = draft(["viper", "silencer", "venomancer"]);
+  const dispel = allSuggestions(withDebuff).filter((row) =>
     DISPEL_HEROES.includes(row.hero),
   );
-  assert.ok(dispel.length, "pos5 onerisinde dispel hero'su olmali");
+  assert.ok(dispel.length, "onerilerde dispel hero'su olmali");
   assert.match(dispel[0].reasons[0], /dispel/);
 
   // Ayni kadroda debuff isaretleri kaldirilinca gerekce de kalkar.
-  const cleared = pos5(
-    draft(["viper", "silencer", "venomancer"], {
-      viper: { traits: [] },
-      silencer: { traits: [] },
-      venomancer: { traits: [] },
-    }),
-  );
+  const cleared = draft(["viper", "silencer", "venomancer"], {
+    viper: { traits: [] },
+    silencer: { traits: [] },
+    venomancer: { traits: [] },
+  });
   assert.ok(
-    !cleared.suggestions.some((row) =>
+    !allSuggestions(cleared).some((row) =>
       row.reasons.some((reason) => reason.includes("dispel")),
     ),
   );

@@ -4,6 +4,8 @@
  *   POST /api/live  — masaustu istemcisi (Electron) GSI durumunu buraya iter.
  *                     `x-dotastat-token` basligi ile korunur.
  *   GET  /api/live  — site ziyaretcileri (arkadaslar) canli maci buradan okur.
+ *                     `?raw=1&matchId=..&exclude=..` masaustu uygulamasina
+ *                     ayni macin diger yayincilarini ham olarak verir.
  *
  * Oyun icinden gelen GSI verisi yalnizca oyuncunun kendi bilgisayarinda
  * bulunur; bu uc onu tek bir yerde toplayip herkese acar.
@@ -12,6 +14,7 @@
 import {
   buildLiveMatchContext,
   isLiveMatchFresh,
+  mergeLiveStateGroup,
   mergeLiveStatesByMatch,
   normalizeGsiPayload,
   selectLiveStateForViewer,
@@ -160,6 +163,30 @@ export default async (request) => {
     const viewerSteamId = url.searchParams.get("steamId") || "";
 
     const states = await readFreshStates();
+
+    // MASAUSTU ICIN HAM VERI: `?raw=1&matchId=...&exclude=<steamId>`.
+    // Masaustu uygulamasi kendi macinin DIGER yayincilarini (takim
+    // arkadaslarinin envanteri, Overwolf'lu birinin 10 slotu) buradan ceker
+    // ve kendi GSI verisiyle birlestirir (bkz. core mergeRemoteLiveState).
+    // Istekte bulunanin kendi kaydi ayiklanir: birkac saniyelik eski kopyasi
+    // yereldeki taze veriyi ezmesin. Tavsiye hesaplanmaz; o is masaustunde.
+    if (url.searchParams.get("raw") === "1") {
+      const matchId = String(url.searchParams.get("matchId") || "").trim();
+      const exclude = String(url.searchParams.get("exclude") || "").trim();
+      if (!matchId) {
+        return fail("mac-kimligi-yok", { status: 400 });
+      }
+      const others = states.filter(
+        (row) =>
+          String(row.matchId || "").trim() === matchId &&
+          (!exclude || String(row.uploaderSteamId || "") !== exclude),
+      );
+      const state = mergeLiveStateGroup(others);
+      return json(
+        { ok: true, active: Boolean(state), state: state || null },
+        { cacheSeconds: 2 },
+      );
+    }
 
     // AYNI MACTAKI kayitlar once tek bir tabloda birlestirilir.
     //

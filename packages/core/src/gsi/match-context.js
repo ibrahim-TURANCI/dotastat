@@ -267,6 +267,8 @@ export function buildLiveMatchContext(input = {}) {
         slot: livePlayer.slot,
         hero: normalizeHeroKey(livePlayer.hero),
         role: matchRole || rosterPlayer.dotaProfile?.primaryRole || "",
+        // Overwolf'un bu mactaki pozisyon tahmini; draft bunu kesin sayar.
+        matchRole,
         stats: statsByPlayerId[rosterPlayer.id] || null,
         live: livePlayer,
       });
@@ -300,6 +302,17 @@ export function buildLiveMatchContext(input = {}) {
     bans: liveState.draft?.bans || [],
     phase: liveState.phase,
     knownPlayers,
+    // Takimin pozisyon dizilimi: kadroda olmayan oyuncular da dahil. Pozisyonu
+    // ve hero'su bilinen oyuncunun pozisyonu draftta "dolu" gosterilir.
+    lineup: decorated
+      .filter((row) => row.team === myTeam && row.position >= 1)
+      .map((row) => ({
+        team: row.team,
+        position: row.position,
+        hero: row.hero || "",
+        heroConfirmed: row.heroConfirmed,
+        name: row.roster?.name || row.name || "",
+      })),
     heroOverrides: input.heroOverrides || {},
   });
 

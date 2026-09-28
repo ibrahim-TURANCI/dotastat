@@ -183,6 +183,7 @@ export {
   mergeLiveStateGroup,
   mergeLiveStatesByMatch,
   mergePlayerLists,
+  mergeRemoteLiveState,
 } from "./gsi/merge-live.js";
 
 // --- Canli mac item tavsiyesi ve takim analizi -------------------------------
