@@ -100,7 +100,14 @@ test("oyuncu satirinda dispel itemi yalnizca plandan gelir", () => {
       assert.ok(cm.has(row.buildsInto || row.key), row.key + " plan disi");
     }
   }
-  assert.ok(!advice.some((row) => row.reason.includes("debuff")));
+  // "debuff" gerekcesi ancak PLANDAKI bir iteme yazilabilir (CM'nin planinda
+  // BKB var; o dogru bir cevap). Plan disi bir iteme dispel gerekcesi yazmak
+  // yasak.
+  for (const row of advice) {
+    if (row.reason.includes("debuff")) {
+      assert.ok(cm.has(row.buildsInto || row.key), row.key + " plan disi");
+    }
+  }
 });
 
 test("Manta icin once Yasha, Yasha alininca Manta onerilir", () => {
