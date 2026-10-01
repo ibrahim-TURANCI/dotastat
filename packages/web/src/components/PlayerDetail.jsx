@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DEFAULT_PERIOD,
   OVERVIEW_RECENT_COUNT,
   ROLE_KEYS,
   ROLE_LABELS,
@@ -26,22 +27,18 @@ import {
   TrendBadge,
 } from "./primitives.jsx";
 import { MatchDetailModal } from "./MatchDetailModal.jsx";
+import { PeriodSwitch } from "./PeriodSwitch.jsx";
 import "./PlayerDetail.css";
 
 const TABS = [
   { key: "overview", label: "Genel" },
-  { key: "performance", label: "Performans" },
   { key: "heroes", label: "Hero havuzu" },
   { key: "matches", label: "Son maçlar" },
   { key: "synergy", label: "Sinerji" },
 ];
 
-const FIT_LABELS = {
-  excellent: "Çok uygun",
-  good: "Uygun",
-  neutral: "Nötr",
-  poor: "Zayıf",
-};
+/** Son Maclar sekmesinde bir sayfadaki mac sayisi. */
+const MATCHES_PAGE_SIZE = 10;
 
 /**
  * "Yenile" butonunun ipucu metni.
@@ -70,13 +67,6 @@ export function refreshTooltip(waitMs, busy) {
   );
 }
 
-const ROLE_SOURCE_LABELS = {
-  manual: "elle seçildi",
-  provider: "maç verisinden",
-  inferred: "istatistikten çıkarıldı",
-  profile: "oyuncu profilinden",
-};
-
 /**
  * Secilen oyuncunun detay paneli.
  *
@@ -84,16 +74,24 @@ const ROLE_SOURCE_LABELS = {
  *   playerKey: string,
  *   onClose: () => void,
  *   onDataChanged?: () => void,
- *   dataVersion?: string
- * }} props
+ *   dataVersion?: string,
+ *   period?: string
+ * }} props `period`: listede secili donem; Genel sekmesi onunla acilir.
  */
 export function PlayerDetail({
   playerKey,
   onClose,
   onDataChanged,
   dataVersion = "",
+  period: listPeriod = DEFAULT_PERIOD,
 }) {
   const [tab, setTab] = useState("overview");
+  // Genel sekmesinin donemi. Listede donem degisirse buraya da yansir;
+  // burada degistirmek listeyi etkilemez.
+  const [period, setPeriod] = useState(listPeriod);
+  useEffect(() => {
+    setPeriod(listPeriod);
+  }, [listPeriod]);
   // Panel acilirken onbellekten okur; saglayiciya yalnizca "Yenile" ile gider.
   const detail = useAsyncData((options) => api.player(playerKey, options), {
     deps: [playerKey],
@@ -126,16 +124,19 @@ export function PlayerDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataVersion]);
 
-  // Genel sekmesinin veriden uretilen ozeti. Yalnizca veri degisince yeniden
-  // hesaplanir; ayni veri ayni tavsiyeleri uretir (bkz. core/player-overview).
+  // Genel sekmesinin veriden uretilen ozeti, secili doneme gore (Hafta / Ay /
+  // Son 60). Yalnizca veri ya da donem degisince yeniden hesaplanir; ayni veri
+  // ayni tavsiyeleri uretir (bkz. core/player-overview).
   const overview = useMemo(
     () =>
       buildPlayerOverview({
         matches: detail.data?.matches || [],
         evaluations: detail.data?.evaluations || [],
         squads: detail.data?.squads || {},
+        period,
+        now: Date.now(),
       }),
-    [detail.data],
+    [detail.data, period],
   );
 
   /**
@@ -184,8 +185,7 @@ export function PlayerDetail({
     );
   }
 
-  const { player, form, effectivePotential, stats, matches, evaluations } =
-    detail.data;
+  const { player, form, stats, matches, evaluations } = detail.data;
 
   return (
     <div className="player-detail">
@@ -221,6 +221,12 @@ export function PlayerDetail({
             <RankMedal rank={player.rank} size={44} />
             <RankProgress progress={detail.data.mmrProgress} />
           </div>
+          <span
+            className="muted micro"
+            title="Verinin kaynaktan en son çekildiği zaman"
+          >
+            veri: {formatRelativeTime(detail.data.fetchedAt)}
+          </span>
           <button
             type="button"
             className="btn ghost small"
@@ -250,33 +256,35 @@ export function PlayerDetail({
         </p>
       ) : null}
 
-      <SummaryStrip
-        form={form}
-        potential={effectivePotential}
-        fetchedAt={detail.data.fetchedAt}
-      />
-
-      <nav className="tabs" role="tablist">
-        {TABS.map((row) => (
-          <button
-            key={row.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === row.key}
-            className={"tab" + (tab === row.key ? " active" : "")}
-            onClick={() => setTab(row.key)}
-          >
-            {row.label}
-          </button>
-        ))}
-      </nav>
+      <div className="tabs-bar">
+        <nav className="tabs" role="tablist">
+          {TABS.map((row) => (
+            <button
+              key={row.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === row.key}
+              className={"tab" + (tab === row.key ? " active" : "")}
+              onClick={() => setTab(row.key)}
+            >
+              {row.label}
+            </button>
+          ))}
+        </nav>
+        {/* Donem yalnizca Genel sekmesinin ozetini etkiler. */}
+        {tab === "overview" && overview.hasData ? (
+          <PeriodSwitch value={period} onChange={setPeriod} />
+        ) : null}
+      </div>
 
       <div className="tab-body">
         {tab === "overview" ? (
-          <OverviewTab player={player} overview={overview} onOpenTab={setTab} />
-        ) : null}
-        {tab === "performance" ? (
-          <PerformanceTab evaluations={evaluations} matches={matches} />
+          <OverviewTab
+            player={player}
+            overview={overview}
+            form={form}
+            onOpenTab={setTab}
+          />
         ) : null}
         {tab === "heroes" ? (
           <HeroPoolTab
@@ -301,6 +309,13 @@ export function PlayerDetail({
               mmrByMatch={detail.data.mmrByMatch}
               squads={detail.data.squads}
               accountId={String(player.player_id || "")}
+              onRosterRefreshed={() => {
+                // Mac detayi kadro uyelerini tazeledi ya da takim
+                // pozisyonlarini kaydetti: kadro eslesmesi, pozisyonlar ve
+                // kart listesi onbellekten yeniden okunur.
+                detail.reload();
+                onDataChanged?.();
+              }}
             />
           </>
         ) : null}
@@ -313,71 +328,30 @@ export function PlayerDetail({
 }
 
 /**
- * @param {{ form: Record<string, any>, potential: Record<string, any>, fetchedAt: string }} props
- */
-function SummaryStrip({ form, potential, fetchedAt }) {
-  return (
-    <div className="summary-strip">
-      <div className="summary-cell">
-        <span className="muted">Tahmini seviye</span>
-        <strong>
-          {potential?.min || 0} – {potential?.max || 0}
-        </strong>
-        <span className="muted micro">
-          {potential?.source === "blended"
-            ? "profil + son maçlar"
-            : "profil beklentisi"}{" "}
-          · gerçek MMR değil
-        </span>
-      </div>
-
-      <div className="summary-cell">
-        <span className="muted">Son maç ortalaması</span>
-        <strong>{form?.averagePerformanceRank || 0}</strong>
-        <span className="muted micro">Performance Rank</span>
-      </div>
-
-      <div className="summary-cell">
-        <span className="muted">Form</span>
-        <FormStrip form={form?.form || []} />
-        <span className="muted micro">
-          {form?.wins || 0}/{form?.matches || 0} ·{" "}
-          {formatPercent(form?.winRate)}
-        </span>
-      </div>
-
-      <div className="summary-cell">
-        <span className="muted">Eğilim</span>
-        <TrendBadge trend={form?.trend} />
-        <span className="muted micro">
-          veri: {formatRelativeTime(fetchedAt)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Genel sekmesi: veriden uretilen dort ozet + tavsiyeler, altinda elle
- * yazilmis karakter notlari.
+ * Genel sekmesi: KISA ozet. Dort ozet kutusu (secili doneme gore), tek bir
+ * tavsiye karti, oyun tarzi ve guclu / zayif yonler. Ayrintilar ilgili
+ * sekmelerde.
  *
  * @param {{
  *   player: Record<string, any>,
  *   overview: ReturnType<typeof buildPlayerOverview>,
+ *   form: Record<string, any>,
  *   onOpenTab: (tab: string) => void
  * }} props
  */
-function OverviewTab({ player, overview, onOpenTab }) {
+function OverviewTab({ player, overview, form, onOpenTab }) {
+  const character = player.character || {};
   return (
     <div className="stack" style={{ gap: 14 }}>
       {overview?.hasData ? (
-        <LiveOverview
-          playerId={player.id}
-          overview={overview}
-          onOpenTab={onOpenTab}
-        />
+        <LiveOverview overview={overview} form={form} onOpenTab={onOpenTab} />
       ) : null}
-      <CharacterNotes player={player} hasSummary={overview?.hasData} />
+      <AdviceCard
+        playerId={player.id}
+        overview={overview}
+        character={character}
+      />
+      <CharacterNotes character={character} hasSummary={overview?.hasData} />
     </div>
   );
 }
@@ -396,7 +370,9 @@ function OverviewTab({ player, overview, onOpenTab }) {
  */
 function useNewTipKeys(playerId, overview) {
   const [fresh, setFresh] = useState(() => new Set());
-  const storageKey = "dotastat:overview-seen:" + playerId;
+  // Donem basina ayri kayit: donem degistirmek tavsiyeleri "yeni" yapmasin.
+  const storageKey =
+    "dotastat:overview-seen:" + playerId + ":" + (overview?.period?.key || "");
   const signature = overview?.signature || "";
   const keys = (overview?.tips || []).map((row) => row.key);
   const keysText = keys.join("|");
@@ -429,17 +405,16 @@ function useNewTipKeys(playerId, overview) {
 }
 
 /**
- * Veriden uretilen dort kisa ozet ve tavsiyeler.
+ * Veriden uretilen dort kisa ozet.
  *
  * @param {{
- *   playerId: string,
  *   overview: ReturnType<typeof buildPlayerOverview>,
+ *   form: Record<string, any>,
  *   onOpenTab: (tab: string) => void
  * }} props
  */
-function LiveOverview({ playerId, overview, onOpenTab }) {
-  const fresh = useNewTipKeys(playerId, overview);
-  const { performance, heroPool, synergy, recent, tips } = overview;
+function LiveOverview({ overview, form, onOpenTab }) {
+  const { performance, heroPool, synergy, recent, period } = overview;
 
   const perfDelta = performance.delta;
   const perfTone =
@@ -452,14 +427,16 @@ function LiveOverview({ playerId, overview, onOpenTab }) {
   return (
     <>
       <div className="overview-summary">
-        <button
-          type="button"
-          className="overview-tile"
-          onClick={() => onOpenTab("performance")}
+        {/* Bilgi kutusu: bir sekme acmaz. */}
+        <div
+          className="overview-tile static"
+          title="Performance Rank gerçek MMR değildir; maçtaki performansın hangi seviyeye denk düştüğüne dair tahmindir."
         >
-          <span className="muted micro">Performans</span>
+          <span className="muted micro">
+            Performans ortalaması · {period.label}
+          </span>
           <strong>
-            {performance.recentAvgRank || "—"}
+            {performance.avgRank || "—"}
             {perfDelta !== null ? (
               <span className="overview-delta">
                 <DeltaArrow value={perfDelta} tone={perfTone} />
@@ -467,10 +444,11 @@ function LiveOverview({ playerId, overview, onOpenTab }) {
             ) : null}
           </strong>
           <span className="muted micro">
-            son {OVERVIEW_RECENT_COUNT} maç PR ort. · {performance.wins}/
-            {performance.matches} G ({formatPercent(performance.winRate)})
+            {performance.matches
+              ? `${performance.matches} maç · ${performance.wins} G (${formatPercent(performance.winRate)})`
+              : "Bu dönemde maç yok"}
           </span>
-        </button>
+        </div>
 
         <button
           type="button"
@@ -495,7 +473,9 @@ function LiveOverview({ playerId, overview, onOpenTab }) {
             ))}
           </span>
           <span className="muted micro">
-            son {heroPool.matches} maçta {heroPool.unique} farklı hero
+            {heroPool.matches
+              ? `${heroPool.matches} maçta ${heroPool.unique} farklı hero`
+              : "Bu dönemde maç yok"}
           </span>
         </button>
 
@@ -523,7 +503,7 @@ function LiveOverview({ playerId, overview, onOpenTab }) {
             </>
           ) : (
             <span className="muted micro">
-              Son maçlarda kadrodan biriyle ortak maç yok.
+              Bu dönemde kadrodan biriyle ortak maç yok.
             </span>
           )}
         </button>
@@ -533,7 +513,11 @@ function LiveOverview({ playerId, overview, onOpenTab }) {
           className="overview-tile"
           onClick={() => onOpenTab("matches")}
         >
-          <span className="muted micro">Son {recent.matches.length} maç</span>
+          <span className="overview-tile-head">
+            <span className="muted micro">Son maçlar</span>
+            {/* Eski ust seritteki "Egilim": son maclarin PR yonu. */}
+            <TrendBadge trend={form?.trend} />
+          </span>
           <FormStrip
             form={recent.matches.map((row) => row.result)}
             max={OVERVIEW_RECENT_COUNT}
@@ -549,44 +533,73 @@ function LiveOverview({ playerId, overview, onOpenTab }) {
           </span>
         </button>
       </div>
-
-      {tips.length ? (
-        <article className="note-card wide advice overview-tips">
-          <h4>Tavsiyeler</h4>
-          <ul>
-            {tips.map((row) => (
-              <li key={row.key} className={"tip tone-" + row.tone}>
-                {row.text}
-                {fresh.has(row.key) ? (
-                  <span className="chip accent tip-new">yeni</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </article>
-      ) : null}
     </>
   );
 }
 
 /**
- * Elle yazilmis karakter notlari (eski Genel sekmesi).
+ * Tek tavsiye karti: veriden uretilen tavsiyeler (secili doneme gore), elle
+ * yazilmis sinerji notlari ve oyuncuya ozel tavsiye. Eskiden uc ayri kartti.
  *
- * @param {{ player: Record<string, any>, hasSummary?: boolean }} props
+ * @param {{
+ *   playerId: string,
+ *   overview: ReturnType<typeof buildPlayerOverview>,
+ *   character: Record<string, any>
+ * }} props
  */
-function CharacterNotes({ player, hasSummary = false }) {
-  const character = player.character || {};
-  const blocks = [
-    { label: "Lane davranışı", value: character.laneBehavior },
-    { label: "Teamfight davranışı", value: character.teamfightBehavior },
-    {
-      label: "Harita / tempo / vision",
-      value: character.mapTempoVisionBehavior,
-    },
-    { label: "Takımda en iyi kullanım", value: character.bestTeamUsage },
-  ].filter((row) => row.value);
+function AdviceCard({ playerId, overview, character }) {
+  const fresh = useNewTipKeys(playerId, overview);
+  const tips = overview?.hasData ? overview.tips : [];
+  const notes = [
+    ...(character.synergyNotes || []),
+    ...(character.funnyAdvice ? [character.funnyAdvice] : []),
+  ].filter(Boolean);
 
-  if (!character.generalPlaystyle && !blocks.length) {
+  if (!tips.length && !notes.length) {
+    return null;
+  }
+
+  return (
+    <article className="note-card advice overview-tips">
+      <h4>Tavsiyeler</h4>
+      <ul>
+        {tips.map((row) => (
+          <li key={row.key} className={"tip tone-" + row.tone}>
+            {row.text}
+            {fresh.has(row.key) ? (
+              <span className="chip accent tip-new">yeni</span>
+            ) : null}
+          </li>
+        ))}
+        {notes.map((text, index) => (
+          <li key={"note-" + index} className="tip tone-note">
+            {text}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+/**
+ * Elle yazilmis karakter notlari: oyun tarzi ve guclu / zayif yonler.
+ *
+ * @param {{ character: Record<string, any>, hasSummary?: boolean }} props
+ */
+function CharacterNotes({ character, hasSummary = false }) {
+  const styleRows = [
+    { label: "Lane", value: character.laneBehavior },
+    { label: "Teamfight", value: character.teamfightBehavior },
+    { label: "Harita / tempo", value: character.mapTempoVisionBehavior },
+    { label: "Takımdaki yeri", value: character.bestTeamUsage },
+  ].filter((row) => row.value);
+  const traits = [
+    { tone: "good", label: "Güçlü", items: character.strengths },
+    { tone: "bad", label: "Zayıf", items: character.weaknesses },
+    { tone: "warn", label: "Gelişim", items: character.developmentAreas },
+  ].filter((row) => row.items?.length);
+
+  if (!character.generalPlaystyle && !styleRows.length && !traits.length) {
     // Veriden uretilen ozet ekrandaysa bos not uyarisi gereksiz kalabalik.
     return hasSummary ? null : (
       <EmptyState title="Bu oyuncu için karakter notu girilmemiş" />
@@ -595,135 +608,42 @@ function CharacterNotes({ player, hasSummary = false }) {
 
   return (
     <div className="overview-grid">
-      {character.generalPlaystyle ? (
-        <article className="note-card wide">
-          <h4>Genel oyun tarzı</h4>
-          <p>{character.generalPlaystyle}</p>
+      {character.generalPlaystyle || styleRows.length ? (
+        <article className="note-card">
+          <h4>Oyun tarzı</h4>
+          {character.generalPlaystyle ? (
+            <p>{character.generalPlaystyle}</p>
+          ) : null}
+          {styleRows.length ? (
+            <dl className="style-list">
+              {styleRows.map((row) => (
+                <Fragment key={row.label}>
+                  <dt>{row.label}</dt>
+                  <dd>{row.value}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          ) : null}
         </article>
       ) : null}
 
-      <ListCard title="Güçlü yönler" items={character.strengths} tone="good" />
-      <ListCard title="Zayıf yönler" items={character.weaknesses} tone="bad" />
-      <ListCard
-        title="Gelişim alanları"
-        items={character.developmentAreas}
-        tone="warn"
-      />
-
-      {blocks.map((row) => (
-        <article key={row.label} className="note-card">
-          <h4>{row.label}</h4>
-          <p>{row.value}</p>
-        </article>
-      ))}
-
-      {(character.synergyNotes || []).length ? (
-        <ListCard title="Sinerji notları" items={character.synergyNotes} />
-      ) : null}
-
-      {character.funnyAdvice ? (
-        <article className="note-card wide advice">
-          <h4>Tavsiye</h4>
-          <p>{character.funnyAdvice}</p>
-        </article>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * @param {{ title: string, items?: string[], tone?: string }} props
- */
-function ListCard({ title, items, tone }) {
-  if (!items || !items.length) {
-    return null;
-  }
-  return (
-    <article className={"note-card" + (tone ? " tone-" + tone : "")}>
-      <h4>{title}</h4>
-      <ul>
-        {items.map((row, index) => (
-          <li key={index}>{row}</li>
-        ))}
-      </ul>
-    </article>
-  );
-}
-
-/**
- * @param {{ evaluations: Array<Record<string, any>>, matches: Array<Record<string, any>> }} props
- */
-function PerformanceTab({ evaluations, matches }) {
-  if (!evaluations?.length) {
-    return <EmptyState title="Değerlendirme üretilecek maç bulunamadı" />;
-  }
-
-  const matchById = new Map((matches || []).map((row) => [row.matchId, row]));
-
-  return (
-    <div className="stack" style={{ gap: 10 }}>
-      <p className="muted micro">
-        Performance Rank gerçek MMR değildir; maçtaki performansın hangi
-        seviyeye denk düştüğüne dair tahmindir.
-      </p>
-      {evaluations.map((row) => {
-        const match = matchById.get(row.matchId);
-        return (
-          <article key={row.matchId} className="eval-row">
-            <div className="eval-head">
-              <HeroIcon hero={match?.hero} size={32} />
-              <div className="eval-head-text">
-                <strong>
-                  {heroDisplayName(match?.hero) || "Bilinmeyen hero"}
-                </strong>
-                <span className="muted micro eval-meta">
-                  <RoleBadge role={row.role} small />
-                  {ROLE_SOURCE_LABELS[row.roleSource] || row.roleSource}
-                  {row.heroFit
-                    ? " · hero uyumu: " +
-                      (FIT_LABELS[row.heroFit] || row.heroFit)
-                    : ""}
-                </span>
+      {traits.length ? (
+        <article className="note-card">
+          <h4>Güçlü ve zayıf yönler</h4>
+          <div className="trait-columns">
+            {traits.map((row) => (
+              <div key={row.tone} className={"trait-col tone-" + row.tone}>
+                <span className="trait-label">{row.label}</span>
+                <ul>
+                  {row.items.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
               </div>
-              <div className="eval-rank">
-                <strong>{row.performanceRank}</strong>
-                <span
-                  className={
-                    "chip " + (match?.result === "win" ? "good" : "bad")
-                  }
-                >
-                  {match?.result === "win" ? "Galibiyet" : "Mağlubiyet"}
-                </span>
-              </div>
-            </div>
-
-            {row.summary ? <p className="eval-summary">{row.summary}</p> : null}
-
-            <div className="eval-lists">
-              {(row.strengths || []).length ? (
-                <div>
-                  <span className="muted micro">İyi giden</span>
-                  <ul>
-                    {row.strengths.slice(0, 3).map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {(row.mistakes || []).length ? (
-                <div>
-                  <span className="muted micro">Geliştirilecek</span>
-                  <ul>
-                    {row.mistakes.slice(0, 3).map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          </article>
-        );
-      })}
+            ))}
+          </div>
+        </article>
+      ) : null}
     </div>
   );
 }
@@ -865,8 +785,10 @@ function MatchesTab({
   mmrByMatch,
   squads,
   accountId,
+  onRosterRefreshed,
 }) {
   const [openMatchId, setOpenMatchId] = useState("");
+  const [page, setPage] = useState(0);
   const squadByMatch = squads || {};
   // MMR sutunu HER ZAMAN durur. Eskiden kayit yoksa sutun tamamen
   // gizleniyordu; tablo oyuncudan oyuncuya sutun degistiriyor ve "MMR nereye
@@ -886,6 +808,14 @@ function MatchesTab({
   const openMatch = openMatchId
     ? matches.find((row) => row.matchId === openMatchId) || null
     : null;
+  // Liste yeniden okununca (ornek: mac detayindan sonra) sayfa korunur; mac
+  // sayisi azaldiysa son sayfaya cekilir.
+  const pageCount = Math.max(1, Math.ceil(matches.length / MATCHES_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageRows = matches.slice(
+    currentPage * MATCHES_PAGE_SIZE,
+    (currentPage + 1) * MATCHES_PAGE_SIZE,
+  );
 
   return (
     <div className="stack" style={{ gap: 10 }}>
@@ -922,7 +852,7 @@ function MatchesTab({
             </tr>
           </thead>
           <tbody>
-            {matches.map((row) => (
+            {pageRows.map((row) => (
               <tr
                 key={row.matchId}
                 className="match-row"
@@ -986,6 +916,30 @@ function MatchesTab({
         </table>
       </div>
 
+      {pageCount > 1 ? (
+        <nav className="matches-pager" aria-label="Maç sayfaları">
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => setPage(currentPage - 1)}
+            disabled={currentPage === 0}
+          >
+            ‹ Önceki
+          </button>
+          <span className="muted micro">
+            Sayfa {currentPage + 1} / {pageCount} · {matches.length} maç
+          </span>
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => setPage(currentPage + 1)}
+            disabled={currentPage >= pageCount - 1}
+          >
+            Sonraki ›
+          </button>
+        </nav>
+      ) : null}
+
       {openMatch ? (
         <MatchDetailModal
           match={openMatch}
@@ -995,6 +949,7 @@ function MatchesTab({
           mmrChange={changes[openMatch.matchId] || null}
           role={matchRoles?.[openMatch.matchId] || ""}
           onClose={() => setOpenMatchId("")}
+          onRosterRefreshed={onRosterRefreshed}
         />
       ) : null}
     </div>

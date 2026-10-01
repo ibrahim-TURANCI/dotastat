@@ -21,29 +21,6 @@
   font-size: 18px;
 }
 
-/* --- Ozet serit ------------------------------------------------------------ */
-
-.summary-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px;
-  margin: 14px 0;
-}
-
-.summary-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.summary-cell strong {
-  font-size: 17px;
-}
-
 /* --- Sekmeler -------------------------------------------------------------- */
 
 .tabs {
@@ -136,45 +113,6 @@
 }
 
 /* --- Degerlendirme satirlari ------------------------------------------------ */
-
-.eval-row {
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.eval-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.eval-head-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-/* Pozisyon rozeti + kaynak + hero uyumu tek satirda. */
-.eval-meta {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 3px;
-}
-
-.eval-rank {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.eval-rank strong {
-  font-size: 18px;
-}
 
 .eval-summary {
   margin: 9px 0 0;
@@ -467,4 +405,109 @@
 .stack-rival {
   margin-left: 3px;
   color: var(--bad);
+}
+
+/* --- Son maclar sayfalama ---------------------------------------------------- */
+
+.matches-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* --- Genel sekmesi: bilgi kutusu ------------------------------------------- */
+
+.overview-tile.static {
+  cursor: default;
+}
+
+.overview-tile.static:hover {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* --- Sekme satiri: sekmeler solda, donem secici sagda ------------------------ */
+
+/* Tek satir: secici HER ZAMAN en sagda kalir. Yer daralirsa secici alt satira
+   dusmez; sekmeler kendi icinde yatay kayar. */
+.tabs-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs-bar .tabs {
+  flex: 1 1 0;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.tabs-bar .period-switch {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* --- Genel sekmesi: Son 5 basligi, tavsiyeler, oyun tarzi -------------------- */
+
+.overview-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.overview-tips .tip.tone-note::marker {
+  color: var(--accent);
+}
+
+.style-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.style-list dt {
+  color: var(--txt-2);
+}
+
+.style-list dd {
+  margin: 0;
+  color: var(--txt-1);
+}
+
+.trait-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.trait-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.trait-col.tone-good .trait-label {
+  color: var(--good);
+}
+
+.trait-col.tone-bad .trait-label {
+  color: var(--bad);
+}
+
+.trait-col.tone-warn .trait-label {
+  color: var(--warn);
+}
+
+.trait-col ul {
+  margin-top: 4px;
+  font-size: 12.5px;
 }

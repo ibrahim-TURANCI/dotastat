@@ -971,6 +971,13 @@ function createServerApp(options) {
         refresh: request.query.refresh === "1",
         forcedRoles,
       });
+      // Son Maclar sekmesi onbellekteki TUM gecmisi sayfalayarak gosterir:
+      // degerlendirilen en yeni maclar + donem kiyasi icin tutulan eskiler.
+      const history = [...bundle.matches, ...(bundle.olderMatches || [])];
+      const historyEvaluations = [
+        ...bundle.evaluations,
+        ...(bundle.olderEvaluations || []),
+      ];
 
       // Masaustunde OLCULEN MMR yalnizca bu bilgisayarda oynayan oyuncu icin
       // vardir; DotaPlus logu baskasinin degerini yazmaz. Diger oyuncularda
@@ -978,7 +985,7 @@ function createServerApp(options) {
       // uc, herkesin buluta gonderdigi olculen degeri dondurur.
       const samples = isOwnProfile ? await mmr.history() : [];
       const mmrByMatch = core.attributeMmrToMatches({
-        matches: bundle.matches,
+        matches: history,
         samples,
       });
       // Madalyanin yanindaki MMR ve "kalan rank".
@@ -988,7 +995,10 @@ function createServerApp(options) {
       });
       // Her macta kadrodan kimlerin oldugu; yalnizca onbellek okunur.
       const squads = await playerData
-        .getMatchSquads(player, bundle)
+        .getMatchSquads(player, {
+          matches: history,
+          evaluations: historyEvaluations,
+        })
         .catch(() => ({}));
       response.json({
         ok: true,
@@ -997,8 +1007,8 @@ function createServerApp(options) {
         effectivePotential: bundle.effectivePotential,
         stats: bundle.stats,
         heroPool: bundle.heroPool,
-        matches: bundle.matches.slice(0, 25),
-        evaluations: bundle.evaluations.slice(0, 25),
+        matches: history,
+        evaluations: historyEvaluations,
         synergies: core.listSynergiesForPlayer(player.id),
         canEditRoles: isOwnProfile,
         matchRoles: forcedRoles,
@@ -1040,6 +1050,8 @@ function createServerApp(options) {
         ok: true,
         match: result.match,
         fromCache: result.fromCache,
+        refreshed: result.refreshed || [],
+        rolesUpdated: Boolean(result.rolesUpdated),
       });
     } catch (error) {
       response.status(500).json({

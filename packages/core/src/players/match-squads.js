@@ -8,6 +8,11 @@
  * zaten onbellekte duruyor: ayni `matchId` iki oyuncunun listesinde geciyorsa
  * ikisi o macta birlikteydi. Bu modul o eslesmeyi yapar; AG ISTEGI ATMAZ.
  *
+ * BAYAT LISTE: bir uyenin onbellekteki listesi maci oynamadan ONCE cekildiyse
+ * mac o listede yoktur ve uye eslesmede kaybolur. Bu yuzden onbellekte macin
+ * TAM DETAYI (on oyuncu) varsa o da kaynak sayilir: uye listede yoksa detaydaki
+ * hesap kimligine (`accountId`) bakilir.
+ *
  * TAKIM AYRIMI: iki satirda da `side` varsa ona bakilir. Eski kayitlarda
  * `side` yok; o zaman sonuca bakilir — ayni macta biri kazanip digeri
  * kaybettiyse karsi takimdalar.
@@ -45,23 +50,29 @@
  * @param {Array<Record<string, any>>} input.matches Bakilan oyuncunun maclari
  * @param {Array<{
  *   id: string,
+ *   accountId?: string,
  *   name?: string,
  *   avatar?: string,
  *   matches?: Array<Record<string, any>>,
  *   evaluations?: Array<Record<string, any>>
  * }>} input.roster Kadrodaki herkesin (bakilan dahil) onbellekteki verisi
+ * @param {Record<string, { players?: Array<Record<string, any>> }>} [input.details]
+ *   Onbellekteki mac detaylari (matchId -> detay). Istege bagli.
  * @returns {Record<string, { members: SquadMember[], allies: number, enemies: number }>}
  */
 export function buildMatchSquads(input) {
   const playerId = String(input?.playerId || "");
   const matches = Array.isArray(input?.matches) ? input.matches : [];
   const roster = Array.isArray(input?.roster) ? input.roster : [];
+  const details =
+    input?.details && typeof input.details === "object" ? input.details : {};
 
   // Kadro uyesi -> matchId -> satir. Her liste bir kez indekslenir.
   const indexed = roster
     .filter((row) => row && row.id)
     .map((row) => ({
       id: String(row.id),
+      accountId: String(row.accountId || ""),
       name: String(row.name || row.id),
       avatar: String(row.avatar || ""),
       byMatch: new Map(
@@ -94,7 +105,10 @@ export function buildMatchSquads(input) {
       const self = member.id === playerId;
       // Bakilan oyuncunun satiri her zaman kendi listesindeki satirdir; kadro
       // onbelleginde olmasa bile (ornek: ilk acilis) listeye girer.
-      const row = self ? own : member.byMatch.get(matchId);
+      const row = self
+        ? own
+        : member.byMatch.get(matchId) ||
+          detailRow(details[matchId], member.accountId);
       if (!row) {
         continue;
       }
@@ -164,6 +178,20 @@ export function buildMatchSquads(input) {
   }
 
   return out;
+}
+
+/**
+ * Mac detayinda verilen hesabin satiri.
+ * @param {{ players?: Array<Record<string, any>> }|undefined} detail
+ * @param {string} accountId
+ */
+function detailRow(detail, accountId) {
+  if (!accountId || !Array.isArray(detail?.players)) {
+    return undefined;
+  }
+  return detail.players.find(
+    (row) => String(row?.accountId || "") === accountId,
+  );
 }
 
 /**

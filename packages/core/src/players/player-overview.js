@@ -3,23 +3,44 @@
  *
  * NEDEN: Genel sekmesi yalnizca elle yazilmis karakter notlarini gosteriyordu;
  * notlar yeni maclar geldikce degismiyor ve "bu hafta ne oluyor" sorusuna hic
- * cevap vermiyordu. Bu modul mac listesinden dort kisa ozet (Performans, Hero
- * Havuzu, Sinerji, Son 5 Mac) ve bunlara bagli tavsiyeler uretir.
+ * cevap vermiyordu. Bu modul mac listesinden dort kisa ozet (Performans
+ * ortalamasi, Hero Havuzu, Sinerji, Son 5 Mac) ve bunlara bagli tavsiyeler
+ * uretir.
+ *
+ * DONEM: Performans, hero havuzu, sinerji ve tekrarlayan hata secilen
+ * pencereye gore hesaplanir (Hafta / Ay / Son 60 — kartlarla ayni tanim, bkz.
+ * weekly-score.js PERIODS). Performans degisimi kartlardaki gibi pencerenin
+ * `BASELINE_WINDOW_FACTOR` kati kadar onceki sureyle kiyaslanir. "Son 5 mac"
+ * kutusu ve ona bagli seri / olum tavsiyeleri donemden bagimsizdir.
  *
  * DETERMINIZM: cikti YALNIZCA girdiden turer — ayni veri her zaman ayni
  * tavsiyeleri, ayni sirada ve ayni `key` ile uretir. Veri degismediyse yeni
  * tavsiye cikmaz; `signature` de degismez. Arayuz "yeni" rozetini bu imzaya
  * ve tavsiye anahtarlarina bakarak verir (bkz. PlayerDetail.jsx).
  *
- * SAF FONKSIYON: depo okumaz, saat okumaz, ag istegi yapmaz.
+ * SAF FONKSIYON: depo okumaz, saat okumaz, ag istegi yapmaz. Takvim
+ * penceresinin bitisi girdiden gelir (`now`); verilmezse en yeni macin
+ * zamani kullanilir.
  */
 
 import { heroDisplayName } from "../heroes/hero-names.js";
+import {
+  BASELINE_WINDOW_FACTOR,
+  PERIODS,
+  isAllTimePeriod,
+  resolvePeriod,
+} from "./weekly-score.js";
 
 /** "Son maclar" ozetinin kapsadigi mac sayisi. */
 export const OVERVIEW_RECENT_COUNT = 5;
-/** Hero / arkadas egilimine bakilan pencere. */
-const TREND_WINDOW = 20;
+/**
+ * "Son 60" doneminin mac sayisi. `MATCH_FETCH_SIZE` ile ayni kalmali; oradan
+ * alinmiyor cunku player-data-service'i ice almak gerekirdi (bir test ikisini
+ * karsilastirir).
+ */
+export const OVERVIEW_ALL_MATCHES = 60;
+/** Hero havuzu kutusunda gosterilen hero sayisi. */
+const OVERVIEW_TOP_HEROES = 5;
 /** Bir hero ya da arkadas icin yorum yapmadan once gereken en az mac. */
 const MIN_SAMPLE = 3;
 /** Performance Rank degisiminin "anlamli" sayildigi fark. */
@@ -30,12 +51,15 @@ const MAX_TIPS = 4;
 /**
  * @param {Object} input
  * @param {Array<Record<string, any>>} [input.matches] Yeniden eskiye sirali
+ * @param {string} [input.period] "week" | "month" | "all"; verilmezse "all"
+ * @param {number} [input.now] Takvim penceresinin bitisi (ms)
  * @param {Array<Record<string, any>>} [input.evaluations]
  * @param {Record<string, { members: Array<Record<string, any>> }>} [input.squads]
  *   bkz. match-squads.js; yoksa sinerji yalnizca "veri yok" der
  * @returns {{
  *   signature: string,
  *   hasData: boolean,
+ *   period: { key: string, label: string, scope: string },
  *   performance: Record<string, any>,
  *   heroPool: Record<string, any>,
  *   synergy: Record<string, any>,
@@ -57,10 +81,13 @@ export function buildPlayerOverview(input = {}) {
       .map((row) => [String(row.matchId), row]),
   );
 
-  const recentRows = matches.slice(0, OVERVIEW_RECENT_COUNT);
-  const window = matches.slice(0, TREND_WINDOW);
+  const period = input.period ? resolvePeriod(input.period) : PERIODS.all;
+  const { window, baseline } = splitPeriod(matches, period, input.now);
+  const scope = periodScope(period);
 
-  const performance = summarizePerformance(matches, rankByMatch);
+  const recentRows = matches.slice(0, OVERVIEW_RECENT_COUNT);
+
+  const performance = summarizePerformance(window, baseline, rankByMatch);
   const heroPool = summarizeHeroes(window);
   const synergy = summarizeSynergy(window, squads);
   const recent = summarizeRecent(recentRows, rankByMatch, squads);
@@ -101,14 +128,14 @@ export function buildPlayerOverview(input = {}) {
     if (performance.delta < 0) {
       tip(
         "perf-down",
-        `Son ${OVERVIEW_RECENT_COUNT} maçın Performance Rank ortalaması öncekilerden ${Math.abs(performance.delta)} düşük.`,
+        `${capitalize(scope.text)} Performance Rank ortalaması ${scope.previous} göre ${Math.abs(performance.delta)} düşük.`,
         "warn",
         80,
       );
     } else {
       tip(
         "perf-up",
-        `Performance Rank son ${OVERVIEW_RECENT_COUNT} maçta ${performance.delta} yükseldi — form iyi.`,
+        `${capitalize(scope.text)} Performance Rank ortalaması ${scope.previous} göre ${performance.delta} yüksek — form iyi.`,
         "good",
         60,
       );
@@ -116,11 +143,11 @@ export function buildPlayerOverview(input = {}) {
   }
 
   // --- Tekrarlayan hata --------------------------------------------------------
-  const mistake = recurringMistake(matches.slice(0, 10), rankByMatch);
+  const mistake = recurringMistake(window, rankByMatch);
   if (mistake) {
     tip(
       "mistake-" + slug(mistake.text),
-      `Son maçlarda ${mistake.count} kez tekrar etti: ${mistake.text}`,
+      `${capitalize(scope.text)} ${mistake.count} kez tekrar etti: ${mistake.text}`,
       "warn",
       75,
     );
@@ -140,7 +167,7 @@ export function buildPlayerOverview(input = {}) {
   if (heroPool.worst) {
     tip(
       "hero-weak-" + heroPool.worst.hero,
-      `${heroDisplayName(heroPool.worst.hero)} son ${heroPool.worst.matches} maçta ${heroPool.worst.wins} galibiyet; bir süre başka hero dene.`,
+      `${heroDisplayName(heroPool.worst.hero)} ${scope.text} ${heroPool.worst.matches} maçta ${heroPool.worst.wins} galibiyet; bir süre başka hero dene.`,
       "bad",
       55,
     );
@@ -185,12 +212,14 @@ export function buildPlayerOverview(input = {}) {
     // Imza: en yeni mac + mac sayisi + degerlendirme sayisi. Yeni mac gelmeden
     // degismez, dolayisiyla "yeni tavsiye" rozeti de gereksiz yere yanmaz.
     signature: [
+      period.key,
       matches[0]?.matchId || "",
       matches.length,
       evaluations.length,
       Object.keys(squads).length,
     ].join(":"),
     hasData: matches.length > 0,
+    period: { key: period.key, label: period.label, scope: scope.text },
     performance,
     heroPool,
     synergy,
@@ -200,31 +229,79 @@ export function buildPlayerOverview(input = {}) {
 }
 
 /**
- * @param {Array<Record<string, any>>} matches
+ * Maclari secilen doneme ve kiyas tabanina ayirir.
+ *
+ * @param {Array<Record<string, any>>} matches Yeniden eskiye sirali
+ * @param {{ windowMs: number }} period
+ * @param {number|undefined} now
+ */
+function splitPeriod(matches, period, now) {
+  if (isAllTimePeriod(period)) {
+    return {
+      window: matches.slice(0, OVERVIEW_ALL_MATCHES),
+      baseline: matches.slice(OVERVIEW_ALL_MATCHES, OVERVIEW_ALL_MATCHES * 2),
+    };
+  }
+  const timeOf = (row) => new Date(row?.startedAt || 0).getTime() || 0;
+  const end =
+    Number(now) > 0 ? Number(now) : Math.max(0, ...matches.map(timeOf));
+  const start = end - period.windowMs;
+  const baselineStart = start - period.windowMs * BASELINE_WINDOW_FACTOR;
+  return {
+    window: matches.filter((row) => timeOf(row) >= start),
+    baseline: matches.filter((row) => {
+      const at = timeOf(row);
+      return at >= baselineStart && at < start;
+    }),
+  };
+}
+
+/**
+ * Donemin metinde nasil anildigi.
+ * @param {{ days: number, windowMs: number }} period
+ * @returns {{ text: string, previous: string }}
+ */
+function periodScope(period) {
+  if (isAllTimePeriod(period)) {
+    return {
+      text: "son " + OVERVIEW_ALL_MATCHES + " maçta",
+      previous: "önceki " + OVERVIEW_ALL_MATCHES + " maça",
+    };
+  }
+  return {
+    text: "son " + period.days + " günde",
+    previous: "önceki " + period.days * BASELINE_WINDOW_FACTOR + " güne",
+  };
+}
+
+/**
+ * Donemin Performance Rank ortalamasi ve kiyas tabanina gore degisimi.
+ *
+ * @param {Array<Record<string, any>>} window Donemdeki maclar
+ * @param {Array<Record<string, any>>} baseline Kiyas tabanindaki maclar
  * @param {Map<string, Record<string, any>>} rankByMatch
  */
-function summarizePerformance(matches, rankByMatch) {
-  const ranks = matches
-    .map((row) => Number(rankByMatch.get(String(row.matchId))?.performanceRank))
-    .map((value) => (Number.isFinite(value) && value > 0 ? value : null));
+function summarizePerformance(window, baseline, rankByMatch) {
+  const ranksOf = (rows) =>
+    rows
+      .map((row) =>
+        Number(rankByMatch.get(String(row.matchId))?.performanceRank),
+      )
+      .filter((value) => Number.isFinite(value) && value > 0);
 
-  const recent = ranks.slice(0, OVERVIEW_RECENT_COUNT).filter(isNumber);
-  const before = ranks
-    .slice(OVERVIEW_RECENT_COUNT, TREND_WINDOW)
-    .filter(isNumber);
-
-  const recentAvg = average(recent);
+  const current = ranksOf(window);
+  const before = ranksOf(baseline);
+  const avg = average(current);
   const beforeAvg = average(before);
   const delta =
-    recentAvg !== null && beforeAvg !== null && before.length >= MIN_SAMPLE
-      ? Math.round(recentAvg - beforeAvg)
+    avg !== null && beforeAvg !== null && before.length >= MIN_SAMPLE
+      ? Math.round(avg - beforeAvg)
       : null;
 
-  const window = matches.slice(0, TREND_WINDOW);
   const wins = window.filter((row) => row.result === "win").length;
 
   return {
-    recentAvgRank: recentAvg === null ? null : Math.round(recentAvg),
+    avgRank: avg === null ? null : Math.round(avg),
     previousAvgRank: beforeAvg === null ? null : Math.round(beforeAvg),
     delta,
     trend:
@@ -282,7 +359,7 @@ function summarizeHeroes(window) {
   return {
     unique: rows.length,
     matches: window.length,
-    top: rows.slice(0, 3),
+    top: rows.slice(0, OVERVIEW_TOP_HEROES),
     best,
     worst,
   };
@@ -423,11 +500,6 @@ function recurringMistake(rows, rankByMatch) {
   return top && top[1] >= MIN_SAMPLE ? { text: top[0], count: top[1] } : null;
 }
 
-/** @param {unknown} value */
-function isNumber(value) {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 /** @param {number[]} values */
 function average(values) {
   return values.length
@@ -446,6 +518,11 @@ function round2(value) {
  */
 function sum(rows, field) {
   return rows.reduce((total, row) => total + Number(row[field] || 0), 0);
+}
+
+/** @param {string} text */
+function capitalize(text) {
+  return text ? text.charAt(0).toLocaleUpperCase("tr") + text.slice(1) : "";
 }
 
 /** @param {string} text */

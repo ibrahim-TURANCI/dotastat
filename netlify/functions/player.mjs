@@ -66,6 +66,13 @@ export default async (request) => {
       forcedRoles,
       expectMatchId,
     });
+    // Son Maclar sekmesi onbellekteki TUM gecmisi sayfalayarak gosterir:
+    // degerlendirilen en yeni maclar + donem kiyasi icin tutulan eskiler.
+    const history = [...bundle.matches, ...(bundle.olderMatches || [])];
+    const historyEvaluations = [
+      ...bundle.evaluations,
+      ...(bundle.olderEvaluations || []),
+    ];
 
     // MMR HERKESE gosterilir: kayit oyuncunun KENDI hesabina yazilmistir
     // (bkz. mmr.mjs — anahtar oturum cerezinden gelir), okumak icin ayni
@@ -73,7 +80,7 @@ export default async (request) => {
     const samples =
       (await mmrStore().get("mmr:" + String(player.player_id)))?.samples || [];
     const mmrByMatch = attributeMmrToMatches({
-      matches: bundle.matches,
+      matches: history,
       samples,
     });
     // Madalyanin yanindaki MMR ve "kalan rank". Kurulumu olmayan oyuncuda
@@ -84,7 +91,10 @@ export default async (request) => {
     });
     // Her macta kadrodan kimlerin oldugu. Yalnizca onbellek okunur; eslesme
     // kurulamazsa bos kalir ve ekran eski haliyle calisir.
-    const squads = await getMatchSquads(player, bundle).catch(() => ({}));
+    const squads = await getMatchSquads(player, {
+      matches: history,
+      evaluations: historyEvaluations,
+    }).catch(() => ({}));
     return json(
       {
         ok: true,
@@ -93,8 +103,8 @@ export default async (request) => {
         effectivePotential: bundle.effectivePotential,
         stats: bundle.stats,
         heroPool: bundle.heroPool,
-        matches: bundle.matches.slice(0, 25),
-        evaluations: bundle.evaluations.slice(0, 25),
+        matches: history,
+        evaluations: historyEvaluations,
         synergies: listSynergiesForPlayer(player.id),
         // Arayuz pozisyon secicisini yalnizca kendi sayfasinda gosterir.
         canEditRoles: isOwnProfile,

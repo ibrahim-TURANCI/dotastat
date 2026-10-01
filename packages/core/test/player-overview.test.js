@@ -76,6 +76,34 @@ test("kadro eslesmesi: karsi takimdaki kadro uyesi ayrilir", () => {
   assert.equal(squads["9"].members.at(-1).team, "enemy");
 });
 
+test("kadro eslesmesi: bayat listede olmayan uye mac detayindan bulunur", () => {
+  const mine = [match("7", "win", { side: "radiant" })];
+  const squads = buildMatchSquads({
+    playerId: "a",
+    matches: mine,
+    roster: [
+      { id: "a", accountId: "1", name: "A", matches: mine },
+      // Listesi mactan once cekilmis: mac 7 yok.
+      { id: "b", accountId: "2", name: "B", matches: [match("6", "win")] },
+      { id: "c", accountId: "3", name: "C", matches: [] },
+    ],
+    details: {
+      7: {
+        players: [
+          { accountId: "1", ...match("7", "win", { side: "radiant" }) },
+          {
+            accountId: "2",
+            ...match("7", "win", { side: "radiant", hero: "lion" }),
+          },
+        ],
+      },
+    },
+  });
+  assert.equal(squads["7"].allies, 2);
+  assert.equal(squads["7"].members[1].name, "B");
+  assert.equal(squads["7"].members[1].hero, "lion");
+});
+
 test("kadro eslesmesi: eksik veri hata vermez", () => {
   assert.deepEqual(buildMatchSquads({}), {});
   const squads = buildMatchSquads({
@@ -148,17 +176,69 @@ test("genel ozet: ayni veri ayni sonucu, yeni mac yeni imzayi uretir", () => {
   assert.notEqual(next.signature, first.signature);
 });
 
-test("genel ozet: performans egilimi Performance Rank'tan olculur", () => {
+test("genel ozet: performans ortalamasi secilen donemden, kiyas oncesinden", () => {
+  const now = Date.parse("2026-09-30T12:00:00.000Z");
+  const daysAgo = (days) => new Date(now - days * 86400000).toISOString();
+  // 5 mac son 7 gunde (PR 2400), 7 mac 10-20 gun once (PR 3000).
   const matches = Array.from({ length: 12 }, (_, index) =>
-    match(String(100 - index), "win"),
+    match(String(100 - index), "win", {
+      startedAt: daysAgo(index < 5 ? index + 1 : 10 + index),
+      hero: index < 5 ? "lion" : "pudge",
+    }),
   );
   const evaluations = matches.map((row, index) => ({
     matchId: row.matchId,
     performanceRank: index < 5 ? 2400 : 3000,
   }));
-  const overview = buildPlayerOverview({ matches, evaluations });
-  assert.equal(overview.performance.recentAvgRank, 2400);
-  assert.equal(overview.performance.delta, -600);
-  assert.equal(overview.performance.trend, "down");
-  assert.ok(overview.tips.some((row) => row.key === "perf-down"));
+
+  const week = buildPlayerOverview({
+    matches,
+    evaluations,
+    period: "week",
+    now,
+  });
+  assert.equal(week.performance.avgRank, 2400);
+  assert.equal(week.performance.matches, 5);
+  assert.equal(week.performance.delta, -600);
+  assert.equal(week.performance.trend, "down");
+  assert.ok(week.tips.some((row) => row.key === "perf-down"));
+  // Hero havuzu da yalnizca donemdeki maclardan.
+  assert.deepEqual(
+    week.heroPool.top.map((row) => row.hero),
+    ["lion"],
+  );
+
+  const month = buildPlayerOverview({
+    matches,
+    evaluations,
+    period: "month",
+    now,
+  });
+  assert.equal(month.performance.matches, 12);
+  assert.equal(month.performance.avgRank, 2750);
+  assert.notEqual(month.signature, week.signature);
+
+  // Donem verilmezse "Son 60".
+  assert.equal(buildPlayerOverview({ matches }).period.key, "all");
+});
+
+test("genel ozet: donemde mac yoksa ortalama bos, hata yok", () => {
+  const overview = buildPlayerOverview({
+    matches: [match("1", "win", { startedAt: "2026-01-01T00:00:00.000Z" })],
+    period: "week",
+    now: Date.parse("2026-09-30T00:00:00.000Z"),
+  });
+  assert.equal(overview.hasData, true);
+  assert.equal(overview.performance.avgRank, null);
+  assert.equal(overview.performance.matches, 0);
+});
+
+test("genel ozet: Son 60 penceresi MATCH_FETCH_SIZE ile ayni", async () => {
+  const { MATCH_FETCH_SIZE } = await import(
+    "../src/players/player-data-service.js"
+  );
+  const { OVERVIEW_ALL_MATCHES } = await import(
+    "../src/players/player-overview.js"
+  );
+  assert.equal(OVERVIEW_ALL_MATCHES, MATCH_FETCH_SIZE);
 });

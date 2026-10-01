@@ -139,6 +139,7 @@ export { buildMatchSquads } from "./players/match-squads.js";
 export { buildMatchDetailView } from "./players/match-detail.js";
 export {
   buildPlayerOverview,
+  OVERVIEW_ALL_MATCHES,
   OVERVIEW_RECENT_COUNT,
 } from "./players/player-overview.js";
 

@@ -48,6 +48,18 @@ export const MATCH_FETCH_SIZE = 60;
 export const MATCH_HISTORY_SIZE = 200;
 
 /**
+ * Son Maclar kadro eslesmesinde onbellekteki mac detayina bakilacak en fazla
+ * mac sayisi (bkz. getMatchSquads). Yalnizca depo okumasidir.
+ */
+const SQUAD_DETAIL_SCAN = 40;
+
+/**
+ * Mac detayindan gelen takim pozisyonlarinin depo anahtari oneki
+ * (hesap kimligi eklenir). Bkz. saveTeamRoles.
+ */
+const TEAM_ROLES_PREFIX = "teamroles:";
+
+/**
  * Onbellekteki mac kaydinin sema surumu.
  *
  * 2: ward alanlari eksik veride `null` tasiyor. Surum 1 kayitlarinda ayni
@@ -654,7 +666,15 @@ export function createPlayerDataService(options) {
 
     // En yeni 60 mac degerlendirmenin kendisidir; daha eskileri yalnizca
     // donem kiyasinin tabanina gider (bkz. MATCH_HISTORY_SIZE).
-    const allMatches = matchResult.matches || [];
+    // Detayi acilmis maclarda takim dagilimindaki pozisyon kullanilir; liste
+    // ve degerlendirme mac detayiyla ayni pozisyonu gosterir (bkz.
+    // saveTeamRoles).
+    const teamRoles = await readTeamRoles(String(player.player_id));
+    const allMatches = (matchResult.matches || []).map((row) =>
+      teamRoles[String(row?.matchId)]
+        ? { ...row, role: teamRoles[String(row.matchId)] }
+        : row,
+    );
     return {
       ...buildPlayerEvaluation({
         player: merged,
@@ -907,18 +927,58 @@ export function createPlayerDataService(options) {
         .map(async (row) => {
           try {
             const result = await getPlayerMatches(row, { allowFetch: false });
-            return { id: row.id, name: row.name, matches: result.matches };
+            return {
+              id: row.id,
+              accountId: row.player_id,
+              name: row.name,
+              matches: result.matches,
+              fetchedAt: result.fetchedAt,
+            };
           } catch {
             return null;
           }
         }),
     );
+
+    // Bir uyenin listesi bir mac bittikten ONCE cekildiyse o mac listede
+    // yoktur. Bu maclar icin onbellekteki tam detay okunur (yalnizca depo
+    // okumasi; ag istegi yok). Tarama en yeni maclarla sinirli tutulur.
+    const listedAt = others
+      .filter(Boolean)
+      .map((row) => new Date(row.fetchedAt || 0).getTime() || 0);
+    const oldestList = listedAt.length ? Math.min(...listedAt) : Infinity;
+    const candidates = (bundle?.matches || [])
+      .filter((row) => {
+        const end =
+          new Date(row?.startedAt || 0).getTime() +
+          Number(row?.durationSeconds || 0) * 1000;
+        return row?.matchId && end >= oldestList;
+      })
+      .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
+      .slice(0, SQUAD_DETAIL_SCAN);
+    /** @type {Record<string, Record<string, any>>} */
+    const details = {};
+    await Promise.all(
+      candidates.map(async (row) => {
+        try {
+          const detail = await storage.get("match:" + row.matchId);
+          if (detail?.players?.length) {
+            details[String(row.matchId)] = detail;
+          }
+        } catch {
+          // Detay okunamadi: eslesme yalnizca listelerden yapilir.
+        }
+      }),
+    );
+
     return buildMatchSquads({
       playerId: player.id,
       matches: bundle?.matches || [],
+      details,
       roster: [
         {
           id: player.id,
+          accountId: player.player_id,
           name: player.name,
           matches: bundle?.matches || [],
           evaluations: bundle?.evaluations || [],
@@ -947,7 +1007,7 @@ export function createPlayerDataService(options) {
    * }} [detailOptions] `readForcedRoles`: kadro uyesinin elle girdigi
    *   pozisyonlar (matchId -> rol). Verilirse o pozisyon takim dagiliminda
    *   kesin kabul edilir ve kalanlar ona gore dagitilir.
-   * @returns {Promise<{ match: Record<string, any>|null, fromCache: boolean, error: string }>}
+   * @returns {Promise<{ match: Record<string, any>|null, fromCache: boolean, refreshed?: string[], error: string }>}
    */
   async function getMatchDetail(matchId, detailOptions = {}) {
     const id = String(matchId || "");
@@ -962,15 +1022,25 @@ export function createPlayerDataService(options) {
 
     /** @type {Array<Record<string, any>>|null} Kadronun bu mactaki satirlari */
     let listRows = null;
+    /** @type {Array<{ player: Record<string, any>, result: Record<string, any>|null }>|null} */
+    let rosterLists = null;
+    const readRosterLists = async () => {
+      if (!rosterLists) {
+        rosterLists = await Promise.all(
+          roster.map(async (player) => ({
+            player,
+            result: await getPlayerMatches(player, { allowFetch: false }).catch(
+              () => null,
+            ),
+          })),
+        );
+      }
+      return rosterLists;
+    };
     const rosterRows = async () => {
       if (!listRows) {
-        const lists = await Promise.all(
-          roster.map((row) =>
-            getPlayerMatches(row, { allowFetch: false }).catch(() => null),
-          ),
-        );
-        listRows = lists
-          .flatMap((result) => result?.matches || [])
+        listRows = (await readRosterLists())
+          .flatMap(({ result }) => result?.matches || [])
           .filter((row) => String(row?.matchId) === id);
       }
       return listRows;
@@ -1033,6 +1103,59 @@ export function createPlayerDataService(options) {
       (detail.players || []).map((row) => String(row?.accountId || "")),
     );
     const members = roster.filter((row) => accounts.has(String(row.player_id)));
+
+    // BAYAT LISTE TAZELEME: macta oynayan bir kadro uyesinin onbellekteki
+    // listesinde bu mac yoksa listesi mactan once cekilmistir; Son Maclar'da
+    // ve kadro eslesmesinde mac o uye icin eksik kalir. Kullanici maci actigi
+    // icin bu uyeler burada tazelenir (uye basina bir istek). Ayni mac icin
+    // ayni uye `MATCH_DETAIL_RETRY_MS` icinde tekrar denenmez; kaynak maci
+    // henuz vermiyorsa her acilis istek harcamasin.
+    // Yalnizca liste mac BITMEDEN once cekildiyse: daha sonra cekilmis bir
+    // listede mac yoksa (ornek: 200'luk gecmisten dusmus) tazeleme getirmez.
+    const lists = await readRosterLists();
+    const matchEnd =
+      new Date(detail.startedAt || 0).getTime() +
+      Number(detail.durationSeconds || 0) * 1000;
+    /** @type {string[]} Listesi tazelenip bu maci getiren kadro uyeleri */
+    const refreshed = [];
+    await Promise.all(
+      members.map(async (member) => {
+        const result = lists.find((row) => row.player === member)?.result;
+        const listed = (result?.matches || []).some(
+          (row) => String(row?.matchId) === id,
+        );
+        const listedAt = new Date(result?.fetchedAt || 0).getTime() || 0;
+        if (
+          listed ||
+          listedAt > matchEnd ||
+          !refreshWindow(result?.fetchedAt || "").allowed
+        ) {
+          return;
+        }
+        const marker = key + ":synced:" + member.player_id;
+        try {
+          if (await storage.get(marker)) {
+            return;
+          }
+          await storage.set(
+            marker,
+            { at: new Date().toISOString() },
+            { ttlMs: MATCH_DETAIL_RETRY_MS },
+          );
+          const fresh = await getPlayerMatches(member, {
+            refresh: true,
+            expectMatchId: id,
+          });
+          if (
+            (fresh?.matches || []).some((row) => String(row?.matchId) === id)
+          ) {
+            refreshed.push(member.id);
+          }
+        } catch {
+          // Tazelenemedi: mac detayi yine gosterilir.
+        }
+      }),
+    );
     /** @type {Record<string, string>} */
     const forcedRolesByAccount = {};
     if (typeof detailOptions.readForcedRoles === "function") {
@@ -1052,16 +1175,82 @@ export function createPlayerDataService(options) {
       );
     }
 
+    const view = buildMatchDetailView({
+      detail,
+      roster,
+      forcedRolesByAccount,
+      heroOverrides: detailOptions.heroOverrides || {},
+    });
+    const rolesUpdated = view ? await saveTeamRoles(id, view.players) : false;
+
     return {
-      match: buildMatchDetailView({
-        detail,
-        roster,
-        forcedRolesByAccount,
-        heroOverrides: detailOptions.heroOverrides || {},
-      }),
+      match: view,
       fromCache,
+      refreshed,
+      rolesUpdated,
       error: "",
     };
+  }
+
+  /**
+   * Mac detayinda TAKIM DAGILIMIYLA bulunan pozisyonlari kadro uyelerinin
+   * kaydina yazar (bkz. readTeamRoles).
+   *
+   * NEDEN: Son Maclar'daki pozisyon oyuncunun tek satirindan tahmin ediliyor;
+   * detay ise iki takimi birlikte dagitiyor (ayni takimda iki pos 4 olamaz).
+   * Ikisi farkli cikinca ayni mac iki ekranda farkli pozisyonla gorunuyordu.
+   * Detay bir kez acildiktan sonra liste ve degerlendirme bu pozisyonu
+   * kullanir. Elle girilen pozisyon zaten ayri tutuldugu icin yazilmaz.
+   *
+   * @param {string} matchId
+   * @param {Array<Record<string, any>>} players Detay gorunumunun satirlari
+   * @returns {Promise<boolean>} En az bir kayit degisti mi
+   */
+  async function saveTeamRoles(matchId, players) {
+    const results = await Promise.all(
+      (players || [])
+        .filter((row) => row.rosterId && row.accountId)
+        .map(async (row) => {
+          try {
+            const key = TEAM_ROLES_PREFIX + row.accountId;
+            const roles = { ...((await storage.get(key))?.roles || {}) };
+            const want =
+              row.roleSource === "manual" ? "" : String(row.role || "");
+            if ((roles[matchId] || "") === want) {
+              return false;
+            }
+            if (want) {
+              roles[matchId] = want;
+            } else {
+              delete roles[matchId];
+            }
+            // Mac kimlikleri artan sayi: en yenileri tutulur.
+            const kept = Object.keys(roles)
+              .sort((a, b) => (BigInt(b) > BigInt(a) ? 1 : -1))
+              .slice(0, MATCH_HISTORY_SIZE);
+            await storage.set(key, {
+              roles: Object.fromEntries(kept.map((id) => [id, roles[id]])),
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        }),
+    );
+    return results.some(Boolean);
+  }
+
+  /**
+   * Oyuncunun mac detaylarindan gelen takim pozisyonlari (matchId -> rol).
+   * @param {string} accountId
+   * @returns {Promise<Record<string, string>>}
+   */
+  async function readTeamRoles(accountId) {
+    try {
+      return (await storage.get(TEAM_ROLES_PREFIX + accountId))?.roles || {};
+    } catch {
+      return {};
+    }
   }
 
   return {
