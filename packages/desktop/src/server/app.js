@@ -14,7 +14,12 @@
 
 const path = require("node:path");
 const express = require("express");
-const { cloudFetch, hasCloudSession } = require("../services/cloud-session.js");
+const {
+  canAuthenticate,
+  cloudAuthState,
+  cloudFetch,
+  hasCloudSession,
+} = require("../services/cloud-session.js");
 
 /**
  * @param {Object} options
@@ -41,6 +46,12 @@ function createServerApp(options) {
   /** Bellekte tutulan son canli mac durumu (yalnizca GSI'dan gelen ham hali). */
   let liveState = null;
   let lastRawAt = "";
+  /**
+   * GSI'nin en son veri gonderdigi mac. Overwolf yedegi BU mac icin devreye
+   * girmez: GSI calisan bir kurulumda mac bitip GSI sustugunda yedek, ayni maci
+   * 0-0 skor ve 0:00 saatle "canli" diye yeniden aciyordu.
+   */
+  let gsiMatchId = "";
 
   /**
    * GSI durumunu, varsa Overwolf goruntusuyle zenginlestirir.
@@ -92,6 +103,9 @@ function createServerApp(options) {
     if (!snapshot?.matchId || snapshot.ended || !snapshot.activity) {
       return null;
     }
+    if (String(snapshot.matchId) === gsiMatchId) {
+      return null;
+    }
     const at = new Date(snapshot.at || 0).getTime();
     if (!Number.isFinite(at) || Date.now() - at > OVERWOLF_LIVE_WINDOW_MS) {
       return null;
@@ -123,7 +137,8 @@ function createServerApp(options) {
    * @returns {Record<string, any>|null}
    */
   function localLiveState() {
-    if (liveState && core.isLiveMatchFresh(liveState)) {
+    // Biten mac (POST_GAME, ana menu) taze olsa da canli sayilmaz.
+    if (liveState && core.isLiveMatchActive(liveState)) {
       return enrich(liveState);
     }
     return liveStateFromOverwolfOnly();
@@ -163,7 +178,171 @@ function createServerApp(options) {
   let refreshedMatchId = "";
 
   /**
-   * Mac bittiyse oyuncunun verisini bir kez tazeler.
+   * Mac bitisinden itibaren tazeleme denemeleri.
+   *
+   * Tek deneme yetmiyordu: GSI POST_GAME'i bildirdiginde mac henuz hicbir
+   * kaynakta yok. Stratz birkac dakikada, OpenDota bazen saatler sonra aliyor.
+   * Mac bulununca denemeler o oyuncu icin durur.
+   */
+  const AFTER_MATCH_RETRY_MS = [0.5, 2, 5, 10, 20, 40].map(
+    (minutes) => minutes * 60 * 1000,
+  );
+
+  /**
+   * Mac bitti mi? Bittiyse biten macin kimligini doner.
+   *
+   * Iki yoldan anlasilir: GSI POST_GAME'e gecti, ya da oyun suruyorken gelen
+   * bir sonraki kayit baska bir maci / ana menuyu anlatiyor (oyuncu POST_GAME
+   * gelmeden ayrildi).
+   *
+   * @param {Record<string, any>|null} before
+   * @param {Record<string, any>|null} after
+   * @returns {string}
+   */
+  function endedMatchId(before, after) {
+    const beforePhase = String(before?.phase || "").toUpperCase();
+    const afterPhase = String(after?.phase || "").toUpperCase();
+    const beforeId = String(before?.matchId || "");
+    const afterId = String(after?.matchId || "");
+
+    if (
+      afterPhase.includes("POST_GAME") &&
+      !beforePhase.includes("POST_GAME")
+    ) {
+      return afterId;
+    }
+    if (
+      beforeId &&
+      beforePhase.includes("GAME_IN_PROGRESS") &&
+      afterId !== beforeId
+    ) {
+      return beforeId;
+    }
+    return "";
+  }
+
+  /**
+   * Biten macta oynayan kadro oyunculari: bu bilgisayarin sahibi ve GSI/
+   * Overwolf kaydinda kimligi gorunen arkadaslar.
+   *
+   * @param {Record<string, any>|null} state
+   */
+  function rosterPlayersIn(state) {
+    const ids = new Set([ownAccountId()]);
+    for (const row of [
+      ...(state?.radiantPlayers || []),
+      ...(state?.direPlayers || []),
+    ]) {
+      ids.add(String(row?.accountId || "") || core.toAccountId(row?.steamId));
+    }
+    return [...ids]
+      .filter(Boolean)
+      .map((id) => core.findRosterPlayer(id))
+      .filter(Boolean);
+  }
+
+  /**
+   * Bir paket biten maci iceriyor mu?
+   * @param {{ matches?: Array<Record<string, any>> }|null} bundle
+   * @param {string} matchId
+   */
+  function bundleHasMatch(bundle, matchId) {
+    return (bundle?.matches || []).some(
+      (row) => String(row?.matchId || "") === matchId,
+    );
+  }
+
+  /**
+   * Sitedeki ortak onbellegi tazeletir; arkadaslar siteden baktiginda da
+   * son mac gorunsun. Kimlik cihaz anahtari (ya da site oturumu) ile gider.
+   *
+   * @param {Record<string, any>} player
+   * @param {string} matchId
+   * @returns {Promise<boolean>} sitedeki veri maci iceriyor mu
+   */
+  async function refreshOnSite(player, matchId) {
+    const base = cloudBase();
+    if (!base) {
+      return true;
+    }
+    const query = new URLSearchParams({ refresh: "1", expectMatchId: matchId });
+    const response = await cloudFetch(
+      base +
+        "/api/players/" +
+        encodeURIComponent(player.id) +
+        "?" +
+        query.toString(),
+      { method: "GET", timeoutMs: 30000 },
+    );
+    if (!response.ok) {
+      throw new Error("site " + response.status);
+    }
+    return bundleHasMatch(await response.json(), matchId);
+  }
+
+  /**
+   * Biten mac icin oyuncularin verisini hem yerelde hem sitede, mac bulunana
+   * kadar araliklarla tazeler.
+   *
+   * @param {string} matchId
+   * @param {Array<Record<string, any>>} players
+   */
+  function scheduleAfterMatchRefresh(matchId, players) {
+    /** oyuncu id -> { local: bulundu mu, site: bulundu mu } */
+    const done = new Map(
+      players.map((player) => [player.id, { local: false, site: false }]),
+    );
+
+    const attempt = async (index) => {
+      for (const player of players) {
+        const state = done.get(player.id);
+        if (!state.local) {
+          try {
+            const bundle = await playerData.getPlayerBundle(player, {
+              refresh: true,
+              expectMatchId: matchId,
+            });
+            state.local = bundleHasMatch(bundle, matchId);
+          } catch (error) {
+            logger.warn?.(
+              "Mac sonrasi tazeleme basarisiz",
+              String(error?.message || error),
+            );
+          }
+        }
+        if (!state.site) {
+          try {
+            state.site = await refreshOnSite(player, matchId);
+          } catch (error) {
+            logger.warn?.(
+              "Mac sonrasi site tazelemesi basarisiz",
+              String(error?.message || error),
+            );
+          }
+        }
+      }
+
+      const remaining = [...done.values()].some(
+        (state) => !state.local || !state.site,
+      );
+      const next = AFTER_MATCH_RETRY_MS[index + 1];
+      if (remaining && next !== undefined) {
+        const timer = setTimeout(
+          () => attempt(index + 1),
+          next - AFTER_MATCH_RETRY_MS[index],
+        );
+        timer.unref?.();
+      } else if (remaining) {
+        logger.warn?.("Biten mac kaynaklarda bulunamadi: " + matchId);
+      }
+    };
+
+    const timer = setTimeout(() => attempt(0), AFTER_MATCH_RETRY_MS[0]);
+    timer.unref?.();
+  }
+
+  /**
+   * Mac bittiyse kadro oyuncularinin verisini tazelemeye baslar.
    *
    * Kaynak maci hemen indekslemeyebilir, bu yuzden `expectMatchId` gecilir:
    * OpenDota maci vermezse zincir Stratz'a duser (bkz. provider-chain).
@@ -172,35 +351,27 @@ function createServerApp(options) {
    * @param {Record<string, any>|null} after
    */
   function maybeRefreshAfterMatch(before, after) {
-    const phase = String(after?.phase || "").toUpperCase();
-    const wasPlaying = !String(before?.phase || "")
-      .toUpperCase()
-      .includes("POST_GAME");
-
-    if (!phase.includes("POST_GAME") || !wasPlaying) {
-      return;
-    }
-
-    const matchId = String(after?.matchId || "");
+    const matchId = endedMatchId(before, after);
     if (!matchId || matchId === refreshedMatchId) {
       return;
     }
     refreshedMatchId = matchId;
 
-    const player = core.findRosterPlayer(ownAccountId());
-    if (!player) {
+    // Oyuncu listesi BITEN macin kaydindan alinir; ana menu kaydi bostur.
+    const source = String(after?.matchId || "") === matchId ? after : before;
+    const players = rosterPlayersIn(source);
+    if (!players.length) {
       return;
     }
 
-    logger.info?.("Mac bitti, veri tazeleniyor: " + matchId);
-    playerData
-      .getPlayerBundle(player, { refresh: true, expectMatchId: matchId })
-      .catch((error) =>
-        logger.warn?.(
-          "Mac sonrasi tazeleme basarisiz",
-          String(error?.message || error),
-        ),
-      );
+    logger.info?.(
+      "Mac bitti, veri tazeleniyor: " +
+        matchId +
+        " (" +
+        players.map((player) => player.name).join(", ") +
+        ")",
+    );
+    scheduleAfterMatchRefresh(matchId, players);
   }
 
   // --- GSI girisi ------------------------------------------------------------
@@ -214,9 +385,12 @@ function createServerApp(options) {
       const previous = liveState;
       liveState = core.normalizeGsiPayload(request.body || {});
       lastRawAt = new Date().toISOString();
+      if (liveState.matchId) {
+        gsiMatchId = String(liveState.matchId);
+      }
 
-      // Mac bitti mi? Bittiyse oyuncunun kendi verisini bir kez tazele ki
-      // "Yenile"ye basmadan son mac listeye dussun.
+      // Mac bitti mi? Bittiyse oyuncularin verisini tazele ki "Yenile"ye
+      // basmadan son mac listeye dussun.
       maybeRefreshAfterMatch(previous, liveState);
 
       // Kullanici elle SteamID girmediyse oyundan gelen kimlik kullanilir.
@@ -435,9 +609,9 @@ function createServerApp(options) {
       lastCloudError = "Ayarlarda site adresi tanımlı değil.";
       return null;
     }
-    if (!(await hasCloudSession(base))) {
+    if (!(await canAuthenticate(base))) {
       lastCloudError =
-        "Siteye giriş yapılmamış; sağ üstten Steam ile giriş yapmalısın.";
+        "Kimliğin henüz bilinmiyor; Dota'yı açıp bir maça girince otomatik tespit edilir.";
       return null;
     }
     try {
@@ -625,12 +799,23 @@ function createServerApp(options) {
   }
 
   /**
-   * Katalogu duzenleme yetkisi KADROYA baglidir (sitedeki kuralin aynisi).
+   * Katalogu OKUMA yetkisi kadroya baglidir (sitedeki kuralin aynisi).
    * @returns {boolean}
    */
   function canEditHeroPlans() {
     const accountId = ownAccountId();
     return Boolean(accountId && core.findRosterPlayer(accountId));
+  }
+
+  /**
+   * DUZENLEME ayrica site oturumu ister: site, cihaz kimligiyle gelen
+   * duzenlemeyi reddeder (bkz. netlify/functions/hero-plans.mjs). Oturum
+   * yokken dugme gosterilseydi duzenleme hep "siteye gonderilemedi"de
+   * kalirdi.
+   * @returns {Promise<boolean>}
+   */
+  async function canWriteHeroPlans() {
+    return canEditHeroPlans() && (await hasCloudSession(cloudBase()));
   }
 
   /**
@@ -671,6 +856,14 @@ function createServerApp(options) {
       });
       return;
     }
+    if (!(await canWriteHeroPlans())) {
+      response.status(401).json({
+        ok: false,
+        error: "oturum-yok",
+        message: "Tavsiyeleri düzenlemek için Steam ile giriş yapmalısın.",
+      });
+      return;
+    }
     response.json(catalogPayload(await readHeroCatalog({ fresh: true })));
   });
 
@@ -690,6 +883,14 @@ function createServerApp(options) {
         error: "kadroda-degil",
         message:
           "Tavsiye katalogunu yalnizca kadrodaki oyuncular duzenleyebilir.",
+      });
+      return;
+    }
+    if (!(await canWriteHeroPlans())) {
+      response.status(401).json({
+        ok: false,
+        error: "oturum-yok",
+        message: "Tavsiyeleri düzenlemek için Steam ile giriş yapmalısın.",
       });
       return;
     }
@@ -951,8 +1152,8 @@ function createServerApp(options) {
       const context = await buildContext(state, {
         freshPlans: request.query.plans === "fresh",
       });
-      // Duzenleme kadroya bagli; masaustunde kimlik ayarlardaki SteamID.
-      context.canEditItemPlans = canEditHeroPlans();
+      // Duzenleme kadroya VE site oturumuna bagli (bkz. canWriteHeroPlans).
+      context.canEditItemPlans = await canWriteHeroPlans();
       response.json({ ok: true, ...context });
     } catch (error) {
       response.status(500).json({
@@ -974,6 +1175,13 @@ function createServerApp(options) {
     // Site adresi bos ise Steam girisi ACILAMAZ (bkz. main.js ->
     // "dotastat:cloud-login"). Arayuz bunu tiklamadan once soylesin.
     const cloudConfigured = Boolean(cloudUrl);
+    // Giris yapilmadan da siteye bagli: cihaz kimligi her istege eklenir
+    // (bkz. services/cloud-session.js). `cloudRejected` site bu cihazi
+    // tanimadiginda (hesap baska bilgisayara bagli) acilir; o zaman bir kez
+    // Steam girisi gerekir.
+    const auth = cloudAuthState();
+    const cloudLinked = cloudConfigured && (cloudSignedIn || auth.deviceReady);
+    const cloudRejected = auth.rejected && !cloudSignedIn;
 
     const steamId = settings.resolveSteamId();
     if (!steamId) {
@@ -986,6 +1194,8 @@ function createServerApp(options) {
         signedIn: false,
         cloudSignedIn,
         cloudConfigured,
+        cloudLinked,
+        cloudRejected,
         user: null,
       });
       return;
@@ -999,6 +1209,8 @@ function createServerApp(options) {
       signedIn: true,
       cloudSignedIn,
       cloudConfigured,
+      cloudLinked,
+      cloudRejected,
       user: {
         steamId,
         accountId,
@@ -1033,7 +1245,7 @@ function createServerApp(options) {
             name: rosterPlayer?.name || "Bu bilgisayar",
             avatar: rosterPlayer?.avatar || "",
             rosterId: rosterPlayer?.id || "",
-            inGame: Boolean(liveState && core.isLiveMatchFresh(liveState)),
+            inGame: Boolean(liveState && core.isLiveMatchActive(liveState)),
             seenAt: new Date().toISOString(),
           },
         ]
@@ -1056,6 +1268,9 @@ function createServerApp(options) {
         // Gizli anahtarlar arayuze ham halde gonderilmez; yalnizca "dolu mu"
         // bilgisi gider. Arayuz "***" gonderirse deger degistirilmemis sayilir.
         ingestToken: current.ingestToken ? "***" : "",
+        // Cihaz anahtari arayuze hic gitmez; sizarsa baskasi bu hesap adina
+        // veri gonderebilir.
+        deviceKey: undefined,
         openDotaApiKey: current.openDotaApiKey ? "***" : "",
         stratzApiKey: current.stratzApiKey ? "***" : "",
       },

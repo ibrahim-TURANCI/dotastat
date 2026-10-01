@@ -2,7 +2,8 @@
  * Canli mac rolesi.
  *
  *   POST /api/live  — masaustu istemcisi (Electron) GSI durumunu buraya iter.
- *                     `x-dotastat-token` basligi ile korunur.
+ *                     Cihaz anahtari ya da Steam oturumuyla korunur
+ *                     (bkz. _lib/identity.mjs).
  *   GET  /api/live  — site ziyaretcileri (arkadaslar) canli maci buradan okur.
  *                     `?raw=1&matchId=..&exclude=..` masaustu uygulamasina
  *                     ayni macin diger yayincilarini ham olarak verir.
@@ -13,7 +14,7 @@
 
 import {
   buildLiveMatchContext,
-  isLiveMatchFresh,
+  isLiveMatchActive,
   mergeLiveStateGroup,
   mergeLiveStatesByMatch,
   normalizeGsiPayload,
@@ -22,6 +23,7 @@ import {
 import { getCachedLiveInputs } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
 import { readSession } from "./_lib/session.mjs";
+import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
 import { readHeroPlans } from "./_lib/hero-plans.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
@@ -52,26 +54,26 @@ const CACHE_SECONDS_IDLE = 5;
  * @param {Request} request
  */
 async function ingest(request) {
-  // Yetkilendirme iki yoldan olabilir:
+  // Yetkilendirme uc yoldan olabilir:
   //
-  //   1. STEAM OTURUMU (tercih edilen) — masaustu uygulamasi siteye Steam ile
-  //      giris yapar, cerezle gonderir. Kimlik IMZALI gelir: kimse baskasi
-  //      adina veri gonderemez ve kimseyle paylasilan bir sir dolasmaz.
+  //   1. CIHAZ ANAHTARI ya da STEAM OTURUMU (bkz. _lib/identity.mjs) —
+  //      kimlik dogrulanmis gelir: kimse baskasi adina veri gonderemez ve
+  //      kimseyle paylasilan bir sir dolasmaz. Masaustu uygulamasi giris
+  //      yapilmadan cihaz anahtariyla gonderir.
   //
   //   2. PAYLASILAN TOKEN (eski yol) — geriye donuk uyum icin duruyor.
   //      Guncellemeyi geciktiren kurulumlar kirilmasin diye kabul ediliyor.
   //      Token'i bilen herkes istedigi SteamID adina veri gonderebilir, bu
   //      yuzden yeni kurulumlarda kullanilmamali.
-  const session = readSession(request);
+  const { identity, error } = await readIdentity(request);
   const expected = String(process.env.LIVE_INGEST_TOKEN || "").trim();
   const provided = String(request.headers.get("x-dotastat-token") || "").trim();
   const tokenOk = Boolean(expected) && provided === expected;
 
-  if (!session && !tokenOk) {
-    return fail("yetkisiz", {
+  if (!identity && !tokenOk) {
+    return fail(error === "kimlik-yok" ? "yetkisiz" : error, {
       status: 401,
-      message:
-        "Canli mac verisi gondermek icin masaustu uygulamasindan Steam ile giris yap.",
+      message: IDENTITY_MESSAGES[error] || IDENTITY_MESSAGES["kimlik-yok"],
     });
   }
 
@@ -88,10 +90,10 @@ async function ingest(request) {
     return fail("durum-yok", { status: 400 });
   }
 
-  // Oturum varsa yukleyici kimligi CEREZDEN alinir; govdeye guvenilmez.
-  // Boylece biri baskasinin macini kendi adina yayinlayamaz.
-  const uploader = session
-    ? String(session.steamId || "")
+  // Kimlik varsa yukleyici ondan alinir; govdeye guvenilmez. Boylece biri
+  // baskasinin macini kendi adina yayinlayamaz.
+  const uploader = identity
+    ? identity.steamId
     : String(body?.uploaderSteamId || state.localSteamId || "").trim() ||
       "anonim";
 
@@ -146,7 +148,9 @@ async function readFreshStates() {
   const store = liveStore();
   const keys = (await store.keys()).filter((key) => key.startsWith("state:"));
   const rows = await Promise.all(keys.map((key) => store.get(key)));
-  return rows.filter((row) => row && isLiveMatchFresh(row));
+  // Biten mac (POST_GAME, ana menu) kaydi da taze gelir ama canli sayilmaz;
+  // sayilsaydi panel mac bittikten sonra kapanmiyordu.
+  return rows.filter((row) => row && isLiveMatchActive(row));
 }
 
 export default async (request) => {

@@ -25,7 +25,8 @@
  * yok ve arayuz de dugmeyi hic gostermiyor. Sunucu ayni sarti bagimsiz olarak
  * uygular: dugmenin gizli olmasi ucun korunmasi demek degil.
  *
- * Kimlik HER ZAMAN oturum cerezinden alinir; istek govdesinden gelen bir
+ * Kimlik HER ZAMAN oturum cerezinden ya da masaustu cihaz anahtarindan
+ * alinir (bkz. _lib/identity.mjs); istek govdesinden gelen bir
  * kimlige guvenilmez. Bu, mac pozisyonu ucuyla ayni sozlesmedir (bkz.
  * match-roles.mjs) — tek fark, kaydin kisiye degil gruba ait olmasi.
  *
@@ -38,25 +39,25 @@ import { findRosterPlayer, isCatalogAdmin } from "@dotastat/core";
 import {
   readHeroCatalog,
   saveHeroDefaults,
-  sessionAccountId,
   writeHeroPlan,
 } from "./_lib/hero-plans.mjs";
-import { readSession } from "./_lib/session.mjs";
+import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
 export default async (request) => {
-  const session = readSession(request);
-  if (!session) {
-    return fail("oturum-yok", {
+  // Masaustu uygulamasi cihaz anahtariyla gelir; sitede oturum cerezi.
+  const { identity, error } = await readIdentity(request);
+  if (!identity) {
+    return fail(error === "kimlik-yok" ? "oturum-yok" : error, {
       status: 401,
-      message: "Tavsiyeleri düzenlemek için Steam ile giriş yapmalısın.",
+      message:
+        error === "kimlik-yok"
+          ? "Tavsiyeleri düzenlemek için Steam ile giriş yapmalısın."
+          : IDENTITY_MESSAGES[error],
     });
   }
 
-  const accountId = sessionAccountId(session);
-  if (!accountId) {
-    return fail("hesap-cozulemedi", { status: 400 });
-  }
+  const accountId = identity.accountId;
 
   if (!findRosterPlayer(accountId)) {
     return fail("kadroda-degil", {
@@ -66,15 +67,33 @@ export default async (request) => {
     });
   }
 
-  const canSaveDefaults = isCatalogAdmin(accountId);
+  // OKUMA cihaz kimligiyle de olur: masaustu uygulamasi tavsiyeyi bu
+  // katalogdan uretiyor ve giris yapilmadan da calismali. DUZENLEME ise
+  // yalnizca siteden Steam girisiyle yapilir ("Tavsiyeleri yonet" ekrani).
+  const viaSession = identity.via === "session";
+  const canSaveDefaults = viaSession && isCatalogAdmin(accountId);
 
   if (request.method === "GET") {
     const { heroes, defaults } = await readHeroCatalog();
-    return json({ ok: true, accountId, heroes, defaults, canSaveDefaults });
+    return json({
+      ok: true,
+      accountId,
+      heroes,
+      defaults,
+      canSaveDefaults,
+      canEdit: viaSession,
+    });
   }
 
   if (request.method !== "POST") {
     return fail("desteklenmeyen-metot", { status: 405 });
+  }
+
+  if (!viaSession) {
+    return fail("oturum-yok", {
+      status: 401,
+      message: "Tavsiyeleri düzenlemek için siteden Steam ile giriş yap.",
+    });
   }
 
   let body = {};

@@ -11,7 +11,7 @@
  *   - Hata durumunda sessizce gecilir; oyun ici deneyim etkilenmez.
  */
 
-const { cloudFetch, hasCloudSession } = require("./cloud-session.js");
+const { canAuthenticate, cloudFetch } = require("./cloud-session.js");
 
 /** Iki gonderim arasindaki en kisa sure. */
 const MIN_INTERVAL_MS = 2500;
@@ -65,10 +65,10 @@ function createCloudRelay(options) {
     const config = getConfig();
 
     // Yetkilendirme icin iki yol var; en az biri hazir olmali.
-    //   - Steam oturumu (tercih edilen): kullanici uygulamadan siteye giris
-    //     yapmis, cerez Electron oturumunda duruyor.
+    //   - Cihaz kimligi ya da Steam oturumu (bkz. cloud-session.js): giris
+    //     gerekmez, SteamID oyundan tespit edilir.
     //   - Paylasilan token (eski yol): ayarlardan elle girilmis.
-    const signedIn = await hasCloudSession(config.cloudUrl);
+    const signedIn = await canAuthenticate(config.cloudUrl);
     if (
       !config.shareLive ||
       !config.cloudUrl ||

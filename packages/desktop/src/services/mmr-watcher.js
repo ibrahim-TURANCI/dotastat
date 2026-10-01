@@ -23,7 +23,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { cloudFetch, hasCloudSession } = require("./cloud-session.js");
+const { canAuthenticate, cloudFetch } = require("./cloud-session.js");
 
 /** DotaPlus loglarinin bulundugu klasor. */
 const LOG_DIR = path.join(
@@ -169,8 +169,8 @@ function createMmrWatcher(options) {
   }
 
   /**
-   * Okumalari siteye gonderir. Kimlik Steam oturum cerezinden gelir; ayri bir
-   * gizli anahtar gerekmez.
+   * Okumalari siteye gonderir. Kimlik cihaz anahtarindan (ya da varsa Steam
+   * oturumundan) gelir; giris yapmak gerekmez.
    *
    * @param {Array<{ at: string, mmr: number }>} samples
    */
@@ -182,9 +182,10 @@ function createMmrWatcher(options) {
       return;
     }
 
-    if (!(await hasCloudSession(cloudUrl))) {
-      // Siteye giris yapilmamis; MMR yalnizca bu bilgisayarda gorunur.
-      lastUpload = { ok: false, at: "", error: "site-girisi-yok" };
+    if (!(await canAuthenticate(cloudUrl))) {
+      // SteamID henuz bilinmiyor (oyun hic acilmadi); MMR simdilik yalnizca
+      // bu bilgisayarda gorunur, bir sonraki turda yeniden denenir.
+      lastUpload = { ok: false, at: "", error: "kimlik-yok" };
       return;
     }
 

@@ -23,6 +23,8 @@ export default async (request) => {
 
   const url = new URL(request.url);
   const refresh = url.searchParams.get("refresh") === "1";
+  // Detayda tazeleme yapildi; liste CDN kopyasini degil depoyu okumali.
+  const fresh = url.searchParams.has("fresh");
   const period = url.searchParams.get("period") || "";
 
   try {
@@ -44,7 +46,7 @@ export default async (request) => {
         disclaimer:
           "performanceRank ve performans profili degerleri gercek MMR degildir, seviye tahminidir.",
       },
-      { cacheSeconds: refresh ? 0 : 60 },
+      { cacheSeconds: refresh || fresh ? 0 : 60 },
     );
   } catch (error) {
     return fail("oyuncu-listesi-alinamadi", {

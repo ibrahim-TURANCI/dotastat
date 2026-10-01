@@ -1,7 +1,7 @@
 /**
  * Kalici depolama katmani (Netlify Blobs).
  *
- * Yedi kova kullanilir:
+ * Sekiz kova kullanilir:
  *   - `players`     : OpenDota mac onbellegi (oyuncu basina, TTL'li)
  *   - `live`        : masaustu istemcisinin gonderdigi canli mac durumu
  *   - `presence`    : online kullanicilar (heartbeat)
@@ -9,6 +9,7 @@
  *   - `item-plans`  : ESKI hero tavsiye duzenlemesi (yalnizca okunur)
  *   - `hero-plans`  : hero basina tavsiye ve analiz duzenlemesi
  *   - `mmr`         : masaustunden gelen MMR okumalari
+ *   - `devices`     : hesaplara bagli masaustu cihaz anahtarlarinin ozetleri
  *
  * YERELDE NEDEN AYRI BIR KOPYA VAR
  * --------------------------------
@@ -138,19 +139,84 @@ function unwrap(row) {
 }
 
 /**
+ * Netlify uzerinde mi calisiyoruz (yerel CLI degil)?
+ *
+ * Orada diske dusmek GUVENLI DEGIL: fonksiyon kabinin diski gecicidir ve
+ * bostur. Eskiden Blobs baglantisi bir kez kurulamayinca kova sessizce o
+ * bos diske dusuyor, kab sicak kaldikca (bkz. player-data.mjs -> cachedService)
+ * TUM okumalar "kayit yok" donuyordu: kadronun hepsi "veri bekleniyor"a
+ * dusuyor, ilk dort oyuncu sifirdan cekiliyor ve bu bos sonuc CDN'de
+ * bekletiliyordu.
+ */
+const ON_NETLIFY =
+  !IS_DEV &&
+  Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.SITE_ID);
+
+/** Blobs okumasi hata verirse kac kez daha denenir. */
+const READ_RETRIES = 1;
+
+/**
+ * Blobs okunamadi. Ust katman bunu "kayit yok" ile KARISTIRMAMALI: yanit
+ * hata doner ve arayuz elindeki son veriyi gostermeye devam eder.
+ */
+export class StoreUnavailableError extends Error {
+  /**
+   * @param {string} name
+   * @param {unknown} cause
+   */
+  constructor(name, cause) {
+    super(
+      "Depo okunamadi (" +
+        name +
+        "): " +
+        String(/** @type {any} */ (cause)?.message || cause),
+    );
+    this.name = "StoreUnavailableError";
+    this.code = "depo-okunamadi";
+  }
+}
+
+/**
  * @param {string} name kova adi
  */
 export function createStore(name) {
   /** @type {ReturnType<typeof getStore>|null} */
   let blobs = null;
-  try {
-    blobs = getStore({ name, consistency: "strong" });
-  } catch {
-    blobs = null;
-  }
 
-  // Blobs yoksa her sey diske; varsa yalnizca yerelde diske de aynalanir.
-  const mirrorToDisk = !blobs || IS_DEV;
+  /**
+   * Blobs baglantisi. Kurulamazsa SONRAKI cagrida yeniden denenir; ilk
+   * hatanin kabin omru boyunca kalici olmasi yukaridaki sorunu doguruyordu.
+   * @returns {ReturnType<typeof getStore>|null}
+   */
+  function connect() {
+    if (!blobs) {
+      try {
+        blobs = getStore({ name, consistency: "strong" });
+      } catch {
+        blobs = null;
+      }
+    }
+    return blobs;
+  }
+  connect();
+
+  /**
+   * Blobs yoksa her sey diske; varsa yalnizca yerelde diske de aynalanir.
+   * Netlify uzerinde diske HIC dusulmez (bkz. ON_NETLIFY).
+   */
+  const mirrorToDisk = !ON_NETLIFY && (!blobs || IS_DEV);
+
+  /**
+   * Netlify uzerinde Blobs zorunludur.
+   * @returns {ReturnType<typeof getStore>|null}
+   */
+  function requireBlobs() {
+    const store = connect();
+    if (!store && ON_NETLIFY) {
+      throw new StoreUnavailableError(name, "baglanti kurulamadi");
+    }
+    return store;
+  }
 
   /**
    * @param {string} key
@@ -169,7 +235,9 @@ export function createStore(name) {
 
   return {
     name,
-    usingBlobs: Boolean(blobs),
+    get usingBlobs() {
+      return Boolean(connect());
+    },
     mirroringToDisk: mirrorToDisk,
 
     /**
@@ -177,27 +245,40 @@ export function createStore(name) {
      * @returns {Promise<unknown|null>}
      */
     async get(key) {
-      if (blobs) {
-        try {
-          const row = await blobs.get(key, { type: "json" });
-          const value = unwrap(row);
-          if (value !== null) {
-            return value;
-          }
-          // Omru dolmus kayit SILINIR. TTL burada yazilimla uygulaniyor;
-          // silinmezse anahtar kovada sonsuza kadar kalir ve `keys()` her
-          // cagrildiginda listelenip tek tek okunur. Canli mac kovasi bunu
-          // dogrudan hissediyor: masaustu uygulamasini bir kez calistirmis
-          // herkes icin bir `state:` anahtari birikiyordu.
-          if (isExpired(row)) {
-            try {
-              await blobs.delete(key);
-            } catch {
-              // Silinemezse zarari yok; deger yine "yok" sayiliyor.
+      const store = requireBlobs();
+      if (store) {
+        /** @type {unknown} */
+        let lastError = null;
+        for (let attempt = 0; attempt <= READ_RETRIES; attempt += 1) {
+          try {
+            const row = await store.get(key, { type: "json" });
+            const value = unwrap(row);
+            if (value !== null) {
+              return value;
             }
+            // Omru dolmus kayit SILINIR. TTL burada yazilimla uygulaniyor;
+            // silinmezse anahtar kovada sonsuza kadar kalir ve `keys()` her
+            // cagrildiginda listelenip tek tek okunur. Canli mac kovasi bunu
+            // dogrudan hissediyor: masaustu uygulamasini bir kez calistirmis
+            // herkes icin bir `state:` anahtari birikiyordu.
+            if (isExpired(row)) {
+              try {
+                await store.delete(key);
+              } catch {
+                // Silinemezse zarari yok; deger yine "yok" sayiliyor.
+              }
+            }
+            lastError = null;
+            break;
+          } catch (error) {
+            lastError = error;
           }
-        } catch {
-          // Blobs okunamadi; asagidaki yerel kopyaya dusulur.
+        }
+        // OKUMA HATASI "KAYIT YOK" DEGILDIR. Netlify uzerinde hata yukari
+        // tasinir; aksi halde gecici bir Blobs sorunu kadronun verisini
+        // silinmis gibi gosterip kaynaktan bastan cektiriyordu.
+        if (lastError && ON_NETLIFY) {
+          throw new StoreUnavailableError(name, lastError);
         }
         // Blobs bos dondu. Yerelde bu, dev sunucusunun yeniden baslamis
         // olmasi demek — diskteki kopya hala gecerli.
@@ -221,9 +302,10 @@ export function createStore(name) {
         persistLocal(name);
       }
 
-      if (blobs) {
+      const store = requireBlobs();
+      if (store) {
         try {
-          await blobs.setJSON(key, row);
+          await store.setJSON(key, row);
           return true;
         } catch {
           return mirrorToDisk;
@@ -242,9 +324,10 @@ export function createStore(name) {
         persistLocal(name);
       }
 
-      if (blobs) {
+      const store = requireBlobs();
+      if (store) {
         try {
-          await blobs.delete(key);
+          await store.delete(key);
           return true;
         } catch {
           return mirrorToDisk;
@@ -261,9 +344,10 @@ export function createStore(name) {
     async keys() {
       /** @type {string[]} */
       let fromBlobs = [];
-      if (blobs) {
+      const store = requireBlobs();
+      if (store) {
         try {
-          const listing = await blobs.list();
+          const listing = await store.list();
           fromBlobs = (listing?.blobs || []).map((row) => row.key);
         } catch {
           fromBlobs = [];
@@ -313,3 +397,10 @@ export const heroPlanStore = () => createStore("dotastat-hero-plans");
  * cerezinden dogrulanir; TTL yoktur, gecmis birikir.
  */
 export const mmrStore = () => createStore("dotastat-mmr");
+/**
+ * Masaustu cihaz anahtarlarinin ozetleri (bkz. _lib/identity.mjs).
+ *
+ * Anahtar: `device:<accountId>`. Kaydi silmek o hesabin cihaz baglantisini
+ * sifirlar; bir sonraki masaustu istegi yeniden baglar.
+ */
+export const deviceStore = () => createStore("dotastat-devices");

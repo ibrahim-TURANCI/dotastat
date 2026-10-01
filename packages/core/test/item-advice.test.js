@@ -233,6 +233,27 @@ test("takim analizi: rakip bilindiginde avantaj listesi cikar", () => {
   assert.ok(analysis.advantages.length > 0);
 });
 
+test("takim onerisinde plansiz cekirdek itemi destege yazilmaz", () => {
+  // Rakipte uzaktan vuran hero'lar Harpoon'u tetikliyor; bu takimda kimsenin
+  // planinda Harpoon yok. Eskiden destek-once fallback'i onu Witch Doctor,
+  // Hoodwink ve Lina'ya "Alabilir" diye yaziyordu.
+  const analysis = buildTeamAnalysis({
+    allies: [gsiRow("witch_doctor"), gsiRow("hoodwink"), gsiRow("lina")],
+    enemies: [
+      overwolfRow("sniper"),
+      overwolfRow("drow_ranger"),
+      overwolfRow("medusa"),
+    ],
+    dataLevel: "heroes",
+    myTeam: "radiant",
+  });
+
+  assert.ok(
+    !analysis.radiant.items.some((row) => row.key === "harpoon"),
+    "Harpoon kimsenin planinda yokken onerildi",
+  );
+});
+
 test("takim analizi iki taraf icin de simetrik uretilir", () => {
   const analysis = buildTeamAnalysis({
     allies: [gsiRow("abaddon"), gsiRow("axe"), gsiRow("tidehunter")],

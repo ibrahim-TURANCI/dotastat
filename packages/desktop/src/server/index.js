@@ -10,6 +10,7 @@ const { loadCore } = require("../core-bridge.js");
 const { createServerApp } = require("./app.js");
 const { createFileStore } = require("./storage.js");
 const { createSettingsStore } = require("./settings.js");
+const { configureDeviceIdentity } = require("../services/cloud-session.js");
 const { createCloudRelay } = require("../services/cloud-relay.js");
 const { createCloudLiveWatcher } = require("../services/cloud-live.js");
 const { createMmrWatcher } = require("../services/mmr-watcher.js");
@@ -39,6 +40,13 @@ async function startServer(options) {
   const storage = createFileStore(
     path.join(options.userDataDir, "player-cache.json"),
   );
+
+  // Siteye giden her istek bu kurulumun cihaz kimligini tasir; Steam girisi
+  // gerekmez. SteamID oyundan (GSI) tespit edilir.
+  configureDeviceIdentity(() => ({
+    steamId: settings.resolveSteamId(),
+    key: settings.deviceKey(),
+  }));
 
   const relay = createCloudRelay({
     logger,

@@ -46,12 +46,20 @@ export const api = {
    * `period` ("week" | "month") her karta o donemin ozetini ekler (puan, G/M,
    * MMR degisimi, Performance Rank, mac sayisi) ve kartlari puana gore siralar.
    *
-   * @param {{ refresh?: boolean, period?: string }} [options]
+   * `fresh`: CDN'deki kopyayi atlar (kaynaga GITMEZ, yalnizca ortak onbellek
+   * okunur). Detayda "Yenile"den hemen sonra kullanilir; aksi halde liste
+   * CDN'in 60 saniyelik eski kopyasini gosterip yeni maclari gizliyordu.
+   *
+   * @param {{ refresh?: boolean, period?: string, fresh?: boolean }} [options]
    */
   players: (options = {}) => {
     const params = new URLSearchParams();
     if (options.refresh) {
       params.set("refresh", "1");
+    }
+    if (options.fresh) {
+      // Her cagri ayri adres: CDN onbellek anahtari sorgu dizesini kapsar.
+      params.set("fresh", String(Date.now()));
     }
     if (options.period) {
       params.set("period", options.period);

@@ -13,9 +13,10 @@ maç, item tavsiyesi ve draft asistanı da aynı sayfada görünür.
    **Steam ile giriş** ile giriş yaparsan kendi maçlarına pozisyon
    yazabilirsin. Kadrodaysan tavsiye kataloğunu da düzenleyebilirsin.
 2. **Oyun sırasında canlı panel için masaüstü uygulamasını kur.** Sitedeki
-   **Masaüstü sürümü** butonundan indir, uygulamada **Steam ile giriş** yap
-   ve Dota'yı bir kez yeniden başlat. Uygulama tepside çalışır, maçını siteye
-   gönderir.
+   **Masaüstü sürümü** butonundan indir ve Dota'yı bir kez yeniden başlat.
+   Giriş gerekmez: uygulama seni oyundan tanır, tepside çalışır, maçını ve
+   MMR değişimini siteye gönderir. Hesabın başka bir bilgisayara bağlıysa
+   uygulama **Bu bilgisayarı ekle** ile bir kez Steam girişi ister.
 3. **İstersen Overwolf ekle.** Sitedeki **MMR için Overwolf** butonuyla
    kurulur. Rakip pickleri, oyuncu pozisyonlarını ve maç başına gerçek MMR
    değişimini getirir. Kurulu değilse uygulama yine çalışır.

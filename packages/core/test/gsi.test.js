@@ -5,6 +5,7 @@ import { normalizeGsiPayload } from "../src/gsi/normalize-gsi.js";
 import {
   buildLiveMatchContext,
   isLiveMatchFresh,
+  isLiveMatchOver,
   selectLiveStateForViewer,
 } from "../src/gsi/match-context.js";
 import { listRoster, toSteamId64 } from "../src/players/roster.js";
@@ -324,4 +325,30 @@ test("bizim taraf: hicbir dogrudan sinyal yoksa kadro cogunlugu kullanilir", () 
   });
 
   assert.equal(buildLiveMatchContext({ liveState: state }).myTeam, "dire");
+});
+
+test("biten mac canli sayilmaz: POST_GAME ve ana menu", () => {
+  const playing = normalizeGsiPayload(samplePayload());
+  assert.equal(isLiveMatchOver(playing), false);
+  assert.equal(buildLiveMatchContext({ liveState: playing }).active, true);
+
+  // Mac bitti: GSI bir sure POST_GAME gondermeye devam eder.
+  const ended = normalizeGsiPayload({
+    ...samplePayload(),
+    map: {
+      ...samplePayload().map,
+      game_state: "DOTA_GAMERULES_STATE_POST_GAME",
+    },
+  });
+  assert.equal(isLiveMatchOver(ended), true);
+  assert.equal(buildLiveMatchContext({ liveState: ended }).active, false);
+
+  // Ana menu: harita blogu yok. Eskiden taze oldugu icin panel acik kaliyor
+  // ve oyun saati 0'dan saymaya basliyordu.
+  const menu = normalizeGsiPayload({
+    provider: { name: "Dota 2" },
+    player: { steamid: samplePayload().player.steamid, activity: "menu" },
+  });
+  assert.equal(isLiveMatchOver(menu), true);
+  assert.equal(buildLiveMatchContext({ liveState: menu }).active, false);
 });

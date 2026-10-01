@@ -221,7 +221,8 @@ export function PlayerEvaluationScreen({
           onClose={() => setSelected("")}
           // Detayda "Yenile"ye basildiginda ayni veri kartlari da degistirir;
           // listeyi eski haliyle birakmak "hangisi dogru" sorusunu doguruyordu.
-          onDataChanged={() => players.reload()}
+          // `fresh`: CDN'deki eski kopya atlanir, yeni mac aninda gorunur.
+          onDataChanged={() => players.reload({ fresh: true })}
           // Kadroda yeni veri gelince detay da onbellekten yeniden okunur.
           dataVersion={lastFetchedAt}
         />

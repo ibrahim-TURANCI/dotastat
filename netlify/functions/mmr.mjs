@@ -1,15 +1,15 @@
 /**
- * Giris yapmis kullanicinin MMR okumalari.
+ * Masaustu uygulamasini kullanan oyuncunun MMR okumalari.
  *
  *   POST /api/me/mmr  -> { samples: [{ at, mmr }] }
  *
  * Deger masaustu uygulamasindan gelir (bkz. desktop/services/mmr-watcher.js).
- * Kimlik OTURUM CEREZINDEN alinir: kimse baskasinin hesabina MMR yazamaz.
+ * Kimlik cihaz anahtarindan ya da oturum cerezinden alinir (bkz.
+ * _lib/identity.mjs): kimse baskasinin hesabina MMR yazamaz.
  */
 
 import { mergeMmrSamples } from "@dotastat/core";
-import { sessionAccountId } from "./_lib/match-roles.mjs";
-import { readSession } from "./_lib/session.mjs";
+import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
 import { mmrStore } from "./_lib/store.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
@@ -17,19 +17,15 @@ import { fail, json } from "./_lib/respond.mjs";
 const MAX_SAMPLES = 2000;
 
 export default async (request) => {
-  const session = readSession(request);
-  if (!session) {
-    return fail("oturum-yok", {
+  const { identity, error } = await readIdentity(request);
+  if (!identity) {
+    return fail(error === "kimlik-yok" ? "oturum-yok" : error, {
       status: 401,
-      message:
-        "MMR gondermek icin masaustu uygulamasindan Steam ile giris yap.",
+      message: IDENTITY_MESSAGES[error] || IDENTITY_MESSAGES["kimlik-yok"],
     });
   }
 
-  const accountId = sessionAccountId(session);
-  if (!accountId) {
-    return fail("hesap-cozulemedi", { status: 400 });
-  }
+  const accountId = identity.accountId;
 
   if (request.method !== "POST") {
     return fail("desteklenmeyen-metot", { status: 405 });
