@@ -21,9 +21,18 @@
  * okundugunda hepsi (ve daha eski `{ add, remove }` bicimindeki item-plan
  * kayitlari) birlestirilip ortak kayda tasinir.
  *
- * GUVENLIK: yazma yetkisi oturum cerezindeki account id'nin KADRODA olmasina
- * baglidir (bkz. hero-plans.mjs); istek govdesinden gelen bir kimlige
- * guvenilmez.
+ * VARSAYILAN
+ * ----------
+ * Kayit iki kume tasir: `heroes` (gecerli duzenlemeler; tavsiye motoru
+ * bunu kullanir) ve `defaults` (katalog yoneticisinin "Varsayilan olarak
+ * kaydet" dedigi andaki `heroes`). Ekrandaki "N hero duzenlenmis" ve vurgu
+ * ikisinin FARKIDIR (bkz. core editedHeroKeys); "Sifirla" hero'yu
+ * varsayilanina dondurur. Varsayilani kaydetmek tavsiyeyi degistirmez, yalnizca
+ * "neyin yeni duzenleme oldugu" sorusunun referansini tasir.
+ *
+ * GUVENLIK: yazma yetkisi oturum cerezindeki account id'nin KADRODA olmasina,
+ * varsayilani kaydetmek ise `catalogAdmin` olmasina baglidir (bkz.
+ * hero-plans.mjs); istek govdesinden gelen bir kimlige guvenilmez.
  */
 
 import {
@@ -103,66 +112,107 @@ async function migrateLegacyPlans() {
 }
 
 /**
- * Ortak katalogdaki tum hero duzenlemeleri.
+ * Ortak kaydin tamami: gecerli duzenlemeler ve varsayilan.
  *
- * @returns {Promise<Record<string, Record<string, any>>>}
+ * @returns {Promise<{ heroes: Record<string, Record<string, any>>, defaults: Record<string, Record<string, any>>, row: Record<string, any> }>}
  */
-export async function readHeroPlans() {
+export async function readHeroCatalog() {
   const store = heroPlanStore();
   const row = await store.get(SHARED_KEY);
   const stored = row && typeof row === "object" ? row.heroes : null;
   if (stored && typeof stored === "object") {
-    return normalizeHeroPlans(stored);
+    return {
+      heroes: normalizeHeroPlans(stored),
+      defaults: normalizeHeroPlans(row.defaults || {}),
+      row,
+    };
   }
 
   // Ortak kayit henuz yok: eski kisisel kayitlar tasinir ve BIR KEZ yazilir.
   const migrated = await migrateLegacyPlans();
-  await store.set(SHARED_KEY, {
+  const fresh = {
     heroes: migrated,
+    defaults: {},
     updatedAt: new Date().toISOString(),
     migrated: true,
-  });
-  return migrated;
+  };
+  await store.set(SHARED_KEY, fresh);
+  return { heroes: migrated, defaults: {}, row: fresh };
 }
 
 /**
- * Tek bir hero'nun duzenlemesini yazar veya siler.
+ * Ortak katalogdaki GECERLI hero duzenlemeleri (tavsiye motorunun girdisi).
  *
- * Bos bir govde ("hicbir alan yollanmadi") kaydi SILER: arayuzdeki "Sıfırla"
- * dugmesi budur ve hero tohum veriye geri doner.
+ * @returns {Promise<Record<string, Record<string, any>>>}
+ */
+export async function readHeroPlans() {
+  return (await readHeroCatalog()).heroes;
+}
+
+/**
+ * Tek bir hero'nun duzenlemesini yazar ya da varsayilanina dondurur.
+ *
+ * Bos bir govde ("hicbir alan yollanmadi") arayuzdeki "Sıfırla" dugmesidir:
+ * hero VARSAYILAN kaydina doner; varsayilanda yoksa tohum veriye.
  *
  * @param {string} accountId Yazan kisi (yalnizca iz olarak saklanir)
  * @param {string} hero
  * @param {Record<string, any>} patch
- * @returns {Promise<{ ok: boolean, error?: string, heroes: Record<string, any> }>}
+ * @returns {Promise<{ ok: boolean, error?: string, heroes: Record<string, any>, defaults: Record<string, any> }>}
  */
 export async function writeHeroPlan(accountId, hero, patch) {
   const heroKey = normalizeHeroKey(hero);
   if (!heroKey || !isKnownHero(heroKey)) {
-    return { ok: false, error: "gecersiz-hero", heroes: {} };
+    return { ok: false, error: "gecersiz-hero", heroes: {}, defaults: {} };
   }
 
   const clean = normalizeHeroOverride(patch);
-  const current = await readHeroPlans();
+  const { heroes: current, defaults, row } = await readHeroCatalog();
   const next = { ...current };
 
   if (Object.keys(clean).length) {
     next[heroKey] = clean;
+  } else if (defaults[heroKey]) {
+    next[heroKey] = defaults[heroKey];
   } else {
     delete next[heroKey];
   }
 
   if (Object.keys(next).length > MAX_HEROES) {
-    return { ok: false, error: "cok-fazla-kayit", heroes: current };
+    return { ok: false, error: "cok-fazla-kayit", heroes: current, defaults };
   }
 
   await heroPlanStore().set(SHARED_KEY, {
+    ...row,
     heroes: next,
+    defaults,
     updatedAt: new Date().toISOString(),
     updatedBy: String(accountId || ""),
   });
 
-  return { ok: true, heroes: next };
+  return { ok: true, heroes: next, defaults };
+}
+
+/**
+ * Gecerli duzenlemeleri VARSAYILAN olarak kaydeder.
+ *
+ * Tavsiye degismez (motor zaten `heroes` kumesini kullaniyor); degisen,
+ * ekrandaki "duzenlenmis" isaretinin referansidir. Yetki kontrolu cagiranda
+ * (bkz. hero-plans.mjs).
+ *
+ * @param {string} accountId Kaydeden kisi (iz olarak saklanir)
+ * @returns {Promise<{ heroes: Record<string, any>, defaults: Record<string, any> }>}
+ */
+export async function saveHeroDefaults(accountId) {
+  const { heroes, row } = await readHeroCatalog();
+  await heroPlanStore().set(SHARED_KEY, {
+    ...row,
+    heroes,
+    defaults: heroes,
+    defaultsSavedAt: new Date().toISOString(),
+    defaultsSavedBy: String(accountId || ""),
+  });
+  return { heroes, defaults: heroes };
 }
 
 export { MAX_HEROES, SHARED_KEY };

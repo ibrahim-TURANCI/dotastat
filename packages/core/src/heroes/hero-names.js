@@ -8,6 +8,7 @@
  * Bu modul ucunu tek bir anahtara indirger ve gorsel URL'lerini uretir.
  */
 
+import heroAttributes from "../data/hero-attributes.js";
 import heroIds from "../data/hero-ids.js";
 import heroLocalized from "../data/hero-localized.js";
 import heroRoles from "../data/hero-roles.js";
@@ -162,6 +163,25 @@ export function heroRoleProfile(heroKey) {
     counteredBy: Array.isArray(row.counteredBy) ? row.counteredBy : [],
     synergyWith: Array.isArray(row.synergyWith) ? row.synergyWith : [],
   };
+}
+
+/** Ana ozellikler, ekranda gorunecekleri sirayla. */
+export const HERO_ATTRIBUTES = ["str", "agi", "int", "all"];
+
+export const HERO_ATTRIBUTE_LABELS = {
+  str: "Strength",
+  agi: "Agility",
+  int: "Intelligence",
+  all: "Universal",
+};
+
+/**
+ * Hero'nun ana ozelligi (`str` | `agi` | `int` | `all`); bilinmiyorsa bos dize.
+ * @param {string} heroKey
+ * @returns {string}
+ */
+export function heroPrimaryAttribute(heroKey) {
+  return heroAttributes[normalizeHeroKey(heroKey)] || "";
 }
 
 export { HERO_ALIASES, HERO_ICON_SLUG_ALIASES, HERO_CDN };

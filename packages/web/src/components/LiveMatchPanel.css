@@ -342,6 +342,22 @@
   border-color: rgba(255, 182, 72, 0.45);
 }
 
+/* Ara parca (Yasha -> Manta): kutunun kosesinde kucuk bir ok isareti. */
+.advice-slot.step {
+  position: relative;
+}
+
+.advice-slot.step::after {
+  content: "›";
+  position: absolute;
+  right: 1px;
+  bottom: -2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--txt-0);
+  text-shadow: 0 0 2px #000;
+}
+
 .advice-slot.empty {
   border-style: dashed;
   border-color: rgba(148, 175, 212, 0.14);

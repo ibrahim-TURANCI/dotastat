@@ -227,7 +227,9 @@ test("takim analizi: rakip bilindiginde avantaj listesi cikar", () => {
   assert.equal(analysis.comparable, true);
   // Eksen adlari radar ile ortak: tabloda gorunen yuzde ile analizde kullanilan
   // puan ayni alandan gelmeli (bkz. hero-catalog.js -> ROLE_VALUE_KEYS).
-  assert.ok(analysis.scores.ours.durability > analysis.scores.theirs.durability);
+  assert.ok(
+    analysis.scores.ours.durability > analysis.scores.theirs.durability,
+  );
   assert.ok(analysis.advantages.length > 0);
 });
 
@@ -343,10 +345,9 @@ test("oyundan kaldirilmis item hicbir zaman onerilmez", () => {
     enemies: [overwolfRow("sniper")],
     dataLevel: "heroes",
   });
-  const keys = [
-    ...analysis.radiant.items,
-    ...analysis.dire.items,
-  ].map((row) => row.key);
+  const keys = [...analysis.radiant.items, ...analysis.dire.items].map(
+    (row) => row.key,
+  );
   assert.ok(!keys.some((key) => isRetiredItem(key)));
 });
 
@@ -368,4 +369,19 @@ test("hero-profiles'ta olmayan heroler de tavsiye ve radar uretir", () => {
     Object.values(bars).some((value) => value > 0),
     "profilsiz heroler radara katilmali",
   );
+});
+
+test("item counter kurali rakibin GERCEK item anahtariyla da tetiklenir", () => {
+  // Tablo `linkensphere` yaziyor, GSI `item_sphere` gonderiyor. Eskiden bu
+  // yuzden Linken's / Eul's / Ghost kurallari hic calismiyordu.
+  const advice = buildPlayerItemAdvice({
+    player: gsiRow("faceless_void"),
+    allies: [],
+    enemies: [{ ...gsiRow("antimage", ["item_sphere"]), team: "dire" }],
+    dataLevel: "full",
+  });
+  const nullifier = advice.find((row) => row.key === "nullifier");
+  assert.ok(nullifier, "Nullifier onerilmeli");
+  assert.equal(nullifier.group, "counter");
+  assert.match(nullifier.reason, /Linken/);
 });

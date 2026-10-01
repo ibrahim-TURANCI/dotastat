@@ -5,7 +5,15 @@
  *   POST /api/me/hero-plans  -> { hero, roleValues?, laneRoles?, traits?,
  *                                 counterHeroes?, counterItems?, requiredItems?,
  *                                 situationalItems?, removedItems? }
- *                               (hicbir alan yollanmazsa kayit SILINIR)
+ *                               (hicbir alan yollanmazsa hero VARSAYILANINA
+ *                               doner)
+ *   POST /api/me/hero-plans  -> { action: "save-defaults" }
+ *                               gecerli duzenlemeleri varsayilan olarak
+ *                               kaydeder (yalnizca catalogAdmin)
+ *
+ * GET yaniti `heroes` (gecerli) ve `defaults` (varsayilan) kumelerini ve
+ * kullanicinin varsayilani kaydedip kaydedemeyecegini (`canSaveDefaults`)
+ * tasir.
  *
  * KAYIT ORTAKTIR: katalog tek bir yerde tutulur ve kadrodaki herkes ayni
  * kaydi okuyup yazar; masaustu uygulamasi da bu ucu kullanir (bkz.
@@ -26,9 +34,10 @@
  * acilisinda 127 hero'luk bir tabloyu ag uzerinden tasimanin anlami yok.
  */
 
-import { findRosterPlayer } from "@dotastat/core";
+import { findRosterPlayer, isCatalogAdmin } from "@dotastat/core";
 import {
-  readHeroPlans,
+  readHeroCatalog,
+  saveHeroDefaults,
   sessionAccountId,
   writeHeroPlan,
 } from "./_lib/hero-plans.mjs";
@@ -57,12 +66,11 @@ export default async (request) => {
     });
   }
 
+  const canSaveDefaults = isCatalogAdmin(accountId);
+
   if (request.method === "GET") {
-    return json({
-      ok: true,
-      accountId,
-      heroes: await readHeroPlans(),
-    });
+    const { heroes, defaults } = await readHeroCatalog();
+    return json({ ok: true, accountId, heroes, defaults, canSaveDefaults });
   }
 
   if (request.method !== "POST") {
@@ -76,6 +84,17 @@ export default async (request) => {
     body = {};
   }
 
+  if (body.action === "save-defaults") {
+    if (!canSaveDefaults) {
+      return fail("yetki-yok", {
+        status: 403,
+        message: "Varsayılanı yalnızca katalog yöneticisi kaydedebilir.",
+      });
+    }
+    const saved = await saveHeroDefaults(accountId);
+    return json({ ok: true, accountId, canSaveDefaults, ...saved });
+  }
+
   const { hero, ...patch } = body;
   const result = await writeHeroPlan(accountId, hero, patch);
 
@@ -83,5 +102,11 @@ export default async (request) => {
     return fail(result.error || "kaydedilemedi", { status: 400 });
   }
 
-  return json({ ok: true, accountId, heroes: result.heroes });
+  return json({
+    ok: true,
+    accountId,
+    canSaveDefaults,
+    heroes: result.heroes,
+    defaults: result.defaults,
+  });
 };

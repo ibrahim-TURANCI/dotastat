@@ -22,8 +22,6 @@
  */
 export default {
   abaddon: {
-    laneRoles: ["offlane", "carry", "sup5"],
-    traits: ["shield", "armor"],
     roleValues: {
       carry: 85,
       support: 85,
@@ -34,6 +32,8 @@ export default {
       initiation: 20,
       push: 20,
     },
+    laneRoles: ["offlane", "sup5"],
+    traits: ["shield", "armor"],
     counterHeroes: [
       "alchemist",
       "keeper_of_the_light",
@@ -104,6 +104,9 @@ export default {
       "phase_boots",
       "aghanims_shard",
       "soul_ring",
+      "crimson_guard",
+      "assault",
+      "blade_mail",
     ],
     situationalItems: [
       "shivas_guard",
@@ -112,16 +115,15 @@ export default {
       "black_king_bar",
       "power_treads",
       "guardian_greaves",
-      "crimson_guard",
       "gungir",
       "pipe",
       "heart",
+      "wind_waker",
+      "boots_of_bearing",
     ],
     removedItems: [],
   },
   alchemist: {
-    laneRoles: ["mid", "sup5", "carry"],
-    traits: ["regen"],
     roleValues: {
       carry: 85,
       support: 85,
@@ -132,6 +134,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["mid", "sup5", "carry"],
+    traits: ["regen"],
     counterHeroes: [
       "batrider",
       "terrorblade",
@@ -160,7 +164,7 @@ export default {
   },
   ancient_apparition: {
     laneRoles: ["mid", "sup5"],
-    traits: ["magical", "ranged"],
+    traits: ["magical", "ranged", "debuff"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -266,8 +270,6 @@ export default {
     removedItems: [],
   },
   arc_warden: {
-    laneRoles: ["mid", "carry"],
-    traits: ["ranged"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -278,6 +280,8 @@ export default {
       initiation: 20,
       push: 20,
     },
+    laneRoles: ["mid"],
+    traits: ["ranged"],
     counterHeroes: [
       "queenofpain",
       "furion",
@@ -320,7 +324,7 @@ export default {
   },
   axe: {
     laneRoles: ["offlane"],
-    traits: ["targeted", "passive", "armor"],
+    traits: ["targeted", "passive", "armor", "debuff"],
     roleValues: {
       carry: 35,
       support: 15,
@@ -373,7 +377,7 @@ export default {
   },
   bane: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["targeted"],
+    traits: ["targeted", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -411,6 +415,8 @@ export default {
       "aether_lens",
       "blink",
       "glimmer_cape",
+      "tranquil_boots",
+      "spirit_vessel",
     ],
     situationalItems: [
       "ancient_janggo",
@@ -418,12 +424,13 @@ export default {
       "sheepstick",
       "wind_waker",
       "pavise",
+      "octarine_core",
     ],
     removedItems: [],
   },
   batrider: {
     laneRoles: ["mid", "offlane"],
-    traits: ["movespeed"],
+    traits: ["targeted", "movespeed", "debuff", "spellspam"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -456,22 +463,26 @@ export default {
       "travel_boots",
       "wind_lace",
       "black_king_bar",
+      "assault",
+      "phase_boots",
+      "shivas_guard",
     ],
     situationalItems: [
       "overwhelming_blink",
       "heart",
       "refresher",
-      "shivas_guard",
       "octarine_core",
       "force_staff",
       "aether_lens",
       "boots_of_bearing",
+      "bloodstone",
+      "guardian_greaves",
     ],
     removedItems: [],
   },
   beastmaster: {
     laneRoles: ["offlane"],
-    traits: ["targeted"],
+    traits: ["targeted", "spellspam"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -508,21 +519,28 @@ export default {
       "helm_of_the_dominator",
       "ultimate_scepter",
       "black_king_bar",
+      "phase_boots",
+      "blade_mail",
+      "assault",
     ],
     situationalItems: [
       "refresher",
       "helm_of_the_overlord",
-      "assault",
       "sheepstick",
       "shivas_guard",
       "vladmir",
       "ancient_janggo",
+      "bloodstone",
+      "overwhelming_blink",
+      "guardian_greaves",
+      "wind_waker",
+      "heart",
     ],
     removedItems: [],
   },
   bloodseeker: {
     laneRoles: ["mid"],
-    traits: ["movespeed"],
+    traits: ["movespeed", "debuff"],
     roleValues: {
       carry: 75,
       support: 25,
@@ -553,8 +571,6 @@ export default {
     removedItems: [],
   },
   bounty_hunter: {
-    laneRoles: ["carry", "sup4", "sup5"],
-    traits: ["invisible"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -565,6 +581,8 @@ export default {
       initiation: 20,
       push: 20,
     },
+    laneRoles: ["sup4", "sup5"],
+    traits: ["invisible", "debuff", "burst"],
     counterHeroes: [
       "marci",
       "storm_spirit",
@@ -641,7 +659,6 @@ export default {
     ],
     requiredItems: [
       "phase_boots",
-      "blade_mail",
       "spirit_vessel",
       "radiance",
       "assault",
@@ -658,12 +675,13 @@ export default {
       "shivas_guard",
       "octarine_core",
       "travel_boots",
+      "blade_mail",
     ],
     removedItems: [],
   },
   bristleback: {
     laneRoles: ["offlane", "carry"],
-    traits: ["regen", "passive", "armor"],
+    traits: ["regen", "passive", "armor", "spellspam"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -717,8 +735,6 @@ export default {
     removedItems: [],
   },
   broodmother: {
-    laneRoles: ["mid", "offlane", "carry"],
-    traits: ["regen", "movespeed"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -729,6 +745,8 @@ export default {
       initiation: 20,
       push: 80,
     },
+    laneRoles: ["mid", "offlane"],
+    traits: ["regen", "movespeed"],
     counterHeroes: [
       "batrider",
       "jakiro",
@@ -816,8 +834,6 @@ export default {
     removedItems: [],
   },
   chaos_knight: {
-    laneRoles: ["carry"],
-    traits: ["movespeed"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -828,6 +844,8 @@ export default {
       initiation: 80,
       push: 80,
     },
+    laneRoles: ["carry", "offlane"],
+    traits: ["movespeed"],
     counterHeroes: [
       "razor",
       "techies",
@@ -896,8 +914,6 @@ export default {
     removedItems: [],
   },
   clinkz: {
-    laneRoles: ["carry"],
-    traits: ["invisible", "escape", "ranged"],
     roleValues: {
       carry: 75,
       support: 25,
@@ -908,6 +924,8 @@ export default {
       initiation: 25,
       push: 75,
     },
+    laneRoles: ["carry"],
+    traits: ["invisible", "escape", "ranged"],
     counterHeroes: [],
     counterItems: [],
     requiredItems: [
@@ -1040,8 +1058,6 @@ export default {
     removedItems: [],
   },
   dark_willow: {
-    laneRoles: ["carry", "sup5"],
-    traits: ["escape"],
     roleValues: {
       carry: 25,
       support: 75,
@@ -1052,6 +1068,8 @@ export default {
       initiation: 25,
       push: 25,
     },
+    laneRoles: ["sup5", "sup4"],
+    traits: ["escape"],
     counterHeroes: ["dawnbreaker", "jakiro", "pangolier"],
     counterItems: [],
     requiredItems: [
@@ -1125,7 +1143,7 @@ export default {
   },
   dazzle: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["ranged"],
+    traits: ["ranged", "debuff", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -1156,26 +1174,33 @@ export default {
       "ghost",
       "solar_crest",
     ],
-    requiredItems: ["mekansm", "arcane_boots", "holy_locket", "glimmer_cape"],
+    requiredItems: [
+      "mekansm",
+      "arcane_boots",
+      "holy_locket",
+      "glimmer_cape",
+      "spirit_vessel",
+      "aether_lens",
+    ],
     situationalItems: [
       "sheepstick",
       "pavise",
       "aeon_disk",
-      "spirit_vessel",
       "pipe",
       "ultimate_scepter",
       "blink",
       "force_staff",
-      "aether_lens",
       "ghost",
       "assault",
       "guardian_greaves",
+      "boots_of_bearing",
+      "refresher",
     ],
     removedItems: [],
   },
   death_prophet: {
-    laneRoles: ["mid", "offlane", "carry"],
-    traits: [],
+    laneRoles: ["mid", "offlane"],
+    traits: ["movespeed", "debuff", "spellspam", "burst"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -1228,7 +1253,7 @@ export default {
   },
   disruptor: {
     laneRoles: ["sup5", "sup4"],
-    traits: [],
+    traits: ["debuff"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -1273,7 +1298,7 @@ export default {
     removedItems: [],
   },
   doom_bringer: {
-    laneRoles: ["offlane", "carry"],
+    laneRoles: ["offlane"],
     traits: ["targeted"],
     roleValues: {
       carry: 85,
@@ -1326,7 +1351,7 @@ export default {
     removedItems: [],
   },
   dragon_knight: {
-    laneRoles: ["carry"],
+    laneRoles: ["mid", "offlane"],
     traits: ["passive", "armor"],
     roleValues: {
       carry: 75,
@@ -1362,8 +1387,6 @@ export default {
     removedItems: [],
   },
   drow_ranger: {
-    laneRoles: ["carry"],
-    traits: ["ranged"],
     roleValues: {
       carry: 94,
       support: 8,
@@ -1374,6 +1397,8 @@ export default {
       initiation: 10,
       push: 52,
     },
+    laneRoles: ["carry"],
+    traits: ["ranged", "debuff"],
     counterHeroes: [
       "storm_spirit",
       "spirit_breaker",
@@ -1417,7 +1442,7 @@ export default {
   },
   earth_spirit: {
     laneRoles: ["mid", "offlane"],
-    traits: [],
+    traits: ["escape", "spellspam"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -1447,18 +1472,23 @@ export default {
       "power_treads",
       "magic_wand",
       "octarine_core",
+      "bloodstone",
+      "manta",
     ],
     situationalItems: [
       "aeon_disk",
       "ultimate_scepter",
       "crellas_crozier",
       "heart",
+      "bottle",
+      "power_treads",
+      "refresher",
     ],
     removedItems: [],
   },
   earthshaker: {
     laneRoles: ["mid", "offlane", "sup5"],
-    traits: ["magical"],
+    traits: ["magical", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -1486,6 +1516,9 @@ export default {
       "black_king_bar",
       "blink",
       "kaya",
+      "manta",
+      "blade_mail",
+      "pipe",
     ],
     situationalItems: [
       "refresher",
@@ -1551,8 +1584,6 @@ export default {
     removedItems: [],
   },
   ember_spirit: {
-    laneRoles: ["mid", "carry"],
-    traits: ["escape", "magical", "shield", "movespeed"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -1563,6 +1594,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["mid"],
+    traits: ["escape", "magical", "shield", "movespeed"],
     counterHeroes: [
       "visage",
       "wisp",
@@ -1606,8 +1639,8 @@ export default {
     removedItems: [],
   },
   enchantress: {
-    laneRoles: ["sup5", "sup4"],
-    traits: ["ranged"],
+    laneRoles: ["sup5", "sup4", "offlane"],
+    traits: ["regen", "passive", "ranged"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -1644,22 +1677,30 @@ export default {
       "power_treads",
       "ultimate_scepter",
       "magic_wand",
+      "essence_distiller",
+      "mekansm",
+      "aether_lens",
+      "arcane_boots",
+      "spirit_vessel",
+      "holy_locket",
     ],
     situationalItems: [
       "blink",
       "sheepstick",
       "boots_of_bearing",
-      "essence_distiller",
-      "holy_locket",
       "glimmer_cape",
       "witch_blade",
       "aghanims_shard",
+      "black_king_bar",
+      "crimson_guard",
+      "shivas_guard",
+      "refresher",
     ],
     removedItems: [],
   },
   enigma: {
-    laneRoles: ["carry", "offlane", "sup5"],
-    traits: ["magical"],
+    laneRoles: ["offlane", "sup5", "sup4"],
+    traits: ["magical", "debuff"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -1708,8 +1749,6 @@ export default {
     removedItems: [],
   },
   faceless_void: {
-    laneRoles: ["carry"],
-    traits: ["escape"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -1720,6 +1759,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["carry"],
+    traits: ["escape"],
     counterHeroes: [
       "skeleton_king",
       "chaos_knight",
@@ -1764,8 +1805,6 @@ export default {
     removedItems: [],
   },
   furion: {
-    laneRoles: ["mid", "offlane", "carry", "sup5"],
-    traits: ["ranged", "movespeed"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -1776,6 +1815,8 @@ export default {
       initiation: 20,
       push: 80,
     },
+    laneRoles: ["mid", "offlane", "carry", "sup5"],
+    traits: ["ranged", "movespeed"],
     counterHeroes: [
       "lone_druid",
       "broodmother",
@@ -1869,8 +1910,6 @@ export default {
     removedItems: [],
   },
   gyrocopter: {
-    laneRoles: ["carry"],
-    traits: ["ranged"],
     roleValues: {
       carry: 75,
       support: 25,
@@ -1881,6 +1920,8 @@ export default {
       initiation: 25,
       push: 25,
     },
+    laneRoles: ["carry"],
+    traits: ["ranged"],
     counterHeroes: [],
     counterItems: [],
     requiredItems: [
@@ -1902,7 +1943,7 @@ export default {
   },
   hoodwink: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["magical", "ranged"],
+    traits: ["magical", "ranged", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -1956,8 +1997,6 @@ export default {
     removedItems: [],
   },
   huskar: {
-    laneRoles: ["offlane", "mid", "carry"],
-    traits: ["regen", "targeted", "passive"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -1968,6 +2007,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["mid"],
+    traits: ["regen", "targeted", "passive"],
     counterHeroes: [
       "naga_siren",
       "skeleton_king",
@@ -2000,8 +2041,6 @@ export default {
     removedItems: [],
   },
   invoker: {
-    laneRoles: ["mid", "carry"],
-    traits: ["invisible", "magical"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -2012,6 +2051,8 @@ export default {
       initiation: 20,
       push: 80,
     },
+    laneRoles: ["mid"],
+    traits: ["invisible", "magical"],
     counterHeroes: [
       "treant",
       "bounty_hunter",
@@ -2056,7 +2097,7 @@ export default {
   },
   jakiro: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["magical", "ranged"],
+    traits: ["magical", "ranged", "debuff", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -2108,8 +2149,6 @@ export default {
     removedItems: [],
   },
   juggernaut: {
-    laneRoles: ["carry"],
-    traits: ["movespeed"],
     roleValues: {
       carry: 92,
       support: 10,
@@ -2120,6 +2159,8 @@ export default {
       initiation: 20,
       push: 68,
     },
+    laneRoles: ["carry"],
+    traits: ["movespeed"],
     counterHeroes: [
       "axe",
       "legion_commander",
@@ -2161,7 +2202,7 @@ export default {
   },
   keeper_of_the_light: {
     laneRoles: ["sup5"],
-    traits: [],
+    traits: ["movespeed", "burst"],
     roleValues: {
       carry: 25,
       support: 75,
@@ -2193,8 +2234,6 @@ export default {
     removedItems: [],
   },
   kez: {
-    laneRoles: ["carry"],
-    traits: ["invisible", "escape"],
     roleValues: {
       carry: 75,
       support: 25,
@@ -2205,6 +2244,8 @@ export default {
       initiation: 25,
       push: 25,
     },
+    laneRoles: ["carry"],
+    traits: ["invisible", "escape"],
     counterHeroes: [],
     counterItems: [],
     requiredItems: [
@@ -2226,8 +2267,6 @@ export default {
     removedItems: [],
   },
   kunkka: {
-    laneRoles: ["mid", "offlane", "carry", "sup5"],
-    traits: ["armor"],
     roleValues: {
       carry: 85,
       support: 85,
@@ -2238,6 +2277,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["mid", "offlane"],
+    traits: ["armor"],
     counterHeroes: [
       "bounty_hunter",
       "chen",
@@ -2280,7 +2321,7 @@ export default {
   },
   largo: {
     laneRoles: ["sup5", "sup4"],
-    traits: [],
+    traits: ["regen", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -2319,6 +2360,8 @@ export default {
       "spirit_vessel",
       "arcane_boots",
       "aghanims_shard",
+      "aether_lens",
+      "blink",
     ],
     situationalItems: [
       "lotus_orb",
@@ -2334,8 +2377,6 @@ export default {
     removedItems: [],
   },
   legion_commander: {
-    laneRoles: ["offlane", "carry"],
-    traits: ["regen", "targeted"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -2346,6 +2387,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["offlane"],
+    traits: ["regen", "targeted"],
     counterHeroes: [
       "keeper_of_the_light",
       "wisp",
@@ -2384,8 +2427,6 @@ export default {
     removedItems: [],
   },
   leshrac: {
-    laneRoles: ["mid", "sup5", "carry"],
-    traits: ["magical"],
     roleValues: {
       carry: 85,
       support: 85,
@@ -2396,6 +2437,8 @@ export default {
       initiation: 20,
       push: 80,
     },
+    laneRoles: ["mid"],
+    traits: ["magical"],
     counterHeroes: [
       "grimstroke",
       "bane",
@@ -2433,7 +2476,7 @@ export default {
   },
   lich: {
     laneRoles: ["sup5"],
-    traits: ["magical"],
+    traits: ["magical", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -2479,8 +2522,6 @@ export default {
     removedItems: [],
   },
   life_stealer: {
-    laneRoles: ["carry"],
-    traits: ["regen"],
     roleValues: {
       carry: 90,
       support: 10,
@@ -2491,6 +2532,8 @@ export default {
       initiation: 35,
       push: 30,
     },
+    laneRoles: ["carry"],
+    traits: ["regen", "escape"],
     counterHeroes: [
       "slardar",
       "axe",
@@ -2532,8 +2575,8 @@ export default {
     removedItems: [],
   },
   lina: {
-    laneRoles: ["sup4"],
-    traits: ["magical", "targeted", "ranged"],
+    laneRoles: ["sup4", "mid", "carry"],
+    traits: ["magical", "targeted", "ranged", "burst"],
     roleValues: {
       carry: 75,
       support: 75,
@@ -2566,7 +2609,7 @@ export default {
   },
   lion: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["magical", "targeted"],
+    traits: ["magical", "targeted", "burst"],
     roleValues: {
       carry: 5,
       support: 97,
@@ -2603,20 +2646,23 @@ export default {
       "glimmer_cape",
       "aghanims_shard",
       "magic_wand",
+      "aether_lens",
+      "force_staff",
     ],
     situationalItems: [
       "wind_waker",
-      "aether_lens",
-      "force_staff",
       "ultimate_scepter",
       "ghost",
       "aeon_disk",
+      "ancient_janggo",
+      "octarine_core",
+      "sheepstick",
+      "holy_locket",
+      "pipe",
     ],
     removedItems: [],
   },
   lone_druid: {
-    laneRoles: ["carry"],
-    traits: [],
     roleValues: {
       carry: 75,
       support: 25,
@@ -2627,6 +2673,8 @@ export default {
       initiation: 25,
       push: 75,
     },
+    laneRoles: ["carry"],
+    traits: [],
     counterHeroes: [],
     counterItems: [],
     requiredItems: ["magic_wand", "ultimate_scepter", "mjollnir"],
@@ -2642,8 +2690,6 @@ export default {
     removedItems: [],
   },
   luna: {
-    laneRoles: ["carry"],
-    traits: ["ranged"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -2654,6 +2700,8 @@ export default {
       initiation: 20,
       push: 80,
     },
+    laneRoles: ["carry"],
+    traits: ["ranged"],
     counterHeroes: [
       "slardar",
       "nyx_assassin",
@@ -2684,11 +2732,12 @@ export default {
       "satanic",
       "swift_blink",
       "monkey_king_bar",
+      "black_king_bar",
     ],
     removedItems: [],
   },
   lycan: {
-    laneRoles: ["offlane", "mid", "carry"],
+    laneRoles: ["offlane"],
     traits: ["movespeed"],
     roleValues: {
       carry: 85,
@@ -2738,7 +2787,7 @@ export default {
   },
   magnataur: {
     laneRoles: ["offlane"],
-    traits: [],
+    traits: ["spellspam"],
     roleValues: {
       carry: 25,
       support: 25,
@@ -2759,13 +2808,13 @@ export default {
       "mask_of_madness",
       "ultimate_scepter",
       "aghanims_shard",
+      "aether_lens",
     ],
     situationalItems: [
       "refresher",
       "sphere",
       "silver_edge",
       "swift_blink",
-      "aether_lens",
       "cyclone",
     ],
     removedItems: [],
@@ -2803,8 +2852,6 @@ export default {
     removedItems: [],
   },
   mars: {
-    laneRoles: ["offlane", "carry"],
-    traits: ["passive", "armor"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -2815,6 +2862,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["offlane"],
+    traits: ["passive", "armor"],
     counterHeroes: [
       "bloodseeker",
       "arc_warden",
@@ -2855,8 +2904,6 @@ export default {
     removedItems: [],
   },
   medusa: {
-    laneRoles: ["carry"],
-    traits: ["ranged", "shield", "armor"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -2867,6 +2914,8 @@ export default {
       initiation: 20,
       push: 20,
     },
+    laneRoles: ["carry"],
+    traits: ["ranged", "shield", "armor"],
     counterHeroes: [
       "treant",
       "broodmother",
@@ -2906,8 +2955,6 @@ export default {
     removedItems: [],
   },
   meepo: {
-    laneRoles: ["mid", "carry"],
-    traits: [],
     roleValues: {
       carry: 85,
       support: 20,
@@ -2918,6 +2965,8 @@ export default {
       initiation: 80,
       push: 80,
     },
+    laneRoles: ["mid", "carry"],
+    traits: [],
     counterHeroes: [
       "queenofpain",
       "batrider",
@@ -3010,8 +3059,6 @@ export default {
     removedItems: [],
   },
   monkey_king: {
-    laneRoles: ["mid", "carry"],
-    traits: ["passive"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -3022,6 +3069,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["mid", "carry"],
+    traits: ["passive"],
     counterHeroes: [
       "treant",
       "chen",
@@ -3057,8 +3106,6 @@ export default {
     removedItems: [],
   },
   morphling: {
-    laneRoles: ["carry"],
-    traits: ["shield", "armor"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -3069,6 +3116,8 @@ export default {
       initiation: 20,
       push: 20,
     },
+    laneRoles: ["carry"],
+    traits: ["shield", "armor"],
     counterHeroes: [
       "broodmother",
       "chen",
@@ -3143,8 +3192,6 @@ export default {
     removedItems: [],
   },
   naga_siren: {
-    laneRoles: ["carry", "sup5"],
-    traits: [],
     roleValues: {
       carry: 85,
       support: 85,
@@ -3155,6 +3202,8 @@ export default {
       initiation: 80,
       push: 80,
     },
+    laneRoles: ["carry"],
+    traits: [],
     counterHeroes: [
       "crystal_maiden",
       "ringmaster",
@@ -3196,7 +3245,7 @@ export default {
   },
   necrolyte: {
     laneRoles: ["carry", "mid", "offlane"],
-    traits: ["regen", "magical", "targeted", "shield"],
+    traits: ["regen", "magical", "targeted", "shield", "spellspam", "burst"],
     roleValues: {
       carry: 40,
       support: 30,
@@ -3239,8 +3288,8 @@ export default {
     removedItems: [],
   },
   nevermore: {
-    laneRoles: ["carry"],
-    traits: ["ranged"],
+    laneRoles: ["carry", "mid"],
+    traits: ["ranged", "burst"],
     roleValues: {
       carry: 75,
       support: 25,
@@ -3259,6 +3308,9 @@ export default {
       "black_king_bar",
       "mask_of_madness",
       "manta",
+      "satanic",
+      "sange_and_yasha",
+      "devastator",
     ],
     situationalItems: [
       "manta",
@@ -3266,14 +3318,11 @@ export default {
       "monkey_king_bar",
       "silver_edge",
       "butterfly",
-      "satanic",
       "blink",
     ],
     removedItems: [],
   },
   night_stalker: {
-    laneRoles: ["offlane", "carry"],
-    traits: [],
     roleValues: {
       carry: 85,
       support: 20,
@@ -3284,6 +3333,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["offlane"],
+    traits: ["movespeed"],
     counterHeroes: [
       "viper",
       "batrider",
@@ -3323,8 +3374,6 @@ export default {
     removedItems: [],
   },
   nyx_assassin: {
-    laneRoles: ["carry", "sup4", "sup5"],
-    traits: ["invisible"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -3335,6 +3384,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["sup4", "sup5"],
+    traits: ["invisible", "burst"],
     counterHeroes: [
       "enchantress",
       "venomancer",
@@ -3375,7 +3426,7 @@ export default {
   },
   obsidian_destroyer: {
     laneRoles: ["mid"],
-    traits: [],
+    traits: ["burst"],
     roleValues: {
       carry: 35,
       support: 18,
@@ -3412,20 +3463,23 @@ export default {
       "black_king_bar",
       "hurricane_pike",
       "blink",
+      "ultimate_scepter",
+      "sheepstick",
     ],
     situationalItems: [
       "travel_boots",
       "devastator",
       "refresher",
-      "sheepstick",
       "yasha_and_kaya",
-      "ultimate_scepter",
+      "gungir",
+      "ethereal_blade",
+      "bloodstone",
     ],
     removedItems: [],
   },
   ogre_magi: {
     laneRoles: ["sup5", "sup4"],
-    traits: [],
+    traits: ["debuff", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -3572,7 +3626,7 @@ export default {
     removedItems: [],
   },
   pangolier: {
-    laneRoles: ["mid", "offlane", "carry"],
+    laneRoles: ["mid", "offlane"],
     traits: ["escape", "shield", "movespeed"],
     roleValues: {
       carry: 85,
@@ -3717,7 +3771,7 @@ export default {
   },
   phoenix: {
     laneRoles: ["offlane", "sup4", "sup5"],
-    traits: ["magical"],
+    traits: ["magical", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -3753,6 +3807,9 @@ export default {
       "boots_of_bearing",
       "aghanims_shard",
       "shivas_guard",
+      "aether_lens",
+      "arcane_boots",
+      "blink",
     ],
     situationalItems: [
       "ancient_janggo",
@@ -3766,8 +3823,8 @@ export default {
     removedItems: [],
   },
   primal_beast: {
-    laneRoles: ["carry"],
-    traits: ["movespeed"],
+    laneRoles: ["carry", "offlane"],
+    traits: ["movespeed", "spellspam"],
     roleValues: {
       carry: 25,
       support: 25,
@@ -3786,13 +3843,17 @@ export default {
       "black_king_bar",
       "ultimate_scepter",
       "shivas_guard",
+      "arcane_boots",
+      "magic_wand",
+      "force_staff",
+      "glimmer_cape",
     ],
     situationalItems: ["kaya", "heart", "overwhelming_blink"],
     removedItems: [],
   },
   puck: {
     laneRoles: ["mid"],
-    traits: ["escape", "magical", "movespeed"],
+    traits: ["escape", "magical", "movespeed", "debuff", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -3844,7 +3905,7 @@ export default {
     removedItems: [],
   },
   pudge: {
-    laneRoles: ["carry", "sup5"],
+    laneRoles: ["carry", "sup5", "offlane", "sup4"],
     traits: ["regen", "armor"],
     roleValues: {
       carry: 25,
@@ -3865,21 +3926,23 @@ export default {
       "black_king_bar",
       "blade_mail",
       "tranquil_boots",
+      "phase_boots",
+      "consecrated_wraps",
+      "pipe",
     ],
     situationalItems: [
       "shivas_guard",
       "travel_boots",
       "soul_booster",
-      "consecrated_wraps",
-      "pipe",
       "glimmer_cape",
       "crellas_crozier",
+      "force_staff",
     ],
     removedItems: [],
   },
   pugna: {
     laneRoles: ["carry", "sup4", "sup5"],
-    traits: ["magical", "ranged", "shield"],
+    traits: ["magical", "ranged", "shield", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 20,
@@ -3902,8 +3965,23 @@ export default {
       "ember_spirit",
       "slark",
     ],
-    counterItems: ["solar_crest", "glimmer_cape", "cyclone", "force_staff"],
-    requiredItems: ["arcane_boots", "aether_lens", "blink", "glimmer_cape"],
+    counterItems: [
+      "solar_crest",
+      "glimmer_cape",
+      "cyclone",
+      "force_staff",
+      "pavise",
+      "ghost",
+    ],
+    requiredItems: [
+      "arcane_boots",
+      "aether_lens",
+      "blink",
+      "glimmer_cape",
+      "spirit_vessel",
+      "guardian_greaves",
+      "aghanims_shard",
+    ],
     situationalItems: [
       "ancient_janggo",
       "octarine_core",
@@ -3911,7 +3989,6 @@ export default {
       "holy_locket",
       "crimson_guard",
       "wind_waker",
-      "aghanims_shard",
       "ultimate_scepter",
       "ghost",
     ],
@@ -3919,7 +3996,7 @@ export default {
   },
   queenofpain: {
     laneRoles: ["mid", "carry"],
-    traits: ["escape", "ranged", "movespeed"],
+    traits: ["escape", "ranged", "movespeed", "debuff", "spellspam", "burst"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -3956,6 +4033,7 @@ export default {
       "ultimate_scepter",
       "witch_blade",
       "octarine_core",
+      "travel_boots",
     ],
     situationalItems: [
       "travel_boots",
@@ -3971,8 +4049,6 @@ export default {
     removedItems: [],
   },
   rattletrap: {
-    laneRoles: ["carry", "sup4", "sup5"],
-    traits: [],
     roleValues: {
       carry: 25,
       support: 20,
@@ -3983,6 +4059,8 @@ export default {
       initiation: 80,
       push: 20,
     },
+    laneRoles: ["sup4", "sup5"],
+    traits: [],
     counterHeroes: [
       "lone_druid",
       "visage",
@@ -4067,7 +4145,7 @@ export default {
   },
   riki: {
     laneRoles: ["carry"],
-    traits: ["invisible", "escape"],
+    traits: ["invisible", "escape", "debuff"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -4114,7 +4192,7 @@ export default {
   },
   ringmaster: {
     laneRoles: ["sup5", "sup4"],
-    traits: [],
+    traits: ["spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -4151,6 +4229,11 @@ export default {
       "urn_of_shadows",
       "gungir",
       "magic_wand",
+      "blink",
+      "aether_lens",
+      "ghost",
+      "spirit_vessel",
+      "boots_of_bearing",
     ],
     situationalItems: [
       "ultimate_scepter",
@@ -4160,17 +4243,15 @@ export default {
       "ancient_janggo",
       "octarine_core",
       "sheepstick",
-      "aether_lens",
-      "ghost",
-      "spirit_vessel",
       "essence_distiller",
       "glimmer_cape",
+      "arcane_boots",
     ],
     removedItems: [],
   },
   rubick: {
-    laneRoles: ["carry", "sup5"],
-    traits: ["magical", "ranged"],
+    laneRoles: ["carry", "sup5", "sup4"],
+    traits: ["magical", "ranged", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 75,
@@ -4191,6 +4272,9 @@ export default {
       "glimmer_cape",
       "cyclone",
       "ultimate_scepter",
+      "force_staff",
+      "power_treads",
+      "black_king_bar",
     ],
     situationalItems: ["force_staff", "aether_lens", "aeon_disk", "wind_waker"],
     removedItems: [],
@@ -4242,7 +4326,7 @@ export default {
   },
   shadow_demon: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["targeted"],
+    traits: ["targeted", "debuff"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -4331,7 +4415,7 @@ export default {
   },
   shredder: {
     laneRoles: ["carry"],
-    traits: ["regen", "passive", "armor"],
+    traits: ["regen", "passive", "armor", "spellspam"],
     roleValues: {
       carry: 25,
       support: 25,
@@ -4351,6 +4435,7 @@ export default {
       "heart",
       "arcane_boots",
       "magic_wand",
+      "black_king_bar",
     ],
     situationalItems: [
       "lotus_orb",
@@ -4358,15 +4443,15 @@ export default {
       "ultimate_scepter",
       "soul_ring",
       "blade_mail",
-      "black_king_bar",
       "sheepstick",
       "bloodstone",
+      "wind_waker",
     ],
     removedItems: [],
   },
   silencer: {
     laneRoles: ["mid", "sup4", "sup5", "carry"],
-    traits: ["ranged"],
+    traits: ["ranged", "debuff"],
     roleValues: {
       carry: 85,
       support: 85,
@@ -4403,6 +4488,11 @@ export default {
       "witch_blade",
       "hurricane_pike",
       "aghanims_shard",
+      "arcane_boots",
+      "aether_lens",
+      "boots_of_bearing",
+      "guardian_greaves",
+      "blink",
     ],
     situationalItems: [
       "sheepstick",
@@ -4410,6 +4500,9 @@ export default {
       "pipe",
       "ultimate_scepter",
       "refresher",
+      "ancient_janggo",
+      "octarine_core",
+      "holy_locket",
     ],
     removedItems: [],
   },
@@ -4452,23 +4545,31 @@ export default {
       "radiance",
       "blink",
       "aghanims_shard",
+      "satanic",
+      "power_treads",
+      "butterfly",
+      "nullifier",
+      "abyssal_blade",
+      "monkey_king_bar",
+      "black_king_bar",
     ],
     situationalItems: [
       "silver_edge",
       "swift_blink",
       "bloodthorn",
       "moon_shard",
-      "black_king_bar",
       "ultimate_scepter",
       "assault",
       "desolator",
       "rapier",
+      "angels_demise",
+      "disperser",
     ],
     removedItems: [],
   },
   skywrath_mage: {
-    laneRoles: ["sup5"],
-    traits: ["magical", "ranged"],
+    laneRoles: ["sup5", "sup4"],
+    traits: ["magical", "ranged", "debuff", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 75,
@@ -4481,7 +4582,15 @@ export default {
     },
     counterHeroes: [],
     counterItems: [],
-    requiredItems: ["arcane_boots", "rod_of_atos", "glimmer_cape", "blink"],
+    requiredItems: [
+      "arcane_boots",
+      "rod_of_atos",
+      "glimmer_cape",
+      "blink",
+      "meteor_hammer",
+      "travel_boots",
+      "pavise",
+    ],
     situationalItems: [
       "force_staff",
       "kaya",
@@ -4498,7 +4607,7 @@ export default {
   },
   slardar: {
     laneRoles: ["offlane", "carry"],
-    traits: ["armor"],
+    traits: ["armor", "debuff"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -4537,15 +4646,20 @@ export default {
       "aghanims_shard",
       "echo_sabre",
       "soul_ring",
+      "nullifier",
+      "phase_boots",
+      "blade_mail",
     ],
     situationalItems: [
       "ultimate_scepter",
       "assault",
       "overwhelming_blink",
       "heart",
-      "nullifier",
       "sange_and_yasha",
       "harpoon",
+      "refresher",
+      "bloodstone",
+      "guardian_greaves",
     ],
     removedItems: [],
   },
@@ -4606,7 +4720,7 @@ export default {
   },
   snapfire: {
     laneRoles: ["sup5", "mid"],
-    traits: ["magical"],
+    traits: ["magical", "spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 75,
@@ -4768,6 +4882,7 @@ export default {
       "phase_boots",
       "invis_sword",
       "yasha_and_kaya",
+      "spirit_vessel",
     ],
     situationalItems: [
       "ancient_janggo",
@@ -4776,7 +4891,6 @@ export default {
       "holy_locket",
       "wind_waker",
       "pipe",
-      "spirit_vessel",
       "ultimate_scepter",
       "lotus_orb",
       "silver_edge",
@@ -4786,7 +4900,7 @@ export default {
   },
   storm_spirit: {
     laneRoles: ["mid"],
-    traits: ["escape", "magical", "shield", "movespeed"],
+    traits: ["escape", "magical", "shield", "movespeed", "spellspam", "burst"],
     roleValues: {
       carry: 30,
       support: 12,
@@ -4912,6 +5026,11 @@ export default {
       "tranquil_boots",
       "soul_ring",
       "magic_wand",
+      "arcane_boots",
+      "glimmer_cape",
+      "force_staff",
+      "solar_crest",
+      "essence_distiller",
     ],
     situationalItems: [
       "sheepstick",
@@ -4926,8 +5045,8 @@ export default {
     removedItems: [],
   },
   templar_assassin: {
-    laneRoles: ["carry"],
-    traits: ["shield"],
+    laneRoles: ["carry", "mid"],
+    traits: ["invisible", "shield"],
     roleValues: {
       carry: 75,
       support: 25,
@@ -4948,6 +5067,7 @@ export default {
       "hurricane_pike",
       "greater_crit",
       "magic_wand",
+      "arcane_boots",
     ],
     situationalItems: [
       "swift_blink",
@@ -5013,7 +5133,7 @@ export default {
   },
   tidehunter: {
     laneRoles: ["offlane"],
-    traits: ["passive", "armor"],
+    traits: ["passive", "armor", "spellspam"],
     roleValues: {
       carry: 20,
       support: 18,
@@ -5053,6 +5173,9 @@ export default {
       "pipe",
       "refresher",
       "soul_ring",
+      "arcane_boots",
+      "lotus_orb",
+      "shivas_guard",
     ],
     situationalItems: [
       "black_king_bar",
@@ -5062,12 +5185,15 @@ export default {
       "guardian_greaves",
       "mage_slayer",
       "vladmir",
+      "heart",
+      "refresher",
+      "bloodstone",
     ],
     removedItems: [],
   },
   tinker: {
     laneRoles: ["mid", "carry"],
-    traits: ["magical", "targeted", "ranged"],
+    traits: ["magical", "targeted", "ranged", "spellspam", "burst"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -5104,6 +5230,10 @@ export default {
       "blink",
       "sheepstick",
       "black_king_bar",
+      "witch_blade",
+      "travel_boots",
+      "bottle",
+      "octarine_core",
     ],
     situationalItems: [
       "ethereal_blade",
@@ -5111,6 +5241,11 @@ export default {
       "wind_waker",
       "sphere",
       "crellas_crozier",
+      "devastator",
+      "gungir",
+      "travel_boots",
+      "refresher",
+      "bloodstone",
     ],
     removedItems: [],
   },
@@ -5277,7 +5412,18 @@ export default {
       "solar_crest",
       "lotus_orb",
     ],
-    requiredItems: ["blink", "tranquil_boots", "cyclone", "solar_crest"],
+    requiredItems: [
+      "blink",
+      "tranquil_boots",
+      "cyclone",
+      "solar_crest",
+      "vladmir",
+      "spirit_vessel",
+      "aether_lens",
+      "arcane_boots",
+      "boots_of_bearing",
+      "guardian_greaves",
+    ],
     situationalItems: [
       "magic_wand",
       "phase_boots",
@@ -5287,14 +5433,13 @@ export default {
       "sheepstick",
       "wind_waker",
       "holy_locket",
-      "spirit_vessel",
       "glimmer_cape",
     ],
     removedItems: [],
   },
   undying: {
     laneRoles: ["offlane", "sup4", "sup5"],
-    traits: [],
+    traits: ["spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -5325,7 +5470,15 @@ export default {
       "solar_crest",
       "lotus_orb",
     ],
-    requiredItems: ["aghanims_shard", "guardian_greaves", "magic_wand"],
+    requiredItems: [
+      "aghanims_shard",
+      "guardian_greaves",
+      "magic_wand",
+      "spirit_vessel",
+      "arcane_boots",
+      "aether_lens",
+      "boots_of_bearing",
+    ],
     situationalItems: [
       "blink",
       "magic_wand",
@@ -5336,7 +5489,6 @@ export default {
       "holy_locket",
       "wind_waker",
       "pipe",
-      "spirit_vessel",
       "glimmer_cape",
       "ghost",
     ],
@@ -5446,7 +5598,7 @@ export default {
   },
   venomancer: {
     laneRoles: ["sup5", "sup4"],
-    traits: ["magical", "ranged"],
+    traits: ["magical", "ranged", "debuff", "spellspam"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -5494,7 +5646,7 @@ export default {
   },
   viper: {
     laneRoles: ["offlane", "mid", "carry"],
-    traits: ["magical", "passive", "ranged"],
+    traits: ["magical", "passive", "ranged", "debuff"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -5545,7 +5697,7 @@ export default {
   },
   visage: {
     laneRoles: ["offlane", "sup4", "sup5"],
-    traits: [],
+    traits: ["spellspam", "burst"],
     roleValues: {
       carry: 25,
       support: 85,
@@ -5582,6 +5734,9 @@ export default {
       "blink",
       "orchid",
       "vladmir",
+      "aether_lens",
+      "arcane_boots",
+      "spirit_vessel",
     ],
     situationalItems: [
       "sheepstick",
@@ -5590,12 +5745,14 @@ export default {
       "wind_waker",
       "ultimate_scepter",
       "assault",
+      "ancient_janggo",
+      "holy_locket",
     ],
     removedItems: [],
   },
   void_spirit: {
     laneRoles: ["mid", "carry"],
-    traits: ["escape", "magical", "shield", "movespeed"],
+    traits: ["escape", "magical", "shield", "movespeed", "spellspam"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -5631,6 +5788,10 @@ export default {
       "power_treads",
       "spirit_vessel",
       "black_king_bar",
+      "kaya_and_sange",
+      "travel_boots",
+      "witch_blade",
+      "sheepstick",
     ],
     situationalItems: [
       "ethereal_blade",
@@ -5638,6 +5799,10 @@ export default {
       "bloodthorn",
       "yasha_and_kaya",
       "manta",
+      "gungir",
+      "devastator",
+      "bloodstone",
+      "refresher",
     ],
     removedItems: [],
   },
@@ -5692,7 +5857,7 @@ export default {
     removedItems: [],
   },
   weaver: {
-    laneRoles: ["carry", "mid"],
+    laneRoles: ["carry", "mid", "sup4"],
     traits: ["invisible", "escape", "ranged", "movespeed"],
     roleValues: {
       carry: 85,
@@ -5724,24 +5889,36 @@ export default {
       "lotus_orb",
       "force_staff",
     ],
-    requiredItems: ["essence_distiller", "orchid", "desolator"],
+    requiredItems: [
+      "essence_distiller",
+      "orchid",
+      "desolator",
+      "nullifier",
+      "abyssal_blade",
+      "monkey_king_bar",
+      "butterfly",
+      "power_treads",
+      "satanic",
+    ],
     situationalItems: [
       "bloodthorn",
-      "monkey_king_bar",
       "lotus_orb",
       "ultimate_scepter",
       "sphere",
       "greater_crit",
       "mjollnir",
-      "satanic",
       "black_king_bar",
       "hydras_breath",
+      "angels_demise",
+      "disperser",
+      "moon_shard",
+      "silver_edge",
     ],
     removedItems: [],
   },
   windrunner: {
-    laneRoles: ["sup4", "carry", "mid"],
-    traits: ["escape", "ranged", "movespeed"],
+    laneRoles: ["sup4", "carry", "mid", "offlane"],
+    traits: ["escape", "targeted", "ranged", "movespeed"],
     roleValues: {
       carry: 75,
       support: 75,
@@ -5760,6 +5937,8 @@ export default {
       "mjollnir",
       "dragon_lance",
       "power_treads",
+      "essence_distiller",
+      "phase_boots",
     ],
     situationalItems: [
       "force_staff",
@@ -5775,8 +5954,8 @@ export default {
     removedItems: [],
   },
   winter_wyvern: {
-    laneRoles: ["sup5"],
-    traits: [],
+    laneRoles: ["sup5", "sup4"],
+    traits: ["regen", "targeted", "ranged", "burst"],
     roleValues: {
       carry: 25,
       support: 75,
@@ -5789,14 +5968,22 @@ export default {
     },
     counterHeroes: [],
     counterItems: [],
-    requiredItems: ["blink", "arcane_boots", "glimmer_cape", "holy_locket"],
+    requiredItems: [
+      "blink",
+      "arcane_boots",
+      "glimmer_cape",
+      "holy_locket",
+      "power_treads",
+      "force_staff",
+      "ancient_janggo",
+      "pers",
+      "cyclone",
+    ],
     situationalItems: [
       "magic_wand",
       "aeon_disk",
       "aether_lens",
       "solar_crest",
-      "force_staff",
-      "cyclone",
       "pipe",
       "ultimate_scepter",
     ],
@@ -5841,6 +6028,10 @@ export default {
       "aghanims_shard",
       "holy_locket",
       "glimmer_cape",
+      "black_king_bar",
+      "aether_lens",
+      "spirit_vessel",
+      "guardian_greaves",
     ],
     situationalItems: [
       "ultimate_scepter",
@@ -5849,11 +6040,10 @@ export default {
       "mjollnir",
       "crimson_guard",
       "boots_of_bearing",
-      "guardian_greaves",
-      "spirit_vessel",
       "heart",
       "satanic",
       "soul_ring",
+      "refresher",
     ],
     removedItems: [],
   },
@@ -5890,22 +6080,33 @@ export default {
       "solar_crest",
       "aeon_disk",
     ],
-    requiredItems: ["arcane_boots", "aghanims_shard", "blink", "glimmer_cape"],
+    requiredItems: [
+      "arcane_boots",
+      "aghanims_shard",
+      "blink",
+      "glimmer_cape",
+      "spirit_vessel",
+      "aether_lens",
+    ],
     situationalItems: [
       "refresher",
       "sheepstick",
-      "spirit_vessel",
       "ultimate_scepter",
       "holy_locket",
       "ghost",
       "black_king_bar",
       "aeon_disk",
+      "pipe",
+      "boots_of_bearing",
+      "crimson_guard",
+      "blade_mail",
+      "mekansm",
     ],
     removedItems: [],
   },
   zuus: {
-    laneRoles: ["mid", "carry"],
-    traits: ["magical", "ranged"],
+    laneRoles: ["mid", "carry", "sup4"],
+    traits: ["magical", "ranged", "spellspam", "burst"],
     roleValues: {
       carry: 85,
       support: 20,
@@ -5941,6 +6142,9 @@ export default {
       "bottle",
       "refresher",
       "arcane_boots",
+      "witch_blade",
+      "travel_boots",
+      "octarine_core",
     ],
     situationalItems: [
       "ethereal_blade",
@@ -5949,8 +6153,9 @@ export default {
       "sphere",
       "yasha_and_kaya",
       "sheepstick",
-      "octarine_core",
       "hurricane_pike",
+      "gungir",
+      "bloodstone",
     ],
     removedItems: [],
   },

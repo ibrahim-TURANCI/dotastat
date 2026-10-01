@@ -298,10 +298,17 @@ export function LiveAdvice({ advice }) {
 function AdviceSlot({ row }) {
   const [failed, setFailed] = useState(false);
   const name = row.name || itemDisplayName(row.key);
-  const hint = `${name} — ${row.groupLabel}. ${row.reason}`;
+  // Ara parca onerisinde hedef item de yazilir: "Yasha → Manta Style".
+  const target = row.buildsInto
+    ? row.buildsIntoName || itemDisplayName(row.buildsInto)
+    : "";
+  const hint = `${name}${target ? " → " + target : ""} — ${row.groupLabel}. ${row.reason}`;
 
   return (
-    <div className={"advice-slot " + row.group} title={hint}>
+    <div
+      className={"advice-slot " + row.group + (target ? " step" : "")}
+      title={hint}
+    >
       {failed ? (
         <span className="advice-fallback">
           {name.slice(0, 2).toUpperCase()}

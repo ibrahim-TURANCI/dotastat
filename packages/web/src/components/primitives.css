@@ -1,12 +1,30 @@
 /** primitives.jsx bilesenlerinin stilleri. */
 
+/*
+  Ince, hafif parlayan cerceve: kenar acik mavi, disinda yumusak bir hale.
+  Koyu bir ic halka (ilk golge) ikonu zeminden ayirir; hale yalnizca
+  derinlik verir, dikkat cekmez. Uzerine gelince biraz guclenir.
+*/
 .hero-icon {
   border-radius: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(126, 196, 255, 0.38);
   background: rgba(0, 0, 0, 0.35);
   object-fit: cover;
   display: block;
   flex: none;
+  box-shadow:
+    0 0 0 1px rgba(3, 8, 14, 0.55),
+    0 0 7px rgba(46, 167, 255, 0.22);
+  transition:
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.hero-icon:hover {
+  border-color: rgba(150, 210, 255, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(3, 8, 14, 0.55),
+    0 0 11px rgba(46, 167, 255, 0.45);
 }
 
 .hero-icon-fallback {
@@ -56,4 +74,191 @@
 .form-dot.loss {
   background: var(--bad);
   opacity: 0.75;
+}
+
+/* --- Puan halkasi (ScoreRing) --------------------------------------------- */
+
+/*
+  Iki katmanli conic-gradient:
+    ust katman  -> puana kadar SAYDAM, sonrasi OPAK iz rengi (dolmayan kisim)
+    alt katman  -> koyu kirmizidan neon yesile tam tur gradyan
+  Ustteki saydam kisimdan alttaki gradyan gorunur; boylece halka puan kadar
+  dolar ve dolan kismin rengi degerin kendisini anlatir. Maske ortayi oyar.
+
+  Iz rengi OPAK olmali: yari saydam olsa alttaki gradyan dolmayan kisimda da
+  seziliyordu.
+*/
+.score-ring {
+  --ring-low: #7a0f24;
+  --ring-high: #39ff88;
+  --ring-track: #15243a;
+  --ring-width: 4px;
+
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.06),
+    rgba(5, 10, 19, 0.35) 70%
+  );
+}
+
+.score-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      transparent calc(var(--p) * 1%),
+      var(--ring-track) 0
+    ),
+    conic-gradient(var(--ring-low), var(--ring-high));
+  /* OKLCH araligi kirmizi -> yesil gecisinde camurlu kahverengiyi atlar. */
+  background:
+    conic-gradient(
+      transparent calc(var(--p) * 1%),
+      var(--ring-track) 0
+    ),
+    conic-gradient(in oklch, var(--ring-low), var(--ring-high));
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--ring-width) - 0.5px),
+    #000 calc(100% - var(--ring-width))
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--ring-width) - 0.5px),
+    #000 calc(100% - var(--ring-width))
+  );
+}
+
+.score-ring-value {
+  position: relative;
+  font-size: 13px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-1);
+}
+
+/* Parlama maskelenmis halkanin KENDISINE uygulanir (filtre ebeveynde). */
+.score-ring.tone-up {
+  filter: drop-shadow(0 0 5px rgba(57, 255, 136, 0.4));
+}
+
+.score-ring.tone-up .score-ring-value {
+  color: #6dffab;
+}
+
+.score-ring.tone-down {
+  filter: drop-shadow(0 0 5px rgba(190, 24, 48, 0.45));
+}
+
+/* Koyu kirmizi yazi koyu zeminde okunmaz; sayi acik kirmizi. */
+.score-ring.tone-down .score-ring-value {
+  color: #ff7d8a;
+}
+
+/* --- Pozisyon rozeti (RoleBadge) ------------------------------------------ */
+
+.role-badge {
+  --role-c: var(--role-none);
+
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--role-c), 0.5);
+  background: rgba(var(--role-c), 0.15);
+  color: rgb(var(--role-c));
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  box-shadow: 0 0 8px rgba(var(--role-c), 0.12);
+}
+
+.role-badge.small {
+  padding: 1px 8px;
+  font-size: 10.5px;
+}
+
+/* Renkler theme.css'teki --role-posN token'larindan gelir. */
+.role-badge.role-pos1 {
+  --role-c: var(--role-pos1);
+}
+
+.role-badge.role-pos2 {
+  --role-c: var(--role-pos2);
+}
+
+.role-badge.role-pos3 {
+  --role-c: var(--role-pos3);
+}
+
+.role-badge.role-pos4 {
+  --role-c: var(--role-pos4);
+}
+
+.role-badge.role-pos5 {
+  --role-c: var(--role-pos5);
+}
+
+/* --- Degisim oku (DeltaArrow) --------------------------------------------- */
+
+.delta-arrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--txt-1);
+}
+
+.delta-arrow-icon {
+  font-size: 0.72em;
+  line-height: 1;
+}
+
+.delta-arrow.up {
+  color: var(--good);
+}
+
+.delta-arrow.down {
+  color: var(--bad);
+}
+
+.delta-arrow.pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.delta-arrow.pill.up {
+  border-color: rgba(41, 201, 122, 0.4);
+  background: var(--good-soft);
+}
+
+.delta-arrow.pill.down {
+  border-color: rgba(255, 93, 108, 0.4);
+  background: var(--bad-soft);
+}
+
+/* Gorunmez ama ekran okuyucu okur. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

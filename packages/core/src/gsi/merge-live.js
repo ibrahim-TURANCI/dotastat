@@ -123,8 +123,11 @@ const STAT_FIELDS = [
   "lastHits",
   "denies",
   "netWorth",
+  "gold",
   "gpm",
   "xpm",
+  // Overwolf'tan gelir; 0 "bilinmiyor" demektir ve dolu degeri ezmemeli.
+  "position",
 ];
 
 /**
@@ -273,6 +276,9 @@ function overwolfPlayerRows(snapshot) {
       heroConfirmed: row.heroConfirmed !== false,
       rank: resolveRankTier(row.rank) || null,
       rankTier: Number(row.rank) || 0,
+      // Oyuncunun BU MACTAKI pozisyonu (1-5; bilinmiyorsa 0). Tavsiye, hero'nun
+      // oynanabildigi tum rollere gore degil bu pozisyona gore uretilir.
+      position: row.position >= 1 && row.position <= 5 ? row.position : 0,
       source: "overwolf",
       sources: ["overwolf"],
       anonymous: !row.accountId,
@@ -489,4 +495,78 @@ export function mergeLiveStatesByMatch(states) {
     mergeLiveStateGroup(group),
   );
   return [...merged, ...loners].filter(Boolean);
+}
+
+/**
+ * Bu bilgisayarin canli durumunu, AYNI MACTAKI diger yayincilarin siteye
+ * gonderdigi verilerle zenginlestirir.
+ *
+ * NEDEN: GSI oyun sirasinda yalnizca kendi oyuncunun envanterini verir.
+ * Takimdaki bir arkadas da DotaStat kullaniyorsa onun envanteri, KDA'si ve
+ * (Overwolf'u varsa) 10 slotun hero/pozisyon bilgisi sitede zaten duruyor.
+ * Masaustu bunu cekip kendi tablosuna ekler; item tavsiyesi arkadasin gercek
+ * envanterini, Overwolf'u olmayan kullanici da arkadasin Overwolf verisini
+ * gorur.
+ *
+ * KURALLAR:
+ *   - `remote` bu bilgisayarin KENDI kaydini icermemelidir (site `exclude`
+ *     ile ayiklar); aksi halde birkac saniyelik eski kopya taze veriyi ezerdi.
+ *   - Ust duzey alanlar (evre, sure, skor, `localSteamId`) YEREL kalir: oyunun
+ *     kendi cikisi her zaman daha tazedir.
+ *   - Oyuncu tablosunda iskelet once gelir (yerel Overwolf, yoksa uzak
+ *     Overwolf), sonra uzak satirlar, en son yerel satirlar: yerel GSI kendi
+ *     oyuncusunda catismayi kazanir.
+ *   - Uzak Overwolf'un `myTeam` bilgisi ARKADASIN tarafidir, bizimki olmayabilir
+ *     (arkadas rakip takimda olabilir); bu yuzden tasinmaz.
+ *
+ * Ayni maca ait degilse ya da uzak veri yoksa yerel durum OLDUGU GIBI doner.
+ *
+ * @param {Record<string, any>|null} local
+ * @param {Record<string, any>|null} remote `mergeLiveStateGroup` ciktisi
+ * @returns {Record<string, any>|null}
+ */
+export function mergeRemoteLiveState(local, remote) {
+  if (!local || !remote) {
+    return local;
+  }
+  const localMatchId = String(local.matchId || "").trim();
+  if (!localMatchId || localMatchId !== String(remote.matchId || "").trim()) {
+    return local;
+  }
+
+  const playersOf = (row) => [
+    ...(row?.radiantPlayers || []),
+    ...(row?.direPlayers || []),
+  ];
+  const skeleton = local.overwolf ? local : remote.overwolf ? remote : local;
+  const players = mergePlayerLists([
+    playersOf(skeleton),
+    playersOf(remote),
+    playersOf(local),
+  ]);
+
+  const longest = (a, b) => (b.length > a.length ? b : a);
+  const localDraft = local.draft || {};
+  const remoteDraft = remote.draft || {};
+
+  const remoteOverwolf = remote.overwolf
+    ? { ...remote.overwolf, myTeam: "", mySlot: null, partySteamIds: [] }
+    : null;
+
+  return {
+    ...local,
+    radiantPlayers: players.filter((row) => row.team === "radiant"),
+    direPlayers: players.filter((row) => row.team === "dire"),
+    draft: {
+      ...localDraft,
+      picks: longest(localDraft.picks || [], remoteDraft.picks || []),
+      bans: longest(localDraft.bans || [], remoteDraft.bans || []),
+    },
+    overwolf: local.overwolf || remoteOverwolf,
+    // Arayuz "veri kac kurulumdan geliyor" gosterebilsin.
+    uploaders: [
+      String(local.localSteamId || local.uploaderSteamId || ""),
+      ...(remote.uploaders || [remote.uploaderSteamId]),
+    ].filter(Boolean),
+  };
 }

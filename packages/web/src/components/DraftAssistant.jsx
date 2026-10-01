@@ -63,35 +63,52 @@ export function DraftAssistant({ advice }) {
 
       <div className="draft-blocks">
         {(advice.blocks || []).map((block) => (
-          <article key={block.role} className="draft-block">
+          <article
+            key={block.role}
+            className={"draft-block" + (block.filled ? " filled" : "")}
+          >
             <header>
               <strong>{block.roleLabel}</strong>
               {block.player ? (
-                <span className="chip accent">{block.player.name}</span>
+                <span
+                  className={"chip" + (block.player.guest ? "" : " accent")}
+                >
+                  {block.player.name}
+                </span>
               ) : (
                 <span className="muted micro">oyuncu atanmadı</span>
               )}
             </header>
 
-            <ul className="draft-suggestions">
-              {block.suggestions.map((row, index) => (
-                <li key={row.hero} className={index === 0 ? "top" : ""}>
-                  <HeroIcon hero={row.hero} size={34} />
-                  <div className="draft-suggestion-text">
-                    <strong>{row.heroName}</strong>
-                    <span className="muted micro">
-                      {row.reasons.join(" · ") || "genel uyum"}
+            {block.filled ? (
+              <div className="draft-filled">
+                <HeroIcon hero={block.filled.hero} size={34} />
+                <div className="draft-suggestion-text">
+                  <strong>{block.filled.heroName}</strong>
+                  <span className="muted micro">seçildi</span>
+                </div>
+              </div>
+            ) : (
+              <ul className="draft-suggestions">
+                {block.suggestions.map((row, index) => (
+                  <li key={row.hero} className={index === 0 ? "top" : ""}>
+                    <HeroIcon hero={row.hero} size={34} />
+                    <div className="draft-suggestion-text">
+                      <strong>{row.heroName}</strong>
+                      <span className="muted micro">
+                        {row.reasons.join(" · ") || "genel uyum"}
+                      </span>
+                    </div>
+                    <span className="draft-score" title="Öneri puanı">
+                      {row.score}
                     </span>
-                  </div>
-                  <span className="draft-score" title="Öneri puanı">
-                    {row.score}
-                  </span>
-                </li>
-              ))}
-              {!block.suggestions.length ? (
-                <li className="muted micro">Uygun aday kalmadı.</li>
-              ) : null}
-            </ul>
+                  </li>
+                ))}
+                {!block.suggestions.length ? (
+                  <li className="muted micro">Uygun aday kalmadı.</li>
+                ) : null}
+              </ul>
+            )}
           </article>
         ))}
       </div>
