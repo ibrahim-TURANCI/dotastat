@@ -187,6 +187,8 @@ export default function App() {
         mode={session.mode}
         cloudSignedIn={session.cloudSignedIn}
         cloudConfigured={session.cloudConfigured}
+        cloudLinked={session.cloudLinked}
+        cloudRejected={session.cloudRejected}
         onOpenSettings={() => setSettingsOpen((open) => !open)}
         onOpenHeroManager={
           canManageHeroes ? () => setHeroManagerOpen(true) : null

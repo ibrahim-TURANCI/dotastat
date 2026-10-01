@@ -28,6 +28,46 @@ export function isLiveMatchFresh(liveState, ttlMs = LIVE_MATCH_TTL_MS) {
   return Number.isFinite(age) && age >= 0 && age < ttlMs;
 }
 
+/** Bu asamalardaki kayit "mac bitti" sayilir. */
+const ENDED_PHASES = ["POST_GAME", "DISCONNECT"];
+
+/**
+ * Kayit bitmis (ya da hic baslamamis) bir maci mi anlatiyor?
+ *
+ * Tazelik tek basina yetmez: mac bittikten sonra GSI bir sure POST_GAME, ana
+ * menude de harita blogu olmayan (mac kimligi ve oyuncusu bos) kayit gondermeye
+ * devam ediyor. Ikisi de "taze" oldugu icin canli panel kapanmiyor, oyun saati
+ * 0 gelen kayitta sayac 0:00'dan saymaya basliyordu.
+ *
+ * @param {Record<string, any>|null} liveState
+ * @returns {boolean}
+ */
+export function isLiveMatchOver(liveState) {
+  if (!liveState) {
+    return true;
+  }
+  const phase = String(liveState.phase || "").toUpperCase();
+  if (ENDED_PHASES.some((candidate) => phase.includes(candidate))) {
+    return true;
+  }
+  const hasPlayers =
+    (liveState.radiantPlayers || []).length > 0 ||
+    (liveState.direPlayers || []).length > 0 ||
+    (liveState.draft?.picks || []).length > 0;
+  return !String(liveState.matchId || "").trim() && !hasPlayers;
+}
+
+/**
+ * Taze VE suren bir mac mi? Canli panel ve yayin buna bakar.
+ *
+ * @param {Record<string, any>|null} liveState
+ * @param {number} [ttlMs]
+ * @returns {boolean}
+ */
+export function isLiveMatchActive(liveState, ttlMs = LIVE_MATCH_TTL_MS) {
+  return isLiveMatchFresh(liveState, ttlMs) && !isLiveMatchOver(liveState);
+}
+
 /**
  * Canli mactaki bir oyuncuyu roster ile eslestirir.
  * @param {Record<string, any>} livePlayer
@@ -221,7 +261,7 @@ export function buildLiveMatchContext(input = {}) {
     return { active: false, reason: "no-live-state" };
   }
 
-  const fresh = isLiveMatchFresh(liveState);
+  const fresh = isLiveMatchActive(liveState);
   const allPlayers = [
     ...(liveState.radiantPlayers || []),
     ...(liveState.direPlayers || []),

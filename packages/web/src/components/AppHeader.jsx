@@ -35,6 +35,8 @@ export function AppHeader({
   mode,
   cloudSignedIn,
   cloudConfigured,
+  cloudLinked,
+  cloudRejected,
   onOpenSettings,
   onOpenHeroManager,
 }) {
@@ -121,6 +123,8 @@ export function AppHeader({
           mode={mode}
           cloudSignedIn={cloudSignedIn}
           cloudConfigured={cloudConfigured}
+          cloudLinked={cloudLinked}
+          cloudRejected={cloudRejected}
           onOpenSettings={onOpenSettings}
         />
       </div>
@@ -182,6 +186,8 @@ function IdentityBox({
   mode,
   cloudSignedIn,
   cloudConfigured,
+  cloudLinked,
+  cloudRejected,
   onOpenSettings,
 }) {
   if (loading) {
@@ -203,6 +209,8 @@ function IdentityBox({
         detectedPlayer={detectedPlayer}
         cloudSignedIn={cloudSignedIn}
         cloudConfigured={cloudConfigured}
+        cloudLinked={cloudLinked}
+        cloudRejected={cloudRejected}
         onOpenSettings={onOpenSettings}
       />
     );
@@ -261,17 +269,21 @@ function IdentityBox({
  *      uygulama onu ayarlara yaziyor. Bu OTOMATIKTIR, giris gerektirmez ve
  *      kendi profilini/pozisyon secimini acan sey budur.
  *
- *   2. SITE OTURUMU — canli maci ve MMR'i siteye gonderebilmek icin gerekir.
- *      Bu OTOMATIK OLAMAZ: Steam kimligi yalnizca sitenin OpenID akisindan
- *      gecerek kanitlanir. Oyun, sitenin guvenebilecegi bir belge vermiyor;
- *      verseydi herkes istedigi SteamID adina veri gonderebilirdi (eski
- *      paylasilan-anahtar yonteminin terk edilme sebebi tam olarak buydu).
- *      Cerez 30 gun gecerlidir, yani ayda bir giris yeterli.
+ *   2. SITE BAGLANTISI — canli maci ve MMR'i siteye gonderebilmek icin
+ *      gerekir. Artik OTOMATIKTIR: uygulama oyundan okunan SteamID ile bu
+ *      kuruluma ozel bir cihaz anahtarini birlikte gonderir ve site anahtari
+ *      hesaba ilk kullanimda baglar (bkz. netlify/functions/_lib/identity.mjs).
+ *      Steam girisi zorunlu degildi cunku Steam, IP'si baska sehirde gorunen
+ *      girisleri engelliyor. Giris yalnizca hesap BASKA bir bilgisayara
+ *      bagliysa (`cloudRejected`) bu bilgisayari eklemek icin gerekir.
  *
  * @param {{
  *   user: Record<string, any>|null,
  *   detectedPlayer: { name: string }|null,
  *   cloudSignedIn: boolean,
+ *   cloudConfigured?: boolean,
+ *   cloudLinked?: boolean,
+ *   cloudRejected?: boolean,
  *   onOpenSettings?: () => void
  * }} props
  */
@@ -280,6 +292,8 @@ function DesktopIdentity({
   detectedPlayer,
   cloudSignedIn,
   cloudConfigured = true,
+  cloudLinked = false,
+  cloudRejected = false,
   onOpenSettings,
 }) {
   const [error, setError] = useState("");
@@ -351,17 +365,28 @@ function DesktopIdentity({
         >
           ✓ Site oturumu açık
         </button>
-      ) : (
+      ) : cloudRejected ? (
+        // Hesap baska bir bilgisayara bagli: bu bilgisayari eklemek icin bir
+        // kez giris gerekir (site oturum + cihaz anahtarini birlikte gorur).
         <button
           type="button"
           className="btn primary small"
           onClick={signIn}
           disabled={busy}
-          title="Canlı maçını ve MMR'ını arkadaşlarının görebilmesi için gerekli"
+          title="Bu hesap başka bir bilgisayara bağlı. Bu bilgisayarı eklemek için bir kez Steam ile giriş yap."
         >
-          <SteamMark /> {busy ? "Giriş açılıyor…" : "Steam ile giriş"}
+          <SteamMark /> {busy ? "Giriş açılıyor…" : "Bu bilgisayarı ekle"}
         </button>
-      )}
+      ) : cloudLinked ? (
+        <span
+          className="chip good"
+          title="Canlı maçın ve MMR değişimin siteye otomatik gidiyor; giriş gerekmez."
+        >
+          ✓ Siteye bağlı
+        </span>
+      ) : cloudConfigured ? (
+        <span className="muted micro">Siteye bağlanmak için bir maça gir</span>
+      ) : null}
     </div>
   );
 }

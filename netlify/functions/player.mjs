@@ -14,6 +14,7 @@ import {
 import { getMatchSquads, getPlayerBundle } from "./_lib/player-data.mjs";
 import { readMatchRoles, sessionAccountId } from "./_lib/match-roles.mjs";
 import { readSession } from "./_lib/session.mjs";
+import { readIdentity } from "./_lib/identity.mjs";
 import { mmrStore } from "./_lib/store.mjs";
 import { fail, json } from "./_lib/respond.mjs";
 
@@ -33,7 +34,22 @@ export default async (request) => {
     return fail("oyuncu-bulunamadi", { status: 404 });
   }
 
-  const refresh = url.searchParams.get("refresh") === "1";
+  let refresh = url.searchParams.get("refresh") === "1";
+
+  // MAC SONU TAZELEMESI: masaustu uygulamasi mac bitince biten macin
+  // kimligini yollar (bkz. desktop app.js -> scheduleAfterMatchRefresh).
+  // `expectMatchId` ortak tazeleme beklemesini atlattigi icin yalnizca
+  // kimligi dogrulanmis (kadrodaki) bir istekte kabul edilir; aksi halde
+  // herkes rastgele bir kimlikle kaynak kotasini harcatabilirdi.
+  let expectMatchId = "";
+  const wantedMatch = String(url.searchParams.get("expectMatchId") || "");
+  if (/^\d+$/.test(wantedMatch)) {
+    const { identity } = await readIdentity(request);
+    if (identity) {
+      expectMatchId = wantedMatch;
+      refresh = true;
+    }
+  }
 
   // BAKILAN oyuncunun kendi pozisyon beyanlari her ziyaretcide okunur:
   // degerlendirme kim bakiyor diye degismemeli. Steam girisi yalnizca YAZMA
@@ -45,7 +61,11 @@ export default async (request) => {
   const forcedRoles = await readMatchRoles(String(player.player_id));
 
   try {
-    const bundle = await getPlayerBundle(player, { refresh, forcedRoles });
+    const bundle = await getPlayerBundle(player, {
+      refresh,
+      forcedRoles,
+      expectMatchId,
+    });
 
     // MMR HERKESE gosterilir: kayit oyuncunun KENDI hesabina yazilmistir
     // (bkz. mmr.mjs — anahtar oturum cerezinden gelir), okumak icin ayni

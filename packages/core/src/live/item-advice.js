@@ -1105,12 +1105,17 @@ function gapsAndItems(bars, rows, against, overrides, gameTime = null) {
         // Dedektor: hicbir zaman bir hero'nun build'ine baglanmaz, her zaman
         // destege yazilir (bkz. ALWAYS_BUYABLE_ITEMS tanimi).
         canBuy = detectionBuyers;
-      } else {
-        // Takimda kimsenin planinda olmayan bir item TAMAMEN dusmez: belirli
-        // bir hero'ya baglanamadigi icin "Duruma göre"ye duser, alicisi
-        // ayni destek-once fallback'i kullanir.
+      } else if (ITEM_GROUPS[key] === "support") {
+        // Takimda kimsenin planinda olmayan bir DESTEK itemi (Pipe, Glimmer,
+        // Force...) tamamen dusmez: belirli bir hero'ya baglanamadigi icin
+        // "Duruma göre"ye duser ve desteklere yazilir.
         canBuy = detectionBuyers;
         finalGroup = "situational";
+      } else {
+        // Cekirdek/duruma gore itemi (Harpoon, Manta, Ethereal...) planinda
+        // tasimayan bir hero'ya yazmak yanlis bir vaat olurdu: eskiden
+        // destek-once fallback'i Harpoon'u Witch Doctor'a, Lina'ya oneriyordu.
+        return;
       }
     }
     if (!canBuy?.length) {

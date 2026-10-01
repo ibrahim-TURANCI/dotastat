@@ -4,7 +4,10 @@
  * Burada tutulanlar:
  *   - steamId        : elle girilen kimlik (bos ise GSI'dan tespit edilir)
  *   - cloudUrl       : canli mac verisinin gonderilecegi site adresi
- *   - ingestToken    : o site ile paylasilan gizli anahtar
+ *   - ingestToken    : o site ile paylasilan gizli anahtar (eski yol)
+ *   - deviceKey      : bu kuruluma ozel rastgele anahtar; siteye Steam girisi
+ *                      olmadan kimlik kanitlar (bkz. services/cloud-session.js).
+ *                      Ilk ihtiyacta uretilir, arayuze HIC gonderilmez.
  *   - openDotaApiKey : opsiyonel
  *   - stratzApiKey   : opsiyonel; OpenDota limitine takilinca yedek kaynak
  *   - shareLive      : canli mac yayini acik mi
@@ -14,6 +17,7 @@
  *   - showOverlay    : oyun sirasinda item tavsiyesi overlay'i gosterilsin
  */
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -61,6 +65,7 @@ const DEFAULTS = {
   detectedSteamId: "",
   cloudUrl: "",
   ingestToken: "",
+  deviceKey: "",
   openDotaApiKey: "",
   stratzApiKey: "",
   shareLive: true,
@@ -235,6 +240,27 @@ function createSettingsStore(filePath) {
         listeners.set(key, []);
       }
       listeners.get(key).push(handler);
+    },
+    /**
+     * Bu kurulumun cihaz anahtari; yoksa uretilip kaydedilir.
+     *
+     * Anahtar degisirse site bu kurulumu TANIMAZ (hesap eski anahtara bagli
+     * kalir), bu yuzden yalnizca bos oldugunda uretilir.
+     * @returns {string}
+     */
+    deviceKey() {
+      const current = String(read().deviceKey || "");
+      if (current) {
+        return current;
+      }
+      const key = crypto.randomBytes(32).toString("base64url");
+      try {
+        write({ deviceKey: key });
+      } catch {
+        // Yazilamazsa bu oturumda bellekteki deger kullanilir.
+        cache = { ...read(), deviceKey: key };
+      }
+      return key;
     },
     /**
      * Kullanicinin kimligi: elle girilen deger onceliklidir, yoksa oyundan

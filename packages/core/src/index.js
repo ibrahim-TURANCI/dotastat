@@ -173,7 +173,9 @@ export {
 export { normalizeGsiPayload } from "./gsi/normalize-gsi.js";
 export {
   buildLiveMatchContext,
+  isLiveMatchActive,
   isLiveMatchFresh,
+  isLiveMatchOver,
   selectLiveStateForViewer,
   LIVE_MATCH_TTL_MS,
 } from "./gsi/match-context.js";
