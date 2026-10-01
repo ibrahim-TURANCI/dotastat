@@ -47,7 +47,8 @@ const DETAIL_ERRORS = {
  *   evaluation?: Record<string, any>|null,
  *   mmrChange?: { delta: number, mmr: number }|null,
  *   role?: string,
- *   onClose: () => void
+ *   onClose: () => void,
+ *   onRosterRefreshed?: () => void
  * }} props
  */
 export function MatchDetailModal({
@@ -58,6 +59,7 @@ export function MatchDetailModal({
   mmrChange,
   role,
   onClose,
+  onRosterRefreshed,
 }) {
   useEffect(() => {
     const onKey = (event) => {
@@ -73,6 +75,18 @@ export function MatchDetailModal({
     deps: [match.matchId],
   });
   const detail = full.data?.match || null;
+
+  // Sunucu, listesi bu maci icermeyen kadro uyelerini tazeledi ya da takim
+  // dagilimindaki pozisyonlari kaydetti: Son Maclar'daki kadro eslesmesi ve
+  // pozisyon artik eski; panel onbellekten yeniden okunsun.
+  const listStale =
+    (full.data?.refreshed?.length || 0) > 0 || Boolean(full.data?.rolesUpdated);
+  useEffect(() => {
+    if (listStale) {
+      onRosterRefreshed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [full.data]);
 
   const win = match.result === "win";
 

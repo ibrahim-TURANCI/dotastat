@@ -5,6 +5,7 @@ import { formatRelativeTime } from "../lib/format.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { PlayerCard } from "../components/PlayerCard.jsx";
 import { PlayerDetail, refreshTooltip } from "../components/PlayerDetail.jsx";
+import { PeriodSwitch } from "../components/PeriodSwitch.jsx";
 import {
   CollapsibleSection,
   EmptyState,
@@ -41,32 +42,6 @@ function periodSubtitle(period, days) {
  * yoklamak ayni cevabi tekrar tekrar istemek olurdu.
  */
 const CACHE_POLL_MS = 60000;
-
-/**
- * Hafta / Ay / Son 60 secici.
- *
- * Dugmeler, acilir liste degil: secenek sayisi az ve hepsi tek tikla
- * erisilebilir olmali — hangisinde oldugun da bakmadan gorunmeli.
- *
- * @param {{ value: string, onChange: (value: string) => void }} props
- */
-function PeriodSwitch({ value, onChange }) {
-  return (
-    <div className="period-switch" role="group" aria-label="Dönem">
-      {Object.values(PERIODS).map((row) => (
-        <button
-          key={row.key}
-          type="button"
-          className={"period-btn" + (value === row.key ? " on" : "")}
-          aria-pressed={value === row.key}
-          onClick={() => onChange(row.key)}
-        >
-          {row.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Oyuncu Degerlendirme ekrani — sitenin ana ekrani.
@@ -218,6 +193,8 @@ export function PlayerEvaluationScreen({
       {selected ? (
         <PlayerDetail
           playerKey={selected}
+          // Genel sekmesinin ozeti listede secili donemle acilir.
+          period={period}
           onClose={() => setSelected("")}
           // Detayda "Yenile"ye basildiginda ayni veri kartlari da degistirir;
           // listeyi eski haliyle birakmak "hangisi dogru" sorusunu doguruyordu.

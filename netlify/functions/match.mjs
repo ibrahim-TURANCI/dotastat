@@ -36,7 +36,13 @@ export default async (request) => {
     // Mac verisi degismez ama pozisyon beyani degisebilir; CDN'de kisa tutulur
     // ki elle girilen pozisyon dagilima hemen yansisin.
     return json(
-      { ok: true, match: result.match, fromCache: result.fromCache },
+      {
+        ok: true,
+        match: result.match,
+        fromCache: result.fromCache,
+        refreshed: result.refreshed || [],
+        rolesUpdated: Boolean(result.rolesUpdated),
+      },
       { cacheSeconds: 60 },
     );
   } catch (error) {

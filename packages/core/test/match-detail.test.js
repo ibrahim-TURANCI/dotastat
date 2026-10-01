@@ -249,3 +249,75 @@ test("yedek mac seviyesi madalyalarin MMR ortalamasindan", async () => {
   assert.equal(averageTierOf([54, 52, 62, 51, 64, 53, 54, 61, 64, 52]), 55);
   assert.equal(averageTierOf([]), null);
 });
+
+test("servis: mac acilinca listesinde mac olmayan kadro uyesi tazelenir", async () => {
+  const [member, other, third] = listRoster();
+  const storage = createMemoryStorage();
+  await storage.set("matches:" + member.player_id + ":stale", {
+    matches: [{ matchId: "777", hero: "juggernaut", result: "win" }],
+    fetchedAt: new Date().toISOString(),
+    schema: 99,
+  });
+  // Liste mactan ONCE cekilmis: 777 yok.
+  await storage.set("matches:" + other.player_id + ":stale", {
+    matches: [{ matchId: "700", hero: "lion", result: "win" }],
+    fetchedAt: "2026-08-31T00:00:00.000Z",
+    schema: 99,
+  });
+  // Liste mactan SONRA cekilmis ama mac yok: tazeleme bir sey getirmez.
+  await storage.set("matches:" + third.player_id + ":stale", {
+    matches: [{ matchId: "701", hero: "lion", result: "win" }],
+    fetchedAt: "2026-09-02T00:00:00.000Z",
+    schema: 99,
+  });
+  const service = createPlayerDataService({ storage });
+  const base = detail(member.player_id);
+  base.players[1] = detailRow(1, { accountId: other.player_id });
+  base.players[2] = detailRow(2, { accountId: third.player_id });
+  service.client.getMatchDetail = async () => base;
+  service.client.requestRefresh = async () => {};
+  /** @type {string[]} */
+  const fetched = [];
+  const fetchMatches = async (accountId) => {
+    fetched.push(String(accountId));
+    return [{ ...detailRow(1), matchId: "777", playerId: String(accountId) }];
+  };
+  service.client.getRecentMatches = fetchMatches;
+  service.client.getRecentMatchesFreshest = fetchMatches;
+  service.client.getRecentMatchesExpecting = fetchMatches;
+
+  await service.getMatchDetail("777");
+  assert.deepEqual(fetched, [other.player_id]);
+  const refreshed = await service.getPlayerMatches(other, { allowFetch: false });
+  assert.ok(refreshed.matches.some((row) => row.matchId === "777"));
+
+  // Ikinci acilista tekrar istek atilmaz.
+  await service.getMatchDetail("777");
+  assert.equal(fetched.length, 1);
+});
+
+test("servis: detaydaki takim pozisyonu Son Maclar'a yansir", async () => {
+  const [member] = listRoster();
+  const storage = createMemoryStorage();
+  await storage.set("matches:" + member.player_id + ":stale", {
+    // Tek satirdan tahmin: pos3.
+    matches: [{ ...detailRow(0), matchId: "777", role: "pos3" }],
+    fetchedAt: new Date().toISOString(),
+    schema: 99,
+  });
+  const service = createPlayerDataService({ storage });
+  service.client.getMatchDetail = async () => detail(member.player_id);
+  service.client.getPlayerProfile = async () => null;
+  service.client.getHeroPerformance = async () => [];
+
+  const first = await service.getMatchDetail("777");
+  const own = first.match.players.find((row) => row.rosterId === member.id);
+  assert.equal(first.rolesUpdated, true);
+  assert.equal((await service.getMatchDetail("777")).rolesUpdated, false);
+
+  const bundle = await service.getPlayerBundle(member);
+  const row = bundle.matches.find((match) => match.matchId === "777");
+  assert.equal(row.role, own.role);
+  const evaluation = bundle.evaluations.find((e) => e.matchId === "777");
+  assert.equal(evaluation.role, own.role);
+});
