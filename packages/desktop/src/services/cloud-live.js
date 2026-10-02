@@ -20,6 +20,13 @@ const { cloudFetch } = require("./cloud-session.js");
 
 /** Iki cekim arasindaki sure. Site paneli de 5 sn'de bir yokluyor. */
 const INTERVAL_MS = 5000;
+/**
+ * Macta baska yayinci YOKKEN iki cekim arasindaki sure. Cogu macta kadrodan
+ * tek kisi var; ona her 5 sn'de bos cevap almak macta saatte ~720 gereksiz
+ * istek demekti. Bir arkadas yayina katilinca en gec bu kadar sonra fark
+ * edilir ve hiz yeniden INTERVAL_MS'e doner.
+ */
+const IDLE_INTERVAL_MS = 15000;
 /** Bu kadar eski uzak veri kullanilmaz. */
 const MAX_AGE_MS = 30 * 1000;
 
@@ -39,6 +46,8 @@ function createCloudLiveWatcher(options) {
   let timer = null;
   let busy = false;
   let lastError = "";
+  /** Son cekimin zamani; baska yayinci yoksa seyrek cekilir. */
+  let lastFetchAt = 0;
 
   async function tick() {
     if (busy) {
@@ -51,6 +60,15 @@ function createCloudLiveWatcher(options) {
       latest = null;
       return;
     }
+    const sameMatch = latest?.matchId === matchId;
+    if (
+      sameMatch &&
+      !latest.state &&
+      Date.now() - lastFetchAt < IDLE_INTERVAL_MS
+    ) {
+      return;
+    }
+    lastFetchAt = Date.now();
 
     busy = true;
     try {

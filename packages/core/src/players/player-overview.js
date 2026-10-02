@@ -7,7 +7,7 @@
  * ortalamasi, Hero Havuzu, Sinerji, Son 5 Mac) ve bunlara bagli tavsiyeler
  * uretir.
  *
- * DONEM: Performans, hero havuzu, sinerji ve tekrarlayan hata secilen
+ * DONEM: Performans, hero havuzu, sinerji ve oyun tarzi (bkz. player-style.js) secilen
  * pencereye gore hesaplanir (Hafta / Ay / Son 60 — kartlarla ayni tanim, bkz.
  * weekly-score.js PERIODS). Performans degisimi kartlardaki gibi pencerenin
  * `BASELINE_WINDOW_FACTOR` kati kadar onceki sureyle kiyaslanir. "Son 5 mac"
@@ -24,6 +24,7 @@
  */
 
 import { heroDisplayName } from "../heroes/hero-names.js";
+import { buildPlayerStyle } from "./player-style.js";
 import {
   BASELINE_WINDOW_FACTOR,
   PERIODS,
@@ -64,6 +65,7 @@ const MAX_TIPS = 4;
  *   heroPool: Record<string, any>,
  *   synergy: Record<string, any>,
  *   recent: Record<string, any>,
+ *   style: ReturnType<typeof buildPlayerStyle>,
  *   tips: Array<{ key: string, text: string, tone: "good"|"bad"|"warn" }>
  * }}
  */
@@ -91,6 +93,7 @@ export function buildPlayerOverview(input = {}) {
   const heroPool = summarizeHeroes(window);
   const synergy = summarizeSynergy(window, squads);
   const recent = summarizeRecent(recentRows, rankByMatch, squads);
+  const style = buildPlayerStyle({ matches: window, evaluations });
 
   /** @type {Array<{ key: string, text: string, tone: "good"|"bad"|"warn", weight: number }>} */
   const tips = [];
@@ -140,17 +143,6 @@ export function buildPlayerOverview(input = {}) {
         60,
       );
     }
-  }
-
-  // --- Tekrarlayan hata --------------------------------------------------------
-  const mistake = recurringMistake(window, rankByMatch);
-  if (mistake) {
-    tip(
-      "mistake-" + slug(mistake.text),
-      `${capitalize(scope.text)} ${mistake.count} kez tekrar etti: ${mistake.text}`,
-      "warn",
-      75,
-    );
   }
 
   // --- Olum ------------------------------------------------------------------
@@ -224,6 +216,7 @@ export function buildPlayerOverview(input = {}) {
     heroPool,
     synergy,
     recent,
+    style,
     tips: finalTips,
   };
 }
@@ -477,29 +470,6 @@ function summarizeRecent(rows, rankByMatch, squads) {
   };
 }
 
-/**
- * Son maclarin degerlendirmelerinde en sik gecen hata metni.
- * @param {Array<Record<string, any>>} rows
- * @param {Map<string, Record<string, any>>} rankByMatch
- */
-function recurringMistake(rows, rankByMatch) {
-  /** @type {Map<string, number>} */
-  const counts = new Map();
-  for (const row of rows) {
-    const evaluation = rankByMatch.get(String(row.matchId));
-    for (const text of new Set(evaluation?.mistakes || [])) {
-      const value = String(text || "").trim();
-      if (value) {
-        counts.set(value, (counts.get(value) || 0) + 1);
-      }
-    }
-  }
-  const top = [...counts.entries()].sort(
-    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-  )[0];
-  return top && top[1] >= MIN_SAMPLE ? { text: top[0], count: top[1] } : null;
-}
-
 /** @param {number[]} values */
 function average(values) {
   return values.length
@@ -523,12 +493,4 @@ function sum(rows, field) {
 /** @param {string} text */
 function capitalize(text) {
   return text ? text.charAt(0).toLocaleUpperCase("tr") + text.slice(1) : "";
-}
-
-/** @param {string} text */
-function slug(text) {
-  return String(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9ığüşöç]+/g, "-")
-    .slice(0, 40);
 }

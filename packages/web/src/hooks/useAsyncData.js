@@ -24,6 +24,11 @@ export function useAsyncData(loader, options = {}) {
   loaderRef.current = loader;
   const mountedRef = useRef(true);
   const hasDataRef = useRef(false);
+  // Son istegin baslama ani ve suren istek var mi: zamanlayici ve sekmeye
+  // donus bunlara bakarak gereksiz (ust uste binen / az once atilmis) istegi
+  // atlar. Her istek Netlify'da ayri bir fonksiyon cagrisi.
+  const lastRunAtRef = useRef(0);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -38,6 +43,8 @@ export function useAsyncData(loader, options = {}) {
    *   zamanlayici bos gecer, boylece onbellek kullanilir.
    */
   const run = useCallback(async (runOptions) => {
+    lastRunAtRef.current = Date.now();
+    inFlightRef.current = true;
     if (hasDataRef.current) {
       setRefreshing(true);
     } else {
@@ -68,6 +75,7 @@ export function useAsyncData(loader, options = {}) {
       }
       return { ok: false, data: null, error: caught };
     } finally {
+      inFlightRef.current = false;
       if (mountedRef.current) {
         setLoading(false);
         setRefreshing(false);
@@ -82,19 +90,37 @@ export function useAsyncData(loader, options = {}) {
     }
 
     run();
-    if (!intervalMs) {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, run, ...deps]);
+
+  // Zamanlayici AYRI kurulur: aralik degistiginde (ornek: canli mac basladi,
+  // 30 sn -> 5 sn) yalnizca zamanlayici yenilenir. Hemen istek atilmaz, cunku
+  // araligi degistiren sey zaten az once gelen yanittir; tekrar istemek ayni
+  // cevabi ikinci kez almak olurdu.
+  useEffect(() => {
+    if (!enabled || !intervalMs) {
       return undefined;
     }
 
+    // Sekme arka plandayken istek atmayiz. Onceki istek hala suruyorsa (yavas
+    // ag) ikincisi ust uste binmez; elle tazeleme (`reload`) bundan etkilenmez.
+    // Biraz pay birakilir: zamanlayici tam aralikta tetiklendiginde onceki
+    // istegin baslangici aralik kadar once olmayabilir.
+    const due = (minGapMs) =>
+      document.visibilityState === "visible" &&
+      !inFlightRef.current &&
+      Date.now() - lastRunAtRef.current >= minGapMs;
+
     const timer = setInterval(() => {
-      // Sekme arka plandayken istek atmayiz; kullanici donunce hemen tazelenir.
-      if (document.visibilityState === "visible") {
+      if (due(intervalMs / 2)) {
         run();
       }
     }, intervalMs);
 
+    // Sekmeye donuldugunde veri yalnizca bir aralik kadar eskidiyse tazelenir;
+    // sekmeler arasinda gidip gelmek her seferinde istek uretmesin.
     const onVisible = () => {
-      if (document.visibilityState === "visible") {
+      if (due(intervalMs)) {
         run();
       }
     };
@@ -104,8 +130,7 @@ export function useAsyncData(loader, options = {}) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, intervalMs, run, ...deps]);
+  }, [enabled, intervalMs, run]);
 
   return { data, error, loading, refreshing, reload: run };
 }

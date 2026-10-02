@@ -7,6 +7,9 @@
  *   GET  /api/live  — site ziyaretcileri (arkadaslar) canli maci buradan okur.
  *                     `?raw=1&matchId=..&exclude=..` masaustu uygulamasina
  *                     ayni macin diger yayincilarini ham olarak verir.
+ *                     Yanit ONLINE LISTESINI de tasir ve giris yapmis
+ *                     izleyicinin istegi "buradayim" sayilir; site ayrica
+ *                     presence istegi atmaz (bkz. _lib/presence.mjs).
  *
  * Oyun icinden gelen GSI verisi yalnizca oyuncunun kendi bilgisayarinda
  * bulunur; bu uc onu tek bir yerde toplayip herkese acar.
@@ -26,6 +29,8 @@ import { readSession } from "./_lib/session.mjs";
 import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
 import { readHeroPlans } from "./_lib/hero-plans.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
+import { readOnline, touchPresence } from "./_lib/presence.mjs";
 
 /** Kayitlarin depoda tutulma suresi. */
 const LIVE_TTL_MS = 10 * 60 * 1000;
@@ -103,7 +108,15 @@ async function ingest(request) {
     updatedAt: new Date().toISOString(),
   };
 
-  await liveStore().set("state:" + uploader, record, { ttlMs: LIVE_TTL_MS });
+  // Biten mac (POST_GAME) ya da ana menu kaydi saklanmaz, SILINIR: GET zaten
+  // onu canli saymiyor ve kayit durdukca her yoklama onu okumak zorunda
+  // kaliyordu. Masaustu mac bitince bunu hemen gonderir; panel bir sonraki
+  // yoklamada "canli mac yok"a duser.
+  if (isLiveMatchActive(record)) {
+    await liveStore().set("state:" + uploader, record, { ttlMs: LIVE_TTL_MS });
+  } else {
+    await liveStore().remove("state:" + uploader);
+  }
 
   return json({ ok: true, uploader, matchId: record.matchId || "" });
 }
@@ -139,6 +152,39 @@ async function cachedHeroPlans(options = {}) {
 }
 
 /**
+ * Hesaplanmis canli mac baglaminin surec ici hafizasi.
+ *
+ * Baglam (draft tavsiyesi, 10 oyuncunun item tavsiyesi, takim analizi) her
+ * yoklamada bastan hesaplaniyordu; oysa masaustu en fazla birkac saniyede bir
+ * yeni durum gonderiyor ve ayni izleyicinin arka arkaya iki yoklamasi cogu
+ * zaman AYNI girdiyi goruyor. Anahtar, girdiyi belirleyen her seyi kapsar:
+ * kayitlarin guncellenme anlari, izleyici ve katalog/istatistik hafizalarinin
+ * kendisi (onlar yenilenince nesne de degisir).
+ */
+const CONTEXT_MEMO_LIMIT = 16;
+/** @type {Map<string, { inputs: unknown[], context: Record<string, any> }>} */
+const contextMemo = new Map();
+
+/**
+ * @param {string} key
+ * @param {unknown[]} inputs Kimlikle karsilastirilan girdiler
+ * @param {() => Record<string, any>} build
+ */
+function memoContext(key, inputs, build) {
+  const hit = contextMemo.get(key);
+  if (hit && hit.inputs.every((value, index) => value === inputs[index])) {
+    return hit.context;
+  }
+  const context = build();
+  contextMemo.delete(key);
+  contextMemo.set(key, { inputs, context });
+  if (contextMemo.size > CONTEXT_MEMO_LIMIT) {
+    contextMemo.delete(contextMemo.keys().next().value);
+  }
+  return context;
+}
+
+/**
  * Su an yayinda olan TUM taze canli mac kayitlari.
  *
  * Masaustu uygulamasini kuran herkes kendi macini ayri bir anahtara yazar
@@ -153,7 +199,27 @@ async function readFreshStates() {
   return rows.filter((row) => row && isLiveMatchActive(row));
 }
 
+/**
+ * Izleyiciyi online isaretler ve online listesini dondurur.
+ *
+ * @param {Record<string, any>|null} session
+ * @param {boolean} hello Sayfanin ilk istegi (kisitlama atlanir)
+ * @returns {Promise<Array<Record<string, any>>|null>} okunamazsa null
+ */
+async function presenceForViewer(session, hello) {
+  try {
+    if (session) {
+      await touchPresence(session, { force: hello });
+    }
+    return await readOnline({ fresh: hello });
+  } catch {
+    return null;
+  }
+}
+
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   if (request.method === "POST") {
     return ingest(request);
   }
@@ -165,6 +231,9 @@ export default async (request) => {
   try {
     const url = new URL(request.url);
     const viewerSteamId = url.searchParams.get("steamId") || "";
+
+    // `readSession` yalnizca cerez cozer, depoya gitmez.
+    const viewerSession = readSession(request);
 
     const states = await readFreshStates();
 
@@ -210,13 +279,20 @@ export default async (request) => {
     // yuzden tavsiye izleyiciye gore DEGISMEZ; giris yapmamis bir ziyaretci de
     // grubun duzenledigi hali gorur.
     //
-    // `readSession` yalnizca cerez cozer, depoya gitmez; bu yuzden erken
-    // donusten ONCE cagrilabilir. Yanit yine de oturuma gore onbelleklenir:
-    // `canEditItemPlans` kisiye ozeldir.
-    const viewerSession = readSession(request);
+    // Yanit oturuma gore onbelleklenir: `canEditItemPlans` kisiye ozeldir.
+    //
+    // ONLINE LISTESI: giris yapmis izleyicinin bu yoklamasi heartbeat yerine
+    // gecer (yazma kisitli, bkz. touchPresence). `hello=1` sayfanin ilk
+    // istegidir; yeniden yukleme sonrasi kullanici listede hemen gorunsun.
+    // Liste okunamazsa canli mac yine doner; arayuz onceki listeyi korur.
+    const online = await presenceForViewer(
+      viewerSession,
+      url.searchParams.get("hello") === "1",
+    );
+
     if (!liveState) {
       return json(
-        { ok: true, active: false, reason: "canli-mac-yok" },
+        { ok: true, active: false, reason: "canli-mac-yok", online },
         { cacheSeconds: viewerSession ? 0 : CACHE_SECONDS_IDLE },
       );
     }
@@ -231,13 +307,21 @@ export default async (request) => {
     });
 
     const { statsByPlayerId, profilesByPlayerId } = await getCachedLiveInputs();
-    const context = buildLiveMatchContext({
-      liveState,
-      statsByPlayerId,
-      profilesByPlayerId,
-      viewerSteamId,
-      heroOverrides,
-    });
+    const statesKey = states
+      .map((row) => row.uploaderSteamId + "@" + row.updatedAt)
+      .join(",");
+    const context = memoContext(
+      viewerSteamId + "|" + statesKey,
+      [heroOverrides, statsByPlayerId, profilesByPlayerId],
+      () =>
+        buildLiveMatchContext({
+          liveState,
+          statsByPlayerId,
+          profilesByPlayerId,
+          viewerSteamId,
+          heroOverrides,
+        }),
+    );
 
     return json(
       {
@@ -247,6 +331,7 @@ export default async (request) => {
         canEditItemPlans: Boolean(viewerSession),
         // Ayni anda baska maclar da varsa arayuz bunu belirtebilsin.
         liveMatchCount: merged.length,
+        online,
         // Bu macin verisi kac ayri kurulumdan besleniyor.
         contributorCount: (
           liveState.uploaders || [liveState.uploaderSteamId]

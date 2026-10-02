@@ -2,10 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 
 /**
+ * Sekme arka plandayken heartbeat araligi. Tarayici arka plan zamanlayicilarini
+ * dakika sinirina kadar geciktirebiliyor; en kotu durumda bile sunucudaki
+ * 3 dakikalik omrun altinda kalir (bkz. _lib/presence.mjs PRESENCE_TTL_MS).
+ */
+const HIDDEN_BEAT_MS = 100000;
+
+/**
  * Steam oturumu.
  *
- * Giris yapilmissa kullanicinin adi/avatari buradan gelir ve online listesine
- * heartbeat gonderilir. Giris yapilmamissa uygulama yine calisir; kimlik o
+ * Giris yapilmissa kullanicinin adi/avatari buradan gelir ve kullanici online
+ * listesinde gorunur. Giris yapilmamissa uygulama yine calisir; kimlik o
  * durumda yalnizca canli mactaki SteamID uzerinden tahmin edilir.
  */
 export function useSession() {
@@ -54,19 +61,52 @@ export function useSession() {
     return () => clearInterval(timer);
   }, [mode, load]);
 
-  // Giris yapan kullanici online listesinde gorunur kalsin.
+  // ONLINE LISTESI — surekli heartbeat YOK.
+  //
+  // Sekme gorunurken canli mac yoklamasi zaten gidiyor; sunucu giris yapmis
+  // kullanicinin o istegini "buradayim" sayar ve yanit listeyi tasir (bkz.
+  // App.jsx, netlify/functions/_lib/presence.mjs). Burada yalnizca iki is var:
+  //   - Sekme ARKA PLANDAYKEN yoklama durur; kullanici listeden dusmesin diye
+  //     seyrek bir heartbeat gider.
+  //   - Sayfa kapanirken tek bir "ayrildim" istegi: listeden aninda duser.
+  // Masaustunde liste yereldir, bu adimlara gerek yok.
   useEffect(() => {
-    if (!user) {
+    if (!user || mode !== "cloud") {
       return undefined;
     }
 
-    const beat = () => {
-      api.heartbeat({}).catch(() => {});
+    let timer = null;
+    const beat = () => api.heartbeat({}).catch(() => {});
+    const sync = () => {
+      const hidden = document.visibilityState !== "visible";
+      if (hidden && !timer) {
+        timer = setInterval(beat, HIDDEN_BEAT_MS);
+      } else if (!hidden && timer) {
+        clearInterval(timer);
+        timer = null;
+      }
     };
-    beat();
-    const timer = setInterval(beat, 60000);
-    return () => clearInterval(timer);
-  }, [user]);
+    const onPageHide = () => api.leavePresence();
+    // Geri/ileri onbelleginden donuldu: "ayrildim" gitmisti, yeniden katil.
+    const onPageShow = (event) => {
+      if (event.persisted) {
+        beat();
+      }
+    };
+
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      if (timer) {
+        clearInterval(timer);
+      }
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [user, mode]);
 
   const logout = useCallback(async () => {
     try {

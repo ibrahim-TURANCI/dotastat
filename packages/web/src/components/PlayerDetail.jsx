@@ -351,7 +351,7 @@ function OverviewTab({ player, overview, form, onOpenTab }) {
         overview={overview}
         character={character}
       />
-      <CharacterNotes character={character} hasSummary={overview?.hasData} />
+      {overview?.hasData ? <StyleNotes overview={overview} /> : null}
     </div>
   );
 }
@@ -582,68 +582,103 @@ function AdviceCard({ playerId, overview, character }) {
 }
 
 /**
- * Elle yazilmis karakter notlari: oyun tarzi ve guclu / zayif yonler.
+ * Oyun tarzi ve guclu / zayif yonler — secili donemin maclarindan (bkz.
+ * core/player-style.js). Tohum verideki elle yazilmis metinler burada
+ * kullanilmaz: degismedikleri icin donemle celisebiliyorlardi.
  *
- * @param {{ character: Record<string, any>, hasSummary?: boolean }} props
+ * @param {{ overview: ReturnType<typeof buildPlayerOverview> }} props
  */
-function CharacterNotes({ character, hasSummary = false }) {
-  const styleRows = [
-    { label: "Lane", value: character.laneBehavior },
-    { label: "Teamfight", value: character.teamfightBehavior },
-    { label: "Harita / tempo", value: character.mapTempoVisionBehavior },
-    { label: "Takımdaki yeri", value: character.bestTeamUsage },
-  ].filter((row) => row.value);
-  const traits = [
-    { tone: "good", label: "Güçlü", items: character.strengths },
-    { tone: "bad", label: "Zayıf", items: character.weaknesses },
-    { tone: "warn", label: "Gelişim", items: character.developmentAreas },
-  ].filter((row) => row.items?.length);
+function StyleNotes({ overview }) {
+  const { style, period } = overview;
 
-  if (!character.generalPlaystyle && !styleRows.length && !traits.length) {
-    // Veriden uretilen ozet ekrandaysa bos not uyarisi gereksiz kalabalik.
-    return hasSummary ? null : (
-      <EmptyState title="Bu oyuncu için karakter notu girilmemiş" />
+  if (!style.enough) {
+    return (
+      <article className="note-card">
+        <h4>Oyun tarzı</h4>
+        <p className="muted micro">
+          {period.label} döneminde yorum için yeterli maç yok ({style.sample}/
+          {style.minSample}). Daha geniş bir dönem seç.
+        </p>
+      </article>
     );
   }
 
+  const { averages } = style;
+  const styleRows = [
+    {
+      label: "Pozisyon",
+      value: style.roles
+        .map(
+          (row) =>
+            (ROLE_SHORT_LABELS[row.role] || row.role) +
+            " %" +
+            Math.round(row.share * 100),
+        )
+        .join(" · "),
+    },
+    {
+      label: "Maç başına",
+      value: `${averages.kills} / ${averages.deaths} / ${averages.assists}`,
+    },
+    {
+      label: "Kill katılımı",
+      value:
+        averages.participation === null
+          ? ""
+          : "%" + Math.round(averages.participation * 100),
+    },
+    { label: "GPM / XPM", value: `${averages.gpm} / ${averages.xpm}` },
+  ].filter((row) => row.value);
+  const traits = [
+    { tone: "good", label: "Güçlü", items: style.strengths },
+    { tone: "bad", label: "Zayıf", items: style.weaknesses },
+    { tone: "warn", label: "Gelişim", items: style.development },
+  ].filter((row) => row.items.length);
+
   return (
     <div className="overview-grid">
-      {character.generalPlaystyle || styleRows.length ? (
-        <article className="note-card">
-          <h4>Oyun tarzı</h4>
-          {character.generalPlaystyle ? (
-            <p>{character.generalPlaystyle}</p>
-          ) : null}
-          {styleRows.length ? (
-            <dl className="style-list">
-              {styleRows.map((row) => (
-                <Fragment key={row.label}>
-                  <dt>{row.label}</dt>
-                  <dd>{row.value}</dd>
-                </Fragment>
-              ))}
-            </dl>
-          ) : null}
-        </article>
-      ) : null}
+      <article className="note-card">
+        <h4>Oyun tarzı</h4>
+        <dl className="style-list">
+          {styleRows.map((row) => (
+            <Fragment key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+        <p className="muted micro style-source">
+          {style.sample} değerlendirilmiş maç · {period.label}
+        </p>
+      </article>
 
-      {traits.length ? (
-        <article className="note-card">
-          <h4>Güçlü ve zayıf yönler</h4>
+      <article className="note-card">
+        <h4>Güçlü ve zayıf yönler</h4>
+        {traits.length ? (
           <div className="trait-columns">
             {traits.map((row) => (
               <div key={row.tone} className={"trait-col tone-" + row.tone}>
                 <span className="trait-label">{row.label}</span>
                 <ul>
-                  {row.items.map((item, index) => (
-                    <li key={index}>{item}</li>
+                  {row.items.map((item) => (
+                    <li key={item.key}>
+                      {item.label}
+                      {item.text ? (
+                        <span className="muted"> — {item.text}</span>
+                      ) : null}
+                    </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-        </article>
-      ) : null}
+        ) : (
+          <p className="muted micro">
+            Bu dönemde belirgin bir güçlü ya da zayıf yön yok; performans maçtan
+            maça dengeli.
+          </p>
+        )}
+      </article>
     </div>
   );
 }

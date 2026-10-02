@@ -17,12 +17,13 @@ import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
  * neredeyse tamami bu halde geciyor.
  *
  * Mac BASLADIGINDA hiz 5 saniyeye cikar; skorun gecikmesinin onemli oldugu tek
- * an orasi. Bekleme halinde 20 saniye, "mac basladi" bilgisinin en gec 20
- * saniyede gorunmesi demek — panel zaten kendiliginden acilip one geliyor,
- * kullanicinin ekrana bakiyor olmasi gerekmiyor.
+ * an orasi. Bekleme halinde 30 saniye, "mac basladi" bilgisinin en gec 30
+ * saniyede gorunmesi demek — draft zaten bundan uzun suruyor ve panel
+ * kendiliginden acilip one geliyor, kullanicinin ekrana bakiyor olmasi
+ * gerekmiyor. (20 sn'den 30 sn'ye cekmek acik sekme basina saatte 60 istek.)
  */
 const LIVE_POLL_MS = 5000;
-const LIVE_POLL_IDLE_MS = 20000;
+const LIVE_POLL_IDLE_MS = 30000;
 
 /** Bolumlerin mac YOKKEN aldigi durum. */
 const IDLE_PANELS = { evaluation: true, live: false };
@@ -62,10 +63,20 @@ export default function App() {
   // sonucu, kendisini besleyen araligi belirliyor.
   const [livePollMs, setLivePollMs] = useState(LIVE_POLL_IDLE_MS);
 
+  // Oturum yaniti gelmeden yoklama baslamaz: aksi halde giris yapmis
+  // kullanicida ilk istek SteamID'siz gidip, oturum gelince hemen tekrarlanirdi.
+  // Sayfanin ILK yoklamasi "hello" tasir: sunucu giris yapmis kullaniciyi
+  // online listesine hemen ekler (sonraki yoklamalarda yazma kisitlidir).
+  const greetedRef = useRef(false);
   const live = useAsyncData(
-    (options) => api.live(session.user?.steamId || "", options),
+    (options) => {
+      const hello = Boolean(session.user) && !greetedRef.current;
+      greetedRef.current = greetedRef.current || Boolean(session.user);
+      return api.live(session.user?.steamId || "", { ...options, hello });
+    },
     {
       intervalMs: livePollMs,
+      enabled: !session.loading,
       deps: [session.user?.steamId || ""],
     },
   );
@@ -73,6 +84,17 @@ export default function App() {
   // Masaustunde oyuncu degerlendirme ekrani HIC kurulmaz (bkz. asagidaki
   // `showEvaluation`); duzen kararlari da buna gore veriliyor.
   const isDesktop = session.mode === "desktop";
+
+  // Online listesi canli mac yanitiyla gelir; ayri bir presence yoklamasi
+  // yoktur. Yanitta liste yoksa (okunamadi) onceki liste korunur.
+  const [online, setOnline] = useState(null);
+  useEffect(() => {
+    if (Array.isArray(live.data?.online)) {
+      setOnline(live.data.online);
+    } else if (live.data || live.error) {
+      setOnline((current) => current || []);
+    }
+  }, [live.data, live.error]);
 
   const liveActive = Boolean(live.data?.active);
   const previousLiveActive = useRef(liveActive);
@@ -92,13 +114,13 @@ export default function App() {
     if (!liveActive) {
       setMatchEndedToken(new Date().toISOString());
     }
-    // Masaustunde ekrandaki TEK bolum canli mac; mac bitince katlamanin
-    // anlami yok, geriye bos bir sayfa kalirdi.
-    setPanels(liveActive || isDesktop ? LIVE_PANELS : IDLE_PANELS);
-    // Aralik degisince hook zamanlayiciyi kurup HEMEN bir istek atar; mac
-    // basladiginda ilk hizli yoklama boylece 20 saniye beklemez.
+    // Mac bitince panel "canli mac yok" durumuna duser ve katlanir (masaustu
+    // dahil); yeni mac basladiginda yeniden acilir.
+    setPanels(liveActive ? LIVE_PANELS : IDLE_PANELS);
+    // Aralik degisince hook yalnizca zamanlayiciyi yeniden kurar; bir sonraki
+    // yoklama yeni araligin sonunda gelir (bkz. useAsyncData).
     setLivePollMs(liveActive ? LIVE_POLL_MS : LIVE_POLL_IDLE_MS);
-  }, [liveActive, isDesktop]);
+  }, [liveActive]);
 
   // Masaustunde canli mac bolumu acik baslar: degerlendirme ekrani yok, aksi
   // halde uygulama katlanmis tek bir baslikla aciliyordu.
@@ -170,7 +192,7 @@ export default function App() {
     <LiveMatchPanel
       key="live"
       live={live.data}
-      loading={live.loading}
+      loading={live.loading || session.loading}
       error={live.error}
       open={panels.live}
       onToggle={() => toggle("live")}
@@ -183,6 +205,7 @@ export default function App() {
         user={session.user}
         sessionLoading={session.loading}
         onLogout={session.logout}
+        liveOnline={isDesktop ? null : online}
         detectedPlayer={detectedPlayer}
         mode={session.mode}
         cloudSignedIn={session.cloudSignedIn}

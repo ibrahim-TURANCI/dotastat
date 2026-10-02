@@ -15,8 +15,11 @@ import { withPeriodSummary } from "@dotastat/core";
 import { getRosterDashboard } from "./_lib/player-data.mjs";
 import { getPeriodScoreboard } from "./_lib/period-summary.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   if (request.method !== "GET") {
     return fail("desteklenmeyen-metot", { status: 405 });
   }

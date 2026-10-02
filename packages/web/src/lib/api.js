@@ -90,8 +90,12 @@ export const api = {
    * tutuyor (her yoklamada depoya gitmemek icin). Kullanici az once kaydettiyse
    * o hafiza atlanmali, yoksa degisiklik bir dakika gorunmezdi.
    *
+   * Yanit online listesini de tasir; giris yapmis kullanicinin yoklamasi
+   * sunucuda "buradayim" sayilir. `hello`: sayfanin ilk istegi — kullanici
+   * listede hemen gorunsun (sunucudaki yazma kisitlamasi atlanir).
+   *
    * @param {string} [steamId]
-   * @param {{ freshPlans?: boolean }} [options]
+   * @param {{ freshPlans?: boolean, hello?: boolean }} [options]
    */
   live: (steamId = "", options = {}) => {
     const params = new URLSearchParams();
@@ -100,6 +104,9 @@ export const api = {
     }
     if (options?.freshPlans) {
       params.set("plans", "fresh");
+    }
+    if (options?.hello) {
+      params.set("hello", "1");
     }
     const query = params.toString();
     return request("/api/live" + (query ? "?" + query : ""));
@@ -163,10 +170,10 @@ export const api = {
       body: JSON.stringify({ action: "save-defaults" }),
     }),
 
-  /** Online listesi. */
+  /** Online listesi (masaustunde; sitede liste `live` yanitindan gelir). */
   presence: () => request("/api/presence"),
 
-  /** Online kalmak icin heartbeat. */
+  /** Online kalmak icin heartbeat (yalnizca sekme arka plandayken). */
   heartbeat: (body = {}) =>
     request("/api/presence", {
       method: "POST",
@@ -174,11 +181,55 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /**
+   * Sekme kapanirken online listesinden cik. `sendBeacon` sayfa kapanirken
+   * de teslim edilir; desteklenmiyorsa `keepalive` ile denenir.
+   */
+  leavePresence: () => {
+    const body = JSON.stringify({ leave: true });
+    try {
+      if (
+        navigator.sendBeacon?.(
+          "/api/presence",
+          new Blob([body], { type: "application/json" }),
+        )
+      ) {
+        return;
+      }
+    } catch {
+      // Asagidaki yola dus.
+    }
+    fetch("/api/presence", {
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+      headers: { "content-type": "application/json" },
+      body,
+    }).catch(() => {});
+  },
+
   /** Masaustu kurulum dosyasi bilgisi. */
   release: () => request("/api/release"),
 
   /** Debug paneli verisi. */
   debug: () => request("/api/debug"),
+
+  /**
+   * Kadro islemi (Debug paneli -> Onbellek tablosu). Yalnizca katalog
+   * yoneticisi; sunucu ayrica kontrol eder.
+   *
+   *   { action: "add", accountId, name? }
+   *   { action: "edit", id, name?, accountId? }
+   *   { action: "hide" | "show" | "delete", id }
+   *
+   * @param {Record<string, string>} change
+   */
+  rosterChange: (change) =>
+    request("/api/roster", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(change),
+    }),
 
   /**
    * Masaustu ayarlari. Yalnizca masaustu sunucusunda vardir; sitede bu uc
@@ -196,6 +247,12 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 };
+
+/**
+ * Kadro degisince (Debug paneli) yayinlanan pencere olayi; Oyuncu
+ * Degerlendirme ekrani listeyi CDN kopyasini atlayarak tazeler.
+ */
+export const ROSTER_CHANGED_EVENT = "dotastat:roster-changed";
 
 /** Steam girisi ayni sekmede baslatilir (OpenID yonlendirmesi). */
 export function startSteamLogin() {

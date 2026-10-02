@@ -17,8 +17,11 @@ import { readSession } from "./_lib/session.mjs";
 import { readIdentity } from "./_lib/identity.mjs";
 import { mmrStore } from "./_lib/store.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   if (request.method !== "GET") {
     return fail("desteklenmeyen-metot", { status: 405 });
   }

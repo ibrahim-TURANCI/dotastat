@@ -18,7 +18,6 @@ export {
   HERO_ATTRIBUTE_LABELS,
   HERO_CDN,
   heroDisplayName,
-  heroIdFromKey,
   heroImageUrl,
   heroKeyFromId,
   heroPrimaryAttribute,
@@ -47,12 +46,15 @@ export {
 
 // --- Roster ----------------------------------------------------------------
 export {
+  applyRosterChange,
+  applyRosterOverrides,
   findRosterPlayer,
+  getRosterOverrides,
   isCatalogAdmin,
   listAllRoster,
   listRoster,
-  listSynergies,
   listSynergiesForPlayer,
+  normalizeRosterOverrides,
   toAccountId,
   toSteamId64,
 } from "./players/roster.js";
@@ -142,13 +144,13 @@ export {
   OVERVIEW_ALL_MATCHES,
   OVERVIEW_RECENT_COUNT,
 } from "./players/player-overview.js";
+export { buildPlayerStyle, STYLE_MIN_MATCHES } from "./players/player-style.js";
 
 // --- Veri kaynaklari --------------------------------------------------------
 export { createOpenDotaClient, PROVIDER_NAME } from "./providers/opendota.js";
 export { createStratzClient } from "./providers/stratz.js";
 export { createProviderChain } from "./providers/provider-chain.js";
 export {
-  isRateLimitError,
   NOT_CONFIGURED,
   RATE_LIMIT,
   UNAVAILABLE,
@@ -268,7 +270,6 @@ export {
   sameHeroOverride,
   normalizeHeroOverride,
   normalizeHeroPlans,
-  HERO_LIST_FIELDS,
   LANE_ROLES,
   LANE_ROLE_LABELS,
   MAX_LIST_LENGTH,

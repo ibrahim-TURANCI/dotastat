@@ -57,11 +57,3 @@ export function shouldFailover(error) {
   const code = String(/** @type {any} */ (error)?.code || "");
   return code !== NOT_FOUND;
 }
-
-/**
- * @param {unknown} error
- * @returns {boolean}
- */
-export function isRateLimitError(error) {
-  return String(/** @type {any} */ (error)?.code || "") === RATE_LIMIT;
-}

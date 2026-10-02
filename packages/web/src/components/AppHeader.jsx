@@ -26,6 +26,8 @@ const OVERWOLF_INSTALL_URL =
  * @param {() => void} props.onLogout
  * @param {{ name: string, hero: string, team: string }|null} props.detectedPlayer
  * @param {() => void} [props.onOpenHeroManager] "Tavsiyeleri yonet" penceresi
+ * @param {Array<Record<string, any>>|null} [props.liveOnline] Canli mac
+ *   yanitindan gelen online listesi (sitede). Ust bar ayrica yoklama yapmaz.
  */
 export function AppHeader({
   user,
@@ -39,11 +41,18 @@ export function AppHeader({
   cloudRejected,
   onOpenSettings,
   onOpenHeroManager,
+  liveOnline = null,
 }) {
-  const presence = useAsyncData(() => api.presence(), { intervalMs: 45000 });
+  // Sitede liste canli mac yanitiyla gelir (bkz. App.jsx); ayni veri icin
+  // ikinci bir yoklama atilmaz. Masaustunde liste yerel sunucudan okunur.
+  const ownList = mode === "desktop";
+  const presence = useAsyncData(() => api.presence(), {
+    intervalMs: 60000,
+    enabled: ownList,
+  });
   const release = useAsyncData(() => api.release(), { intervalMs: 0 });
 
-  const online = presence.data?.online || [];
+  const online = (ownList ? presence.data?.online : liveOnline) || [];
   const download = release.data?.download || null;
 
   return (
@@ -75,7 +84,10 @@ export function AppHeader({
       </div>
 
       <div className="app-header-side">
-        <OnlineStrip online={online} loading={presence.loading} />
+        <OnlineStrip
+          online={online}
+          loading={sessionLoading || (ownList ? presence.loading : !liveOnline)}
+        />
 
         {download ? (
           <a

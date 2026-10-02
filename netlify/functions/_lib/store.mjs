@@ -404,3 +404,10 @@ export const mmrStore = () => createStore("dotastat-mmr");
  * sifirlar; bir sonraki masaustu istegi yeniden baglar.
  */
 export const deviceStore = () => createStore("dotastat-devices");
+/**
+ * Kadro degisiklik katmani (Debug paneli -> Onbellek tablosu).
+ *
+ * Tek anahtar: `roster:overrides`. Eklenen / duzenlenen / gizlenen / silinen
+ * oyuncular burada durur; tohum veri koddadir (bkz. core players/roster.js).
+ */
+export const rosterStore = () => createStore("dotastat-roster");

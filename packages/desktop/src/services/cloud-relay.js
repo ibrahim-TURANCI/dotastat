@@ -5,16 +5,60 @@
  * Arkadaslarin siteden canli maci gorebilmesi icin bu veri tek bir yerde
  * toplanmali. Rolenin tek isi budur.
  *
- * Gonderim kurallari:
+ * Gonderim kurallari (her gonderim Netlify'da ayri bir istek):
  *   - Ayni durum tekrar tekrar gonderilmez (imza karsilastirmasi).
- *   - En fazla `minIntervalMs` de bir istek atilir.
+ *   - DRAFT ve oyunun ILK DAKIKALARI: tavsiyeler o an olusuyor; 5 sn'lik saat
+ *     dilimi imzaya girer, en fazla `minIntervalMs` de bir gonderilir.
+ *   - SONRASI: yalnizca anlamli degisiklikte (skor, KDA, item, seviye,
+ *     buyuk net worth farki), en fazla LATE_INTERVAL_MS de bir. Hicbir sey
+ *     degismese de KEEPALIVE_MS de bir gonderilir; aksi halde site maci 3
+ *     dakika sonra "bitti" sayardi (bkz. core LIVE_MATCH_TTL_MS).
+ *   - Mac BITTIGINDE (POST_GAME) bekleme yapilmadan hemen gonderilir; site
+ *     kaydi siler ve panel kapanir.
  *   - Hata durumunda sessizce gecilir; oyun ici deneyim etkilenmez.
  */
 
 const { canAuthenticate, cloudFetch } = require("./cloud-session.js");
 
-/** Iki gonderim arasindaki en kisa sure. */
+/** Draft ve erken oyunda iki gonderim arasindaki en kisa sure. */
 const MIN_INTERVAL_MS = 2500;
+/** Erken oyundan sonra iki gonderim arasindaki en kisa sure. */
+const LATE_INTERVAL_MS = 10000;
+/** Degisiklik olmasa da bu sureden seyrek gonderilmez (sitedeki 3 dk omur). */
+const KEEPALIVE_MS = 60000;
+/** Oyun saatine gore "erken oyun" siniri (saniye). */
+const EARLY_GAME_SECONDS = 5 * 60;
+
+/** Bu asamalarda tavsiyeler sik guncellenmeli. */
+const DRAFT_PHASES = [
+  "HERO_SELECTION",
+  "STRATEGY_TIME",
+  "PRE_GAME",
+  "TEAM_SHOWCASE",
+];
+/** Bu asamalar mac sonunu bildirir; hemen gonderilir. */
+const ENDED_PHASES = ["POST_GAME", "DISCONNECT"];
+
+/**
+ * @param {Record<string, any>} state
+ * `idle`: ana menu (mac kimligi yok). `ended` ve `idle` icin keepalive
+ * gonderilmez; mac yokken siteye istek gitmez.
+ *
+ * @returns {"idle"|"draft"|"early"|"late"|"ended"}
+ */
+function stageOf(state) {
+  const phase = String(state?.phase || "").toUpperCase();
+  if (ENDED_PHASES.some((name) => phase.includes(name))) {
+    return "ended";
+  }
+  if (!String(state?.matchId || "").trim()) {
+    return "idle";
+  }
+  if (DRAFT_PHASES.some((name) => phase.includes(name))) {
+    return "draft";
+  }
+  return Number(state?.gameTime || 0) < EARLY_GAME_SECONDS ? "early" : "late";
+}
 
 /**
  * @param {Object} options
@@ -38,21 +82,35 @@ function createCloudRelay(options) {
    * @param {Record<string, any>} state
    * @returns {string}
    */
-  function signatureOf(state) {
+  function signatureOf(state, stage) {
+    const frequent = stage === "draft" || stage === "early";
     return [
       state?.matchId,
       state?.phase,
       state?.radiantScore,
       state?.direScore,
-      Math.floor(Number(state?.gameTime || 0) / 5),
+      // Erken asamada saat dilimi imzaya girer: tavsiyeler ve draft durumu
+      // her 5 saniyede tazelenir. Sonrasinda yalnizca asagidaki degisiklikler.
+      frequent ? Math.floor(Number(state?.gameTime || 0) / 5) : "",
       (state?.draft?.picks || [])
         .map((row) => row.team + ":" + row.hero)
         .join(","),
       (state?.draft?.bans || []).map((row) => row.hero).join(","),
       [...(state?.radiantPlayers || []), ...(state?.direPlayers || [])]
-        .map(
-          (row) =>
-            row.steamId + ":" + row.hero + ":" + row.kills + ":" + row.deaths,
+        .map((row) =>
+          [
+            row.steamId,
+            row.hero,
+            row.kills,
+            row.deaths,
+            row.assists,
+            row.level,
+            (row.items || []).join("+"),
+            row.neutral,
+            // Tehdit analizi net worth'e bakiyor; kucuk oynamalar degil,
+            // 1000 altinlik farklar gonderim sebebi.
+            Math.floor(Number(row.netWorth || 0) / 1000),
+          ].join(":"),
         )
         .join(","),
     ].join("|");
@@ -132,16 +190,33 @@ function createCloudRelay(options) {
         return;
       }
 
-      const signature = signatureOf(state);
-      if (signature === lastSignature) {
+      const stage = stageOf(state);
+      const signature = signatureOf(state, stage);
+      const keepalive =
+        stage !== "idle" &&
+        stage !== "ended" &&
+        lastSentAt > 0 &&
+        Date.now() - lastSentAt >= KEEPALIVE_MS;
+      if (signature === lastSignature && !keepalive) {
         return;
       }
       lastSignature = signature;
       pending = state;
 
-      const wait = Math.max(0, minIntervalMs - (Date.now() - lastSentAt));
+      const gap =
+        stage === "ended"
+          ? 0
+          : stage === "late"
+            ? Math.max(minIntervalMs, LATE_INTERVAL_MS)
+            : minIntervalMs;
+      const wait = Math.max(0, gap - (Date.now() - lastSentAt));
       if (timer) {
-        return;
+        // Mac bitti: bekleyen gonderim beklemeden yapilsin.
+        if (stage !== "ended" && stage !== "idle") {
+          return;
+        }
+        clearTimeout(timer);
+        timer = null;
       }
 
       timer = setTimeout(() => {

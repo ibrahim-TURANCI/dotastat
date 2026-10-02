@@ -15,8 +15,11 @@ import {
 } from "./_lib/match-roles.mjs";
 import { readSession } from "./_lib/session.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   const session = readSession(request);
   if (!session) {
     return fail("oturum-yok", {

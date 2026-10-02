@@ -43,8 +43,11 @@ import {
 } from "./_lib/hero-plans.mjs";
 import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   // Masaustu uygulamasi cihaz anahtariyla gelir; sitede oturum cerezi.
   const { identity, error } = await readIdentity(request);
   if (!identity) {

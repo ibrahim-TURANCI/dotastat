@@ -6,12 +6,16 @@
  * "tanimli mi" bilgisi verilir.
  */
 
-import { listRoster } from "@dotastat/core";
+import { isCatalogAdmin, listAllRoster } from "@dotastat/core";
+import { readIdentity } from "./_lib/identity.mjs";
 import { getPlayerBundle } from "./_lib/player-data.mjs";
 import { liveStore, presenceStore } from "./_lib/store.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   if (request.method !== "GET") {
     return fail("desteklenmeyen-metot", { status: 405 });
   }
@@ -19,7 +23,8 @@ export default async (request) => {
   const started = Date.now();
 
   try {
-    const roster = listRoster();
+    // Gizlenen oyuncular da listelenir: panel onlari "Goster" ile geri alir.
+    const roster = listAllRoster();
     const cacheRows = await Promise.all(
       roster.map(async (player) => {
         const bundle = await getPlayerBundle(player, { allowFetch: false });
@@ -30,8 +35,19 @@ export default async (request) => {
           matchCount: bundle.matches.length,
           fetchedAt: bundle.fetchedAt || "",
           evaluationCount: bundle.evaluations.length,
+          hidden: player.active === false,
+          catalogAdmin: player.catalogAdmin,
         };
       }),
+    );
+
+    // Kadro islemleri (ekle / gizle / duzenle / sil) dugmeleri yalnizca
+    // katalog yoneticisine gorunur; asil kontrol /api/roster'da.
+    const { identity } = await readIdentity(request).catch(() => ({
+      identity: null,
+    }));
+    const canManage = Boolean(
+      identity?.via === "session" && isCatalogAdmin(identity.accountId),
     );
 
     const live = liveStore();
@@ -67,6 +83,7 @@ export default async (request) => {
         count: roster.length,
         players: cacheRows,
         emptyCaches: cacheRows.filter((row) => row.matchCount === 0).length,
+        canManage,
       },
       live: {
         uploaderCount: liveKeys.filter((key) => key.startsWith("state:"))
