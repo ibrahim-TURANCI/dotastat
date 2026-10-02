@@ -47,3 +47,80 @@
   align-items: center;
   gap: 10px;
 }
+
+/* --- Kadro yonetimi (Onbellek tablosu) ------------------------------------ */
+
+.debug-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.debug-card-head h4 {
+  margin: 0;
+}
+
+.debug-ops-head {
+  text-align: right;
+}
+
+.debug-ops {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--bad);
+  color: #ffb3ba;
+}
+
+.debug-row-hidden td {
+  opacity: 0.55;
+}
+
+.debug-row-hidden td:last-child {
+  opacity: 1;
+}
+
+.debug-row-hidden .chip {
+  margin-left: 6px;
+}
+
+.debug-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px;
+}
+
+.debug-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--txt-0);
+  font-size: 12px;
+}
+
+.debug-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.debug-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.debug-error {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #ffb3ba;
+}

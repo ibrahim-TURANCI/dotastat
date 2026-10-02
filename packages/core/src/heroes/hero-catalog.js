@@ -105,15 +105,6 @@ export function laneRoleOf(value) {
   return LANE_ROLE_BY_POSITION[/^[1-5]$/.test(raw) ? "pos" + raw : raw] || "";
 }
 
-/** Duzenlenebilir liste alanlari ve liste basina tavan. */
-export const HERO_LIST_FIELDS = [
-  "counterHeroes",
-  "counterItems",
-  "requiredItems",
-  "situationalItems",
-  "removedItems",
-];
-
 /** Bir listede tutulabilecek en fazla kayit (kotuye kullanimi sinirlar). */
 export const MAX_LIST_LENGTH = 12;
 

@@ -1,22 +1,26 @@
 /**
  * Online listesi.
  *
- *   POST /api/presence — giris yapmis kullanicidan heartbeat (60 sn'de bir)
- *   GET  /api/presence — su an sitede/oyunda olan kullanicilar
+ *   POST /api/presence — giris yapmis kullanicidan heartbeat. Yalnizca sekme
+ *                        ARKA PLANDAYKEN gonderilir; gorunur sekmede
+ *                        `/api/live` yoklamasi ayni isi gorur (bkz.
+ *                        _lib/presence.mjs). `{ leave: true }` ile kullanici
+ *                        listeden aninda cikar (sekme kapandi).
+ *   GET  /api/presence — su an sitede/oyunda olan kullanicilar. Site artik
+ *                        listeyi `/api/live` yanitindan aliyor; bu uc eski
+ *                        istemciler icin duruyor.
  *
  * Kimlik cerezden okunur; govdeye yazilan SteamID'ye guvenilmez.
  */
 
-import { findRosterPlayer, toAccountId } from "@dotastat/core";
-import { presenceStore } from "./_lib/store.mjs";
 import { readSession } from "./_lib/session.mjs";
 import { fail, json } from "./_lib/respond.mjs";
-
-/** Heartbeat gelmezse kullanici bu sure sonunda listeden dusar. */
-const PRESENCE_TTL_MS = 3 * 60 * 1000;
+import { loadRoster } from "./_lib/roster.mjs";
+import { readOnline, removePresence, touchPresence } from "./_lib/presence.mjs";
 
 export default async (request) => {
-  const store = presenceStore();
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
 
   if (request.method === "POST") {
     const session = readSession(request);
@@ -31,21 +35,12 @@ export default async (request) => {
       body = {};
     }
 
-    const accountId = session.accountId || toAccountId(session.steamId);
-    const rosterPlayer = findRosterPlayer(accountId);
+    if (body.leave) {
+      await removePresence(session);
+      return json({ ok: true, presence: null });
+    }
 
-    const row = {
-      steamId: session.steamId,
-      accountId,
-      name: rosterPlayer?.name || session.name || "Oyuncu",
-      avatar: session.avatar || "",
-      rosterId: rosterPlayer?.id || "",
-      inGame: Boolean(body.inGame),
-      hero: String(body.hero || ""),
-      seenAt: new Date().toISOString(),
-    };
-
-    await store.set("user:" + session.steamId, row, { ttlMs: PRESENCE_TTL_MS });
+    const row = await touchPresence(session, { force: true, body });
     return json({ ok: true, presence: row });
   }
 
@@ -54,18 +49,7 @@ export default async (request) => {
   }
 
   try {
-    const keys = (await store.keys()).filter((key) => key.startsWith("user:"));
-    const rows = await Promise.all(keys.map((key) => store.get(key)));
-    const online = rows
-      .filter((row) => {
-        if (!row?.seenAt) {
-          return false;
-        }
-        const age = Date.now() - new Date(row.seenAt).getTime();
-        return Number.isFinite(age) && age < PRESENCE_TTL_MS;
-      })
-      .sort((a, b) => String(a.name).localeCompare(String(b.name), "tr"));
-
+    const online = await readOnline();
     return json({ ok: true, online, count: online.length });
   } catch (error) {
     return fail("online-listesi-alinamadi", {

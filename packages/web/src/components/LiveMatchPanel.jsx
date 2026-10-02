@@ -47,11 +47,6 @@ export function LiveMatchPanel({
   open = false,
   onToggle = () => {},
 }) {
-  // Hook, altta gelen erken `return`lerden ETKILENMEMESI icin en basta
-  // kosulsuz cagrilir (React kurali); `live` henuz yoksa bile guvenli
-  // varsayilanlarla calisir.
-  const displayClock = useTickingClock(live?.gameTime, Boolean(live?.active));
-
   const frame = (children, right, className = "") => (
     <CollapsibleSection
       title="Canlı Maç"
@@ -95,7 +90,7 @@ export function LiveMatchPanel({
           mine={live.myTeam === "radiant"}
         />
         <div className="live-clock">
-          <strong>{formatClock(displayClock)}</strong>
+          <LiveClock gameTime={live.gameTime} />
           <span className="muted micro">{phaseLabel(live.phase)}</span>
         </div>
         <TeamScore
@@ -158,6 +153,20 @@ export function LiveMatchPanel({
     </>,
     "live-section",
   );
+}
+
+/**
+ * Saniyede bir ilerleyen mac saati.
+ *
+ * Ayri bir bilesen olmasi onemli: saat her saniye durum degistiriyor ve
+ * panelin tepesinde dursaydi iki takim tablosu, takim analizi ve draft
+ * asistani da her saniye yeniden cizilirdi.
+ *
+ * @param {{ gameTime: number|undefined }} props
+ */
+function LiveClock({ gameTime }) {
+  const displayClock = useTickingClock(gameTime, true);
+  return <strong>{formatClock(displayClock)}</strong>;
 }
 
 /**
@@ -316,11 +325,6 @@ function LivePlayerRow({ player }) {
 }
 
 /**
- * GSI faz kodunu okunabilir hale getirir.
- * @param {string} phase
- * @returns {string}
- */
-/**
  * Ekranda gosterilen mac saati.
  *
  * SUNUCUDAN GELEN DEGER 5 SANIYEDE BIR TAZELENIYOR (bkz. App.jsx,
@@ -367,6 +371,11 @@ function useTickingClock(gameTime, active) {
   return display;
 }
 
+/**
+ * GSI faz kodunu okunabilir hale getirir.
+ * @param {string} phase
+ * @returns {string}
+ */
 function phaseLabel(phase) {
   const value = String(phase || "").toUpperCase();
   if (value.includes("HERO_SELECTION")) {

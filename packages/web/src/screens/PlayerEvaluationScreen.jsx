@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MATCH_FETCH_SIZE, PERIODS, DEFAULT_PERIOD } from "@dotastat/core";
-import { api } from "../lib/api.js";
-import { formatRelativeTime } from "../lib/format.js";
+import { api, ROSTER_CHANGED_EVENT } from "../lib/api.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { PlayerCard } from "../components/PlayerCard.jsx";
-import { PlayerDetail, refreshTooltip } from "../components/PlayerDetail.jsx";
+import { PlayerDetail } from "../components/PlayerDetail.jsx";
 import { PeriodSwitch } from "../components/PeriodSwitch.jsx";
 import {
   CollapsibleSection,
@@ -35,13 +34,51 @@ function periodSubtitle(period, days) {
 }
 
 /**
+ * Son basarili kart listesinin tarayicidaki kopyasi (donem basina).
+ *
+ * NEDEN: depo gecici olarak okunamadiginda (ornek: Netlify Blobs "Token
+ * expired") liste bir hata ekranina donup elde olan veriyi siliyordu. Artik
+ * ekranda son basarili hal kalir; sayfa yenilense bile bu kopya gosterilir.
+ * Depolama kapaliysa yalnizca bu yedek calismaz, baska bir sey etkilenmez.
+ */
+const SNAPSHOT_KEY = "dotastat:players-snapshot:";
+
+/** @param {string} period */
+function readSnapshot(period) {
+  try {
+    return JSON.parse(
+      window.localStorage.getItem(SNAPSHOT_KEY + period) || "null",
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} period
+ * @param {unknown} data
+ */
+function writeSnapshot(period, data) {
+  try {
+    window.localStorage.setItem(SNAPSHOT_KEY + period, JSON.stringify(data));
+  } catch {
+    // Depolama kapali ya da dolu: yedek tutulmaz.
+  }
+}
+
+/**
  * Kart listesinin ONBELLEK yoklama araligi.
  *
  * Kaynaga gitmez (bkz. asagidaki `players`), yalnizca baskasinin tazeledigi
  * veriyi ekrana tasir. Sunucu yaniti da 60 saniye onbellekleniyor; daha sik
  * yoklamak ayni cevabi tekrar tekrar istemek olurdu.
+ *
+ * Verisi beklenen oyuncu varken (arka planda dolduruluyor) dakikada bir,
+ * yoksa 3 dakikada bir yoklanir: kartlar mac basina degisir ve mac bitisi
+ * zaten ayrica tazeleme tetikliyor (bkz. `matchEndedToken`).
  */
 const CACHE_POLL_MS = 60000;
+const CACHE_POLL_SETTLED_MS = 180000;
 
 /**
  * Oyuncu Degerlendirme ekrani — sitenin ana ekrani.
@@ -74,6 +111,9 @@ export function PlayerEvaluationScreen({
 }) {
   const [selected, setSelected] = useState("");
   const [period, setPeriod] = useState(DEFAULT_PERIOD);
+  // Yoklama hizi bekleyen oyuncu olup olmamasina bagli; deger asagidaki
+  // yanittan gelir (bkz. CACHE_POLL_MS).
+  const [hasPending, setHasPending] = useState(true);
 
   // YOKLAMA VAR AMA KAYNAGA GITMEZ.
   //
@@ -85,13 +125,30 @@ export function PlayerEvaluationScreen({
   // Istek `refresh` TASIMAZ: OpenDota'ya gidilmez, yalnizca onbellek okunur,
   // dolayisiyla gunluk limitten harcamaz. Ayni sebeple donem degistirmek de
   // ucuzdur — sunucu ayni onbellegi baska bir pencereyle ozetler.
+  //
+  // Basarili her cevap tarayiciya da yazilir (bkz. SNAPSHOT_KEY).
   const players = useAsyncData(
-    (options) => api.players({ ...options, period }),
+    async (options) => {
+      const data = await api.players({ ...options, period });
+      writeSnapshot(period, data);
+      return data;
+    },
     {
-      intervalMs: CACHE_POLL_MS,
+      intervalMs: hasPending ? CACHE_POLL_MS : CACHE_POLL_SETTLED_MS,
       deps: [period],
     },
   );
+  // Okuma hatasinda ekrandaki veri korunur: hook son basarili veriyi tutar,
+  // sayfa yeni acildiysa tarayicidaki kopya kullanilir. Hata MESAJI
+  // gosterilmez; yoklama bir sonraki turda kendiliginden tekrar dener.
+  // Hook'taki veri BASKA bir doneme aitse (donem degisti, yeni okuma henuz
+  // gelmedi ya da basarisiz) o donemin tarayici kopyasi tercih edilir.
+  const current = players.data?.period === period ? players.data : null;
+  const snapshot = useMemo(
+    () => (current ? null : readSnapshot(period)),
+    [current, period],
+  );
+  const view = current || snapshot || players.data;
 
   // Mac BITTIGINDE bir kez kaynaktan tazelenir: yeni mac tam o anda olusur ve
   // onbellekte henuz yoktur. Sunucudaki ortak bekleme suresi (5 dakika) ayni
@@ -106,23 +163,34 @@ export function PlayerEvaluationScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchEndedToken]);
 
-  // Tazeleme kisisel degil ORTAK bir eylem: onbellek paylasildigi icin biri
-  // az once tazelediyse ayni veri yeniden cekilmez. Buton bu yuzden verinin
-  // yasina gore kapanir, kisi basina sayaca gerek yok.
-  const waitMs = players.data?.refreshAvailableInMs || 0;
-  const lastFetchedAt = players.data?.lastFetchedAt || "";
+  // Kadro Debug panelinden degisti (oyuncu eklendi / gizlendi / silindi):
+  // liste CDN'in 60 saniyelik kopyasini atlayarak hemen tazelenir.
+  useEffect(() => {
+    const onRosterChanged = () => players.reload({ fresh: true });
+    window.addEventListener(ROSTER_CHANGED_EVENT, onRosterChanged);
+    return () =>
+      window.removeEventListener(ROSTER_CHANGED_EVENT, onRosterChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const cards = players.data?.cards || [];
-  const pending = players.data?.pendingPlayers || [];
-  // Verisi DURAN ama tazelenemeyen oyuncular. "Bekleyen"den ayri gosterilir:
-  // ekrandaki sayilar gecerli, yalnizca eski.
-  const stale = players.data?.stalePlayers || [];
+  // TOPLU "Yenile" YOK: oyuncular tek tek, detay panelindeki "Yenile" ile
+  // tazelenir; boylece gerekmeyen oyuncu icin istek harcanmaz. Detaydaki
+  // tazeleme bu listeye hemen yansir (bkz. onDataChanged).
+  const lastFetchedAt = view?.lastFetchedAt || "";
+
+  const cards = view?.cards || [];
+  const pending = view?.pendingPlayers || [];
+
+  const pendingNow = !players.data || pending.length > 0;
+  useEffect(() => {
+    setHasPending(pendingNow);
+  }, [pendingNow]);
   const liveIds = new Set(liveKnownPlayerIds);
 
   return (
     <CollapsibleSection
       title="Oyuncu Değerlendirme"
-      subtitle={periodSubtitle(period, players.data?.periodDays)}
+      subtitle={periodSubtitle(period, view?.periodDays)}
       open={open}
       onToggle={onToggle}
       right={
@@ -133,37 +201,17 @@ export function PlayerEvaluationScreen({
               {pending.length} oyuncu verisi bekleniyor
             </span>
           ) : null}
-          {stale.length ? (
-            <span
-              className="chip"
-              title="Kaynak yeni veri döndürmedi (günlük limit ya da geçici sorun). Ekrandaki değerler geçerli, yalnızca eski."
-            >
-              {stale.length} oyuncunun verisi tazelenemedi
-            </span>
-          ) : null}
-          {lastFetchedAt ? (
-            <span className="muted micro">
-              son güncelleme: {formatRelativeTime(lastFetchedAt)}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => players.reload({ refresh: true })}
-            disabled={players.refreshing || waitMs > 0}
-            title={refreshTooltip(waitMs, players.refreshing)}
-          >
-            {players.refreshing ? "Yenileniyor…" : "Yenile"}
-          </button>
         </>
       }
     >
-      {players.loading ? (
+      {!view && players.loading ? (
         <SkeletonBlock lines={4} height={92} />
-      ) : players.error ? (
+      ) : !view ? (
+        // Ne sunucudan ne tarayicidan veri var (ilk acilis + depo hatasi).
+        // Teknik hata metni gosterilmez; yoklama kendiliginden tekrar dener.
         <EmptyState
-          title="Oyuncu listesi alınamadı"
-          detail={players.error.message}
+          title="Oyuncu verisi şu an okunamıyor"
+          detail="Bağlantı düzelince liste kendiliğinden yüklenecek."
           action={
             <button
               type="button"

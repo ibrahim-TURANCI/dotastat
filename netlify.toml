@@ -114,6 +114,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/roster"
+  to = "/.netlify/functions/roster"
+  status = 200
+
+[[redirects]]
   from = "/api/debug"
   to = "/.netlify/functions/debug"
   status = 200

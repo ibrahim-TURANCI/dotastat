@@ -14,8 +14,11 @@ import {
 import { buildSessionCookie } from "./_lib/session.mjs";
 import { verifyAssertion } from "./_lib/steam-openid.mjs";
 import { redirect, resolveOrigin } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   const url = new URL(request.url);
   const origin = resolveOrigin(request);
 

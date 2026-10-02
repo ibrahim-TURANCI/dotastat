@@ -12,11 +12,14 @@ import { mergeMmrSamples } from "@dotastat/core";
 import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
 import { mmrStore } from "./_lib/store.mjs";
 import { fail, json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 /** Bir hesap icin saklanacak en fazla okuma. */
 const MAX_SAMPLES = 2000;
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   const { identity, error } = await readIdentity(request);
   if (!identity) {
     return fail(error === "kimlik-yok" ? "oturum-yok" : error, {

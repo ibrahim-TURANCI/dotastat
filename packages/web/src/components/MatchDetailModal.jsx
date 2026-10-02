@@ -251,44 +251,41 @@ export function MatchDetailModal({
 
         <div className="match-detail-facts">
           {averageRank ? (
-            <Fact
-              label="Maç seviyesi"
-              value={<RankMedal rank={averageRank} size={28} />}
-              // Madalya adi ikonda zaten gorunuyor (uzerine gelince de
-              // yaziyor); altta ortalamanin MMR karsiligi yazilir.
-              hint={"~" + approximateMmrFromRank(averageRank) + " ortalama"}
-            />
-          ) : null}
-          {ownFull?.performanceRank || evaluation?.performanceRank ? (
-            <Fact
-              label="Performance Rank"
-              value={ownFull?.performanceRank || evaluation.performanceRank}
-              hint={
-                ownFull
-                  ? "maç içi karşılaştırma · gerçek MMR değil"
-                  : "gerçek MMR değil"
-              }
-            />
+            <Fact label="Maç seviyesi">
+              <span className="fact-rank">
+                <RankMedal rank={averageRank} size={40} />
+                <span className="fact-rank-text">
+                  <strong className="fact-value compact">
+                    {averageRank.label}
+                  </strong>
+                  <span className="fact-sub">
+                    ~{approximateMmrFromRank(averageRank)} MMR
+                  </span>
+                </span>
+              </span>
+            </Fact>
           ) : null}
           {mmrChange ? (
-            <Fact
-              label="MMR"
-              value={mmrChange.mmr}
-              hint={<DeltaArrow value={mmrChange.delta} />}
-            />
+            <Fact label="MMR">
+              <span className="fact-inline">
+                <strong className="fact-value">{mmrChange.mmr}</strong>
+                <DeltaArrow value={mmrChange.delta} />
+              </span>
+            </Fact>
           ) : null}
           {participation !== null ? (
-            <Fact label="Kill katılımı" value={"%" + participation} />
+            <Fact label="Kill katılımı">
+              <strong className="fact-value">%{participation}</strong>
+              <span className="fact-meter" aria-hidden="true">
+                <span style={{ width: Math.min(100, participation) + "%" }} />
+              </span>
+            </Fact>
           ) : null}
-          <Fact
-            label="KDA oranı"
-            value={formatKda(match)}
-            hint={`${match.kills}/${match.deaths}/${match.assists}`}
-          />
-          <Fact
-            label="GPM / XPM"
-            value={`${match.gpm || 0} / ${match.xpm || 0}`}
-          />
+          {/* PR, K/D/A ve GPM / XPM skor tabelasinda zaten yaziyor; burada
+              yalnizca tabelada olmayan oranlar durur. */}
+          <Fact label="KDA">
+            <strong className="fact-value">{formatKda(match)}</strong>
+          </Fact>
         </div>
 
         {shown?.summary ||
@@ -448,14 +445,15 @@ function SquadColumn({ title, side, rows, complete = false, mine = false }) {
 }
 
 /**
- * @param {{ label: string, value: React.ReactNode, hint?: React.ReactNode }} props
+ * Mac detayindaki bilgi karti: ustte kucuk etiket, altta deger.
+ *
+ * @param {{ label: string, children: React.ReactNode }} props
  */
-function Fact({ label, value, hint }) {
+function Fact({ label, children }) {
   return (
-    <div className="summary-cell">
-      <span className="muted micro">{label}</span>
-      <strong>{value}</strong>
-      {hint ? <span className="muted micro">{hint}</span> : null}
+    <div className="fact-card">
+      <span className="fact-label">{label}</span>
+      <div className="fact-body">{children}</div>
     </div>
   );
 }

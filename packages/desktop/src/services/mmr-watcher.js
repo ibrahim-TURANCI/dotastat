@@ -109,6 +109,19 @@ function readAllLogs() {
 }
 
 /**
+ * Gecmisin "degisti mi" imzasi. Kayitlar zamana gore sirali ve tekil oldugu
+ * icin sayi + ilk + son kayit yeterli.
+ *
+ * @param {Array<{ at: string, mmr: number }>} samples
+ * @returns {string}
+ */
+function signatureOf(samples) {
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  return [samples.length, first?.at, first?.mmr, last?.at, last?.mmr].join("|");
+}
+
+/**
  * @param {Object} options
  * @param {{ get: Function, set: Function }} options.storage
  * @param {typeof import("@dotastat/core")} options.core
@@ -125,6 +138,13 @@ function createMmrWatcher(options) {
   let lastResult = { available: false, samples: 0, at: "", error: "" };
   /** Son siteye gonderim sonucu (ayar/debug ekraninda gosterilir). */
   let lastUpload = { ok: false, at: "", error: "henuz-denenmedi" };
+  /**
+   * Depoya yazilan ve siteye BASARIYLA gonderilen gecmisin imzasi. Log
+   * yalnizca mac sonlarinda degisir; her dakikaki turda ayni gecmisi diske
+   * yazmak ve siteye yollamak (gunde ~1440 istek) gereksizdi.
+   */
+  let storedSignature = "";
+  let uploadedSignature = "";
 
   /** Depodaki gecmis. */
   async function history() {
@@ -149,10 +169,14 @@ function createMmrWatcher(options) {
     }
 
     const merged = core.mergeMmrSamples(await history(), incoming);
-    await storage.set("mmr:history", {
-      samples: merged,
-      updatedAt: new Date().toISOString(),
-    });
+    const signature = signatureOf(merged);
+    if (signature !== storedSignature) {
+      await storage.set("mmr:history", {
+        samples: merged,
+        updatedAt: new Date().toISOString(),
+      });
+      storedSignature = signature;
+    }
 
     lastResult = {
       available: true,
@@ -163,8 +187,11 @@ function createMmrWatcher(options) {
 
     // Siteye ilet: arkadaslarin sayfasindan bakildiginda da kendi MMR
     // degisimini gorebilsin. Basarisiz olursa sessizce gecilir; yerel gecmis
-    // zaten kaydedildi ve bir sonraki turda yeniden denenir.
-    await upload(merged);
+    // zaten kaydedildi ve bir sonraki turda yeniden denenir. Site ayni
+    // gecmisi zaten aldiysa istek atilmaz.
+    if (signature !== uploadedSignature && (await upload(merged))) {
+      uploadedSignature = signature;
+    }
     return merged;
   }
 
@@ -173,20 +200,21 @@ function createMmrWatcher(options) {
    * oturumundan) gelir; giris yapmak gerekmez.
    *
    * @param {Array<{ at: string, mmr: number }>} samples
+   * @returns {Promise<boolean>} site kaydi aldi mi
    */
   async function upload(samples) {
     const config =
       typeof options.getConfig === "function" ? options.getConfig() : null;
     const cloudUrl = String(config?.cloudUrl || "").trim();
     if (!cloudUrl || !samples.length) {
-      return;
+      return false;
     }
 
     if (!(await canAuthenticate(cloudUrl))) {
       // SteamID henuz bilinmiyor (oyun hic acilmadi); MMR simdilik yalnizca
       // bu bilgisayarda gorunur, bir sonraki turda yeniden denenir.
       lastUpload = { ok: false, at: "", error: "kimlik-yok" };
-      return;
+      return false;
     }
 
     try {
@@ -209,6 +237,7 @@ function createMmrWatcher(options) {
       if (!response.ok) {
         logger.warn?.("MMR siteye iletilemedi", lastUpload.error);
       }
+      return response.ok;
     } catch (error) {
       lastUpload = {
         ok: false,
@@ -216,6 +245,7 @@ function createMmrWatcher(options) {
         error: String(error?.message || error),
       };
       logger.warn?.("MMR siteye iletilemedi", lastUpload.error);
+      return false;
     }
   }
 

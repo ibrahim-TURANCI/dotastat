@@ -7,8 +7,11 @@
 import { findRosterPlayer, toAccountId } from "@dotastat/core";
 import { readSession } from "./_lib/session.mjs";
 import { json } from "./_lib/respond.mjs";
+import { loadRoster } from "./_lib/roster.mjs";
 
 export default async (request) => {
+  // Kadro degisiklik katmani (gizlenen / eklenen oyuncular).
+  await loadRoster();
   const session = readSession(request);
   if (!session) {
     return json({ ok: true, mode: "cloud", signedIn: false, user: null });

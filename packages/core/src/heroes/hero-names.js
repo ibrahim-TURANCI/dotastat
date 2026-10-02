@@ -66,10 +66,6 @@ const HERO_NAME_BY_ID = new Map(
   Object.entries(heroIds).map(([id, key]) => [Number(id), String(key)]),
 );
 
-const HERO_ID_BY_NAME = new Map(
-  Object.entries(heroIds).map(([id, key]) => [String(key), Number(id)]),
-);
-
 /**
  * Herhangi bir yazimi tek bir hero anahtarina indirger.
  * @param {unknown} value
@@ -92,14 +88,6 @@ export function normalizeHeroKey(value) {
  */
 export function heroKeyFromId(heroId) {
   return HERO_NAME_BY_ID.get(Number(heroId)) || "";
-}
-
-/**
- * @param {string} heroKey
- * @returns {number}
- */
-export function heroIdFromKey(heroKey) {
-  return HERO_ID_BY_NAME.get(normalizeHeroKey(heroKey)) || 0;
 }
 
 /**

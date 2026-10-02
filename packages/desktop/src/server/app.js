@@ -451,6 +451,8 @@ function createServerApp(options) {
   }
 
   app.get("/api/players", async (request, response) => {
+    // Kadro katmani arka planda tazelenir; yerel kopya zaten uygulanmis.
+    syncRoster().catch(() => {});
     try {
       const dashboard = await playerData.getRosterDashboard({
         refresh: request.query.refresh === "1",
@@ -1327,12 +1329,175 @@ function createServerApp(options) {
     });
   });
 
+  // --- Kadro yonetimi --------------------------------------------------------------
+  //
+  // Kadro degisiklik katmani (eklenen / gizlenen / duzenlenen / silinen
+  // oyuncular) SITEDE durur; masaustu onu okuyup cekirdege uygular ve son
+  // okunan kopyayi diske yazar, boylece cevrimdisi da ayni kadro gorunur.
+  // Yazma site uzerinden yapilir ve site oturumu + katalog yoneticisi ister
+  // (bkz. netlify/functions/roster.mjs).
+
+  const ROSTER_KEY = "roster:overrides";
+  const ROSTER_SYNC_MS = 5 * 60 * 1000;
+  let rosterSyncedAt = 0;
+  /** @type {Promise<void>|null} */
+  let rosterSyncing = null;
+
+  // Acilista yerel kopya: site cevap verene kadar son bilinen kadro.
+  Promise.resolve(storage.get(ROSTER_KEY))
+    .then((row) => {
+      if (row) {
+        core.applyRosterOverrides(row);
+      }
+    })
+    .catch(() => {});
+
+  /**
+   * @param {Record<string, any>} overrides
+   */
+  async function adoptRoster(overrides) {
+    const clean = core.applyRosterOverrides(overrides);
+    rosterSyncedAt = Date.now();
+    await storage.set(ROSTER_KEY, {
+      ...clean,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Siteden kadro katmanini ceker. Site yoksa elimizdeki kadro kalir.
+   * @param {{ fresh?: boolean }} [options]
+   */
+  async function syncRoster(options = {}) {
+    const base = cloudBase();
+    if (!base) {
+      return;
+    }
+    if (!options.fresh && Date.now() - rosterSyncedAt < ROSTER_SYNC_MS) {
+      return;
+    }
+    if (!rosterSyncing) {
+      rosterSyncing = (async () => {
+        try {
+          const response = await cloudFetch(base + "/api/roster", {
+            method: "GET",
+            timeoutMs: 10000,
+          });
+          const type = String(response.headers.get("content-type") || "");
+          if (!response.ok || !type.includes("json")) {
+            return;
+          }
+          const payload = await response.json();
+          if (payload?.ok && payload.overrides) {
+            await adoptRoster(payload.overrides);
+          }
+        } catch (error) {
+          logger.warn?.(
+            "Kadro siteden okunamadi",
+            String(error?.message || error),
+          );
+        } finally {
+          rosterSyncing = null;
+        }
+      })();
+    }
+    await rosterSyncing;
+  }
+
+  /** Kadro islemlerini yapabilir mi? (sitedeki kuralin aynisi) */
+  async function canManageRoster() {
+    return (
+      core.isCatalogAdmin(ownAccountId()) &&
+      (await hasCloudSession(cloudBase()))
+    );
+  }
+
+  function rosterRows() {
+    return core.listAllRoster().map((player) => ({
+      id: player.id,
+      name: player.name,
+      accountId: player.player_id,
+      hidden: player.active === false,
+      source: player.source,
+      catalogAdmin: player.catalogAdmin,
+    }));
+  }
+
+  app.get("/api/roster", async (request, response) => {
+    await syncRoster({ fresh: true });
+    response.json({
+      ok: true,
+      overrides: core.getRosterOverrides(),
+      players: rosterRows(),
+      canManage: await canManageRoster(),
+    });
+  });
+
+  app.post("/api/roster", async (request, response) => {
+    if (!(await canManageRoster())) {
+      response.status(403).json({
+        ok: false,
+        error: "yetki-yok",
+        message:
+          "Kadroyu yalnızca katalog yöneticisi Steam girişiyle düzenleyebilir.",
+      });
+      return;
+    }
+    try {
+      const remote = await cloudFetch(cloudBase() + "/api/roster", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request.body || {}),
+        timeoutMs: 15000,
+      });
+      const type = String(remote.headers.get("content-type") || "");
+      if (!type.includes("json")) {
+        response.status(503).json({
+          ok: false,
+          error: "site-yok",
+          message:
+            "Site kadro yönetimini desteklemiyor; eski bir sürümde olabilir.",
+        });
+        return;
+      }
+      const payload = await remote.json();
+      if (!remote.ok || payload?.ok === false) {
+        response.status(remote.status || 400).json(payload);
+        return;
+      }
+      await adoptRoster(payload.overrides);
+      response.json({ ...payload, players: rosterRows() });
+    } catch (error) {
+      response.status(503).json({
+        ok: false,
+        error: "site-yok",
+        message: "Siteye ulaşılamadı: " + String(error?.message || error),
+      });
+    }
+  });
+
   // --- Debug ------------------------------------------------------------------------
 
   app.get("/api/debug", async (request, response) => {
     const current = settings.get();
     try {
+      await syncRoster();
       const dashboard = await playerData.getRosterDashboard({ refresh: false });
+      // Gizlenen oyuncular da listelenir; panel onlari "Goster" ile geri alir.
+      const cards = new Map(dashboard.cards.map((row) => [row.id, row]));
+      const players = core.listAllRoster().map((player) => {
+        const card = cards.get(player.id);
+        return {
+          id: player.id,
+          name: player.name,
+          accountId: player.player_id,
+          matchCount: card?.form?.matches || 0,
+          evaluationCount: card?.form?.matches || 0,
+          fetchedAt: card?.fetchedAt || "",
+          hidden: player.active === false,
+          catalogAdmin: player.catalogAdmin,
+        };
+      });
       response.json({
         ok: true,
         generatedAt: new Date().toISOString(),
@@ -1353,16 +1518,10 @@ function createServerApp(options) {
           shareLive: Boolean(current.shareLive),
         },
         roster: {
-          count: dashboard.cards.length,
-          players: dashboard.cards.map((row) => ({
-            id: row.id,
-            name: row.name,
-            accountId: row.playerId,
-            matchCount: row.form?.matches || 0,
-            evaluationCount: row.form?.matches || 0,
-            fetchedAt: row.fetchedAt,
-          })),
+          count: players.length,
+          players,
           emptyCaches: dashboard.pendingPlayers.length,
+          canManage: await canManageRoster(),
         },
         live: {
           uploaderCount: liveState ? 1 : 0,
