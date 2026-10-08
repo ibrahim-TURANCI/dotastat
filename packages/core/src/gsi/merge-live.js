@@ -430,6 +430,25 @@ export function applyOverwolfSnapshot(liveState, snapshot) {
  * @param {Array<Record<string, any>>} states
  * @returns {Record<string, any>|null}
  */
+/**
+ * Oyuncularin KENDI SECTIGI pozisyonlar: account id -> "pos1".."pos5".
+ *
+ * Her masaustu kurulumu yalnizca kendi kullanicisinin secimini gonderir (bkz.
+ * desktop app.js -> localRoles). Ayni macin kayitlari birlestirilirken
+ * hepsi toplanir; ayni hesap iki kez gelirse TAZE kayit kazanir.
+ *
+ * @param {Array<Record<string, any>|null|undefined>} rows Tazeden eskiye
+ * @returns {Record<string, string>}
+ */
+function mergeLocalRoles(rows) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const row of [...rows].reverse()) {
+    Object.assign(out, row?.localRoles || {});
+  }
+  return out;
+}
+
 export function mergeLiveStateGroup(states) {
   const rows = (Array.isArray(states) ? states : []).filter(Boolean);
   if (!rows.length) {
@@ -472,6 +491,7 @@ export function mergeLiveStateGroup(states) {
       bans: richestBans || [],
     },
     overwolf: withOverwolf[0]?.overwolf || null,
+    localRoles: mergeLocalRoles(byFreshest),
     // Panelde "kimlerden geliyor" gosterilebilsin diye tutulur.
     uploaders: byFreshest
       .map((row) => String(row.uploaderSteamId || ""))
@@ -576,6 +596,9 @@ export function mergeRemoteLiveState(local, remote) {
       bans: longest(localDraft.bans || [], remoteDraft.bans || []),
     },
     overwolf: local.overwolf || remoteOverwolf,
+    // Yerel secim uzaktakini ezer: bu bilgisayarin kullanicisi az once
+    // degistirmis olabilir.
+    localRoles: mergeLocalRoles([local, remote]),
     // Arayuz "veri kac kurulumdan geliyor" gosterebilsin.
     uploaders: [
       String(local.localSteamId || local.uploaderSteamId || ""),

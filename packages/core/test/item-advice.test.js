@@ -138,7 +138,7 @@ test("rakip, hero'nun KENDI planindaki cevabi karsi hamleye cevirir", () => {
   const silverEdge = advice.find((row) => row.key === "silver_edge");
   assert.ok(silverEdge, "plandaki cevap itemi onerilmeli");
   assert.equal(silverEdge.group, "counter");
-  assert.match(silverEdge.reason, /pasifi güçlü/);
+  assert.match(silverEdge.reason, /güçlü pasif var.* Silver Edge alabilir./);
 });
 
 test("sahip olunan item tekrar onerilmez", () => {

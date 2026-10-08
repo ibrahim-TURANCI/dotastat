@@ -231,6 +231,11 @@ export default async (request) => {
   try {
     const url = new URL(request.url);
     const viewerSteamId = url.searchParams.get("steamId") || "";
+    // Izleyicinin ekranda sectigi pozisyon ("pos1".."pos5"); kendi satirina
+    // ve draft'taki yerine yazilir (bkz. core match-context).
+    const viewerRole = /^pos[1-5]$/.test(url.searchParams.get("myRole") || "")
+      ? url.searchParams.get("myRole")
+      : "";
 
     // `readSession` yalnizca cerez cozer, depoya gitmez.
     const viewerSession = readSession(request);
@@ -311,7 +316,7 @@ export default async (request) => {
       .map((row) => row.uploaderSteamId + "@" + row.updatedAt)
       .join(",");
     const context = memoContext(
-      viewerSteamId + "|" + statesKey,
+      viewerSteamId + "|" + viewerRole + "|" + statesKey,
       // Online listesi hafizadan geldiginde ayni nesnedir (bkz. readOnline);
       // degistiginde baglam yeniden hesaplanir.
       [heroOverrides, statsByPlayerId, profilesByPlayerId, online],
@@ -321,6 +326,7 @@ export default async (request) => {
           statsByPlayerId,
           profilesByPlayerId,
           viewerSteamId,
+          viewerRole,
           heroOverrides,
           // Pick oncesi draft, online arkadaslari "olasi" oyuncu sayar.
           onlinePlayers: online || [],

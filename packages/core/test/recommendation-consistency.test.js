@@ -226,7 +226,10 @@ test("rakip hero'nun katalogdaki counterItems listesi tavsiyeye girer", () => {
   const card = advice.find((row) => row.key === "glimmer_cape");
   assert.ok(card, advice.map((row) => row.key).join(", "));
   assert.equal(card.group, "counter");
-  assert.match(card.reason, /Axe karşısında etkili/);
+  assert.match(
+    card.reason,
+    /Rakipte Axe var; Glimmer Cape bunlara karşı etkili/,
+  );
 });
 
 test("tehdit agirligi tasiyan hero sayisi ve net worth ile olceklenir", () => {

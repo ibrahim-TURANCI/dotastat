@@ -44,7 +44,13 @@ import {
   sortByCost,
 } from "./item-progression.js";
 import { predictInventory } from "./predicted-items.js";
-import { detectThreats, rowWeights, threatAnswers } from "./threats.js";
+import {
+  detectThreats,
+  joinHeroNames,
+  rowWeights,
+  threatAnswers,
+  threatSentence,
+} from "./threats.js";
 
 /**
  * Veri seviyesine gore tavsiye KOTASI.
@@ -505,7 +511,7 @@ function counterEvidence(enemies, overrides) {
   for (const [key, matched] of threatAnswers(threats)) {
     for (const threat of matched) {
       add(key, {
-        reason: `${threat.reason}: ${threat.heroes.map(heroDisplayName).join(", ")}.`,
+        reason: threatSentence(threat),
         predicted: false,
         weight: threat.weight,
       });
@@ -522,8 +528,8 @@ function counterEvidence(enemies, overrides) {
       for (const key of ITEM_COUNTERS.get(enemyItem) || []) {
         add(key, {
           reason: predicted
-            ? `Rakipte ${itemDisplayName(enemyItem)} bekleniyor.`
-            : `Rakipte ${itemDisplayName(enemyItem)} var.`,
+            ? `Rakipte ${heroDisplayName(row.hero)} büyük ihtimalle ${itemDisplayName(enemyItem)} alacak.`
+            : `Rakipte ${heroDisplayName(row.hero)} ${itemDisplayName(enemyItem)} aldı.`,
           predicted,
           weight: predicted ? 0.5 : 1,
         });
@@ -540,7 +546,7 @@ function counterEvidence(enemies, overrides) {
   }
   for (const [key, entry] of byHeroList) {
     add(key, {
-      reason: `${entry.heroes.map(heroDisplayName).join(", ")} karşısında etkili.`,
+      reason: `Rakipte ${joinHeroNames(entry.heroes)} var; ${itemDisplayName(key)} bunlara karşı etkili.`,
       predicted: false,
       weight: entry.weight,
     });
@@ -784,9 +790,8 @@ export function buildPlayerItemAdvice(input) {
       if (!roleFits) {
         continue;
       }
-      const names = threat.heroes.map(heroDisplayName).join(", ");
       for (const key of threat.items) {
-        push(key, "counter", `${threat.reason}: ${names}.`, {
+        push(key, "counter", threatSentence(threat), {
           weight: threat.weight,
         });
       }
@@ -801,13 +806,17 @@ export function buildPlayerItemAdvice(input) {
     ? sortByCost(record?.requiredItems || [])
     : record?.requiredItems || [];
   for (const key of plan) {
-    pushOwn(key, "core", "Hero'nun çekirdek item planında.");
+    pushOwn(key, "core", heroDisplayName(hero) + " için çekirdek item.");
   }
 
   // 3. DURUMA GORE — hero'nun esnek itemleri. Rakibe cevap verenler yukarida
   //    "counter" olarak isaretlendi ve kotada once gelir.
   for (const key of record?.situationalItems || []) {
-    pushOwn(key, "situational", "Hero'nun duruma göre item planında.");
+    pushOwn(
+      key,
+      "situational",
+      heroDisplayName(hero) + " için duruma göre item.",
+    );
   }
 
   const pool = singleBoot([...candidates.values()], {
@@ -821,7 +830,17 @@ export function buildPlayerItemAdvice(input) {
   return selectByQuota(pool, quota).map((row) => ({
     key: row.key,
     group: row.group,
-    reason: row.reason,
+    // Rakibe cevap veren onerinin gerekcesi KIMIN NE ALACAGIYLA biter:
+    // "Rakipte Zeus büyü hasarı veriyor. Dark Seer Pipe of Insight alabilir."
+    reason:
+      row.group === "counter"
+        ? row.reason +
+          " " +
+          heroDisplayName(hero) +
+          " " +
+          itemDisplayName(row.buildsInto || row.key) +
+          " alabilir."
+        : row.reason,
     name: itemDisplayName(row.key),
     groupLabel: GROUP_LABELS[row.group] || row.group,
     // Ara parca onerisiyse hedef item; arayuz "→ Manta" gosterebilsin.
@@ -1144,12 +1163,11 @@ function gapsAndItems(bars, rows, against, overrides, gameTime = null) {
     if (threat.personal) {
       continue;
     }
-    const names = threat.heroes.map(heroDisplayName).join(", ");
     for (const key of threat.items) {
       offer(
         key,
         ITEM_GROUPS[key] || "situational",
-        threat.reason + ": " + names + ".",
+        threatSentence(threat),
         threat.planOnly,
       );
     }

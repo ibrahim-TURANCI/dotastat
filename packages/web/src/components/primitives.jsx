@@ -17,29 +17,49 @@ import {
  * @param {string} props.title
  * @param {string} [props.hint] Baslikta saga yaslanan kucuk not
  * @param {boolean} [props.defaultOpen]
+ * @param {React.ReactNode} [props.action] Baslik satirinin sagindaki ek
+ *   kontrol (ornek: "Nasıl çalışır?"). Basligin DISINDA cizilir: baslik bir
+ *   dugme oldugu icin icine ikinci bir dugme konamaz.
  * @param {React.ReactNode} props.children
  */
-export function Accordion({ title, hint, defaultOpen = false, children }) {
+export function Accordion({
+  title,
+  hint,
+  defaultOpen = false,
+  action = null,
+  children,
+}) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
 
+  const trigger = (
+    <button
+      type="button"
+      className="accordion-trigger"
+      aria-expanded={open}
+      aria-controls={bodyId}
+      onClick={() => setOpen((value) => !value)}
+    >
+      <span className="row" style={{ gap: 8 }}>
+        <span className="accordion-caret" aria-hidden="true">
+          ▶
+        </span>
+        {title}
+      </span>
+      {hint ? <span className="muted">{hint}</span> : null}
+    </button>
+  );
+
   return (
     <section className="accordion" data-open={open}>
-      <button
-        type="button"
-        className="accordion-trigger"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="row" style={{ gap: 8 }}>
-          <span className="accordion-caret" aria-hidden="true">
-            ▶
-          </span>
-          {title}
-        </span>
-        {hint ? <span className="muted">{hint}</span> : null}
-      </button>
+      {action ? (
+        <div className="accordion-head">
+          {trigger}
+          <div className="accordion-action">{action}</div>
+        </div>
+      ) : (
+        trigger
+      )}
       {open ? (
         <div className="accordion-body" id={bodyId}>
           {children}

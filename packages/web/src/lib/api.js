@@ -50,7 +50,14 @@ export const api = {
    * okunur). Detayda "Yenile"den hemen sonra kullanilir; aksi halde liste
    * CDN'in 60 saniyelik eski kopyasini gosterip yeni maclari gizliyordu.
    *
-   * @param {{ refresh?: boolean, period?: string, fresh?: boolean }} [options]
+   * `version`: istemcinin bildigi EN YENI veri zamani. CDN onbellek anahtari
+   * sorgu dizesini kapsadigi icin surum degisince adres de degisir: "Yenile"
+   * sonrasi sonraki yoklamalar CDN'deki ESKI kopyaya dusmez. (Eskiden yalnizca
+   * ilk okuma taze geliyor, bir sonraki yoklama 60 saniyelik eski kopyayi
+   * getirip karti eski zamana geri ceviriyordu.) Ayni surumu bilen
+   * ziyaretciler ayni adresi, dolayisiyla ayni CDN kopyasini paylasir.
+   *
+   * @param {{ refresh?: boolean, period?: string, fresh?: boolean, version?: string }} [options]
    */
   players: (options = {}) => {
     const params = new URLSearchParams();
@@ -64,17 +71,33 @@ export const api = {
     if (options.period) {
       params.set("period", options.period);
     }
+    if (options.version) {
+      params.set("v", options.version);
+    }
     const query = params.toString();
     return request("/api/players" + (query ? "?" + query : ""));
   },
 
-  /** Tek oyuncunun detayi. */
-  player: (playerKey, options = {}) =>
-    request(
+  /**
+   * Tek oyuncunun detayi. `version`: bkz. `players`.
+   * @param {string} playerKey
+   * @param {{ refresh?: boolean, version?: string }} [options]
+   */
+  player: (playerKey, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.refresh) {
+      params.set("refresh", "1");
+    }
+    if (options.version) {
+      params.set("v", options.version);
+    }
+    const query = params.toString();
+    return request(
       "/api/players/" +
         encodeURIComponent(playerKey) +
-        (options.refresh ? "?refresh=1" : ""),
-    ),
+        (query ? "?" + query : ""),
+    );
+  },
 
   /**
    * Tek macin tam kadrosu (iki takim, on oyuncu, herkes icin PR).
@@ -94,8 +117,11 @@ export const api = {
    * sunucuda "buradayim" sayilir. `hello`: sayfanin ilk istegi — kullanici
    * listede hemen gorunsun (sunucudaki yazma kisitlamasi atlanir).
    *
+   * `myRole`: kullanicinin ekranda sectigi pozisyon ("pos1".."pos5"); draft
+   * ve item tavsiyesi kendi satirinda bunu kullanir.
+   *
    * @param {string} [steamId]
-   * @param {{ freshPlans?: boolean, hello?: boolean }} [options]
+   * @param {{ freshPlans?: boolean, hello?: boolean, myRole?: string }} [options]
    */
   live: (steamId = "", options = {}) => {
     const params = new URLSearchParams();
@@ -108,6 +134,9 @@ export const api = {
     if (options?.hello) {
       params.set("hello", "1");
     }
+    if (options?.myRole) {
+      params.set("myRole", options.myRole);
+    }
     const query = params.toString();
     return request("/api/live" + (query ? "?" + query : ""));
   },
@@ -117,6 +146,18 @@ export const api = {
 
   /** Oturumu kapat. */
   logout: () => request("/api/auth/logout", { method: "POST" }),
+
+  /**
+   * Masaustu: kullanicinin pozisyonunu ayarlara yazar (bos dize secimi
+   * kaldirir). Sitede pozisyon tarayicida tutulur, bu uc yoktur.
+   * @param {string} role
+   */
+  setPosition: (role) =>
+    request("/api/me/position", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role }),
+    }),
 
   /** Kullanicinin kendi maclari icin sectigi pozisyonlar. */
   matchRoles: () => request("/api/me/match-roles"),

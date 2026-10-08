@@ -20,7 +20,7 @@
  */
 
 import { heroRecord } from "../heroes/hero-catalog.js";
-import { normalizeHeroKey } from "../heroes/hero-names.js";
+import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import {
   HERO_TRAITS,
   TRAIT_BY_KEY,
@@ -135,6 +135,7 @@ export function detectThreats(rows, overrides = {}) {
     label: threat.label,
     tooltip: threat.tooltip,
     reason: threat.reason,
+    fact: String(threat.fact || ""),
     items: threat.items.map(normalizeItemKey),
     heroes: [...found.get(threat.key)],
     // Kisisel erken cevap alanlari (bkz. data/hero-traits.js). Tanimda yoksa
@@ -178,6 +179,7 @@ export function threatAnswers(threats) {
         key: threat.key,
         label: threat.label,
         reason: threat.reason,
+        fact: threat.fact,
         heroes: threat.heroes,
         weight: Number(threat.weight) || 0,
       });
@@ -187,6 +189,38 @@ export function threatAnswers(threats) {
     list.sort((a, b) => b.weight - a.weight);
   }
   return answers;
+}
+
+/**
+ * Hero adlarini okunur bir listeye cevirir: "Zeus", "Lina ve Zeus",
+ * "Lina, Lion ve Zeus".
+ *
+ * @param {string[]} heroes Hero anahtarlari
+ * @returns {string}
+ */
+export function joinHeroNames(heroes) {
+  const names = (heroes || []).map(heroDisplayName).filter(Boolean);
+  if (names.length <= 1) {
+    return names.join("");
+  }
+  return names.slice(0, -1).join(", ") + " ve " + names[names.length - 1];
+}
+
+/**
+ * Tehdidin item onerisinde gorunen DURUM cumlesi:
+ * "Rakipte Venomancer ve Zeus büyü hasarı veriyor."
+ *
+ * Tanimda yuklem (`fact`) yoksa eski kalip kullanilir.
+ *
+ * @param {{ reason: string, fact?: string, heroes: string[] }} threat
+ * @returns {string}
+ */
+export function threatSentence(threat) {
+  const names = joinHeroNames(threat.heroes);
+  if (threat.fact && names) {
+    return "Rakipte " + names + " " + threat.fact + ".";
+  }
+  return threat.reason + (names ? ": " + names : "") + ".";
 }
 
 export { THREATS, TRAIT_BY_KEY as THREAT_BY_KEY, TRAIT_KEYS as THREAT_KEYS };

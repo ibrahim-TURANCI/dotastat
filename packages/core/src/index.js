@@ -239,7 +239,9 @@ export {
 export {
   detectThreats,
   heroThreats,
+  joinHeroNames,
   threatAnswers,
+  threatSentence,
   THREATS,
 } from "./live/threats.js";
 

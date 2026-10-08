@@ -85,6 +85,10 @@ const DEFAULTS = {
   // (bkz. services/overlay.js). Yeni anahtar oldugu icin goc gerekmez; dosyada
   // yoksa DEFAULTS'tan acik gelir.
   showOverlay: true,
+  // Kullanicinin ekranda sectigi pozisyon ("pos1".."pos5"; bos = secilmedi).
+  // Draft ve item tavsiyesi bunu kullanir; canli mac yayiniyla siteye de
+  // gider (bkz. app.js -> localRoles).
+  myRole: "",
 };
 
 /**

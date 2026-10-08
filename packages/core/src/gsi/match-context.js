@@ -111,6 +111,41 @@ function withDerivedProfile(seedPlayer, profilesByPlayerId) {
     : seedPlayer;
 }
 
+/** Gecerli pozisyon anahtari ("pos1".."pos5") ya da bos dize. */
+function validRole(value) {
+  const role = String(value || "").trim();
+  return /^pos[1-5]$/.test(role) ? role : "";
+}
+
+/**
+ * Oyuncularin sectigi pozisyonlar: account id -> "posN".
+ *
+ * Kayittaki `localRoles` (masaustu kurulumlarindan) + sayfaya bakan kisinin
+ * secimi (`input.viewerRole`). Izleyicinin secimi en son yazilir: az once
+ * degistirmis olabilir.
+ *
+ * @param {Record<string, any>} liveState
+ * @param {{ viewerSteamId?: string, viewerRole?: string }} input
+ * @returns {Record<string, string>}
+ */
+function chosenRolesOf(liveState, input) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const [id, value] of Object.entries(liveState.localRoles || {})) {
+    const accountId = toAccountId(id);
+    const role = validRole(value);
+    if (accountId && role) {
+      out[accountId] = role;
+    }
+  }
+  const viewer = toAccountId(input.viewerSteamId || "");
+  const viewerRole = validRole(input.viewerRole);
+  if (viewer && viewerRole) {
+    out[viewer] = viewerRole;
+  }
+  return out;
+}
+
 /**
  * Pick oncesi draft icin "macta olabilecek" online kadro oyunculari.
  *
@@ -333,6 +368,8 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.itemPlanOverrides]
  *   ESKI sekil: yalnizca ekle/cikar listesi. Depoda hala bu sekilde duran
  *   kayitlar var, bu yuzden kabul edilmeye devam ediyor.
+ * @param {string} [input.viewerRole] Sayfaya bakan kisinin sectigi pozisyon
+ *   ("pos1".."pos5"); kendi satirina ve draft'taki yerine yazilir
  * @param {Array<Record<string, any>>} [input.onlinePlayers] Online listesi
  *   (bkz. _lib/presence.mjs). Pick oncesi draft, macta kimligi gorunmeyen
  *   online arkadaslari "olasi" oyuncu olarak degerlendirir.
@@ -349,10 +386,21 @@ export function buildLiveMatchContext(input = {}) {
   }
 
   const fresh = isLiveMatchActive(liveState);
+  // OYUNCUNUN SECTIGI POZISYON (ekrandaki "Pozisyon seç"): masaustu
+  // kurulumlarinin gonderdigi secimler + sayfaya bakan kisinin secimi. Satira
+  // `position` olarak yazilir; draft (dolu pozisyon, oyuncu atamasi) ve item
+  // tavsiyesi (core/destek rolu) ayni alani okuyor. Oyuncunun kendi beyani
+  // Overwolf'un tahmininden once gelir.
+  const chosenRoles = chosenRolesOf(liveState, input);
   const allPlayers = [
     ...(liveState.radiantPlayers || []),
     ...(liveState.direPlayers || []),
-  ];
+  ].map((row) => {
+    const accountId =
+      String(row?.accountId || "") || toAccountId(row?.steamId || "");
+    const role = accountId ? chosenRoles[accountId] : "";
+    return role ? { ...row, position: Number(role.slice(3)) } : row;
+  });
 
   /** @type {Array<{ player: Object, team: string, slot: number|null, hero: string, live: Object, stats: Object|null }>} */
   const knownPlayers = [];
@@ -424,6 +472,36 @@ export function buildLiveMatchContext(input = {}) {
       stats: statsByPlayerId[rosterPlayer.id] || null,
       live: null,
     });
+  }
+
+  // Sayfaya bakan kisi bu maci KENDI kurulumundan yayinliyorsa (yani gercekten
+  // macta) ama pick oncesinde tabloda henuz satiri yoksa, sectigi pozisyonla
+  // draft'a eklenir. Macin disindan izleyen biri eklenmez.
+  const viewerAccountId = toAccountId(input.viewerSteamId || "");
+  const viewerRole = viewerAccountId ? chosenRoles[viewerAccountId] : "";
+  const uploaders = (
+    liveState.uploaders || [liveState.uploaderSteamId, liveState.localSteamId]
+  ).map((id) => toAccountId(id || ""));
+  if (viewerRole && uploaders.includes(viewerAccountId)) {
+    const viewerPlayer = withDerivedProfile(
+      findRosterPlayer(viewerAccountId),
+      profilesByPlayerId,
+    );
+    if (
+      viewerPlayer &&
+      !knownPlayers.some((row) => row.player.id === viewerPlayer.id)
+    ) {
+      knownPlayers.push({
+        player: viewerPlayer,
+        team: myTeam,
+        slot: null,
+        hero: "",
+        role: viewerRole,
+        matchRole: viewerRole,
+        stats: statsByPlayerId[viewerPlayer.id] || null,
+        live: null,
+      });
+    }
   }
 
   const probablePlayers = probableFromOnline({
