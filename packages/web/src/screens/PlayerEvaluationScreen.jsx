@@ -127,9 +127,26 @@ export function PlayerEvaluationScreen({
   // ucuzdur — sunucu ayni onbellegi baska bir pencereyle ozetler.
   //
   // Basarili her cevap tarayiciya da yazilir (bkz. SNAPSHOT_KEY).
+  // Bu istemcinin bildigi en yeni veri zamani; isteklere surum olarak eklenir
+  // (bkz. api.players -> version). "Yenile" sonrasi detaydan gelen zaman
+  // buraya yazilir ki sonraki yoklamalar CDN'in eski kopyasini almasin.
+  const versionRef = useRef("");
+  const noteVersion = (value) => {
+    const at = String(value || "");
+    if (at && at > versionRef.current) {
+      versionRef.current = at;
+    }
+  };
   const players = useAsyncData(
     async (options) => {
-      const data = await api.players({ ...options, period });
+      const data = await api.players({
+        ...options,
+        period,
+        version: versionRef.current,
+      });
+      // Daha eski bir kopya geldiyse (baska bir CDN dugumu) bilinen surum
+      // geri gitmez.
+      noteVersion(data?.lastFetchedAt);
       writeSnapshot(period, data);
       return data;
     },
@@ -246,8 +263,20 @@ export function PlayerEvaluationScreen({
           onClose={() => setSelected("")}
           // Detayda "Yenile"ye basildiginda ayni veri kartlari da degistirir;
           // listeyi eski haliyle birakmak "hangisi dogru" sorusunu doguruyordu.
-          // `fresh`: CDN'deki eski kopya atlanir, yeni mac aninda gorunur.
-          onDataChanged={() => players.reload({ fresh: true })}
+          // Tazelenen verinin zamani surum olur: liste bu ve sonraki
+          // yoklamalarda CDN'deki eski kopyayi atlar, kart ile detay ayni
+          // zamani gosterir.
+          onDataChanged={(fetchedAt) => {
+            if (fetchedAt) {
+              noteVersion(fetchedAt);
+              players.reload();
+            } else {
+              // Veri zamani degismeyen degisiklik (pozisyon secimi, mac
+              // detayi): surum ayni kalir, bu yuzden CDN kopyasi bir kez
+              // atlanir.
+              players.reload({ fresh: true });
+            }
+          }}
           // Kadroda yeni veri gelince detay da onbellekten yeniden okunur.
           dataVersion={lastFetchedAt}
         />

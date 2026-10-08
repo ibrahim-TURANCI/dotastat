@@ -385,6 +385,31 @@ function createServerApp(options) {
 
   // --- GSI girisi ------------------------------------------------------------
 
+  /** Gecerli pozisyon anahtari ("pos1".."pos5") ya da bos dize. */
+  function validRole(value) {
+    const role = String(value || "").trim();
+    return /^pos[1-5]$/.test(role) ? role : "";
+  }
+
+  /**
+   * Kayda bu bilgisayarin kullanicisinin sectigi pozisyonu ekler
+   * (`localRoles`: account id -> "posN"; bkz. core mergeLiveStateGroup).
+   *
+   * @param {Record<string, any>|null} state
+   * @returns {Record<string, any>|null}
+   */
+  function withLocalRole(state) {
+    const role = validRole(settings.get().myRole);
+    const accountId = ownAccountId();
+    if (!state || !role || !accountId) {
+      return state;
+    }
+    return {
+      ...state,
+      localRoles: { ...(state.localRoles || {}), [accountId]: role },
+    };
+  }
+
   /**
    * @param {import("express").Request} request
    * @param {import("express").Response} response
@@ -412,7 +437,10 @@ function createServerApp(options) {
 
       // Buluta ZENGINLESTIRILMIS durum gider: Overwolf kuruluysa 10 slotun
       // hero'su da yayina dahil olur, degilse GSI'nin verdigi kadari gider.
-      relay.push(enrich(liveState));
+      //
+      // Kullanicinin sectigi pozisyon da kayitla gider: siteden bakan
+      // arkadaslarin draft ve item tavsiyesi bu oyuncunun gercek rolunu bilsin.
+      relay.push(withLocalRole(enrich(liveState)));
     } catch (error) {
       logger.error?.("GSI verisi islenemedi", String(error?.message || error));
     }
@@ -1093,6 +1121,8 @@ function createServerApp(options) {
       statsByPlayerId,
       profilesByPlayerId,
       viewerSteamId: settings.resolveSteamId(),
+      // Kullanicinin ekranda sectigi pozisyon.
+      viewerRole: validRole(settings.get().myRole),
       // Katalog siteden gelir ve 60 saniye hafizada tutulur; arayuz bir
       // kayit sonrasi `?plans=fresh` ile hafizayi atlatir.
       heroOverrides: await readHeroPlans({ fresh: options.freshPlans }),
@@ -1244,8 +1274,21 @@ function createServerApp(options) {
         avatar: rosterPlayer?.avatar || "",
         rosterId: rosterPlayer?.id || "",
         inRoster: Boolean(rosterPlayer),
+        // Ekrandaki "Pozisyon seç" alaninin baslangic degeri.
+        position: validRole(settings.get().myRole),
       },
     });
+  });
+
+  // Kullanicinin pozisyonu ("pos1".."pos5"; bos dize secimi kaldirir).
+  app.post("/api/me/position", (request, response) => {
+    const role = validRole(request.body?.role);
+    settings.update({ myRole: role });
+    // Mac suruyorsa secim beklemeden siteye de gitsin.
+    if (liveState && core.isLiveMatchActive(liveState)) {
+      relay.push(withLocalRole(enrich(liveState)));
+    }
+    response.json({ ok: true, position: role });
   });
 
   // Masaustunde "cikis" kimligi sifirlar; yeniden oyuna girilince tespit edilir.

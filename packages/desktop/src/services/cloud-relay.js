@@ -89,6 +89,8 @@ function createCloudRelay(options) {
       state?.phase,
       state?.radiantScore,
       state?.direScore,
+      // Kullanici pozisyonunu degistirdiyse yayin beklemeden gitsin.
+      JSON.stringify(state?.localRoles || {}),
       // Erken asamada saat dilimi imzaya girer: tavsiyeler ve draft durumu
       // her 5 saniyede tazelenir. Sonrasinda yalnizca asagidaki degisiklikler.
       frequent ? Math.floor(Number(state?.gameTime || 0) / 5) : "",

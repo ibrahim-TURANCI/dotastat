@@ -302,7 +302,9 @@ function AdviceSlot({ row }) {
   const target = row.buildsInto
     ? row.buildsIntoName || itemDisplayName(row.buildsInto)
     : "";
-  const hint = `${name}${target ? " → " + target : ""} — ${row.groupLabel}. ${row.reason}`;
+  // Ilk satir item ve grubu, ikinci satir gerekce cumlesi:
+  // "Pipe of Insight (Counter)\nRakipte Zeus büyü hasarı veriyor. ..."
+  const hint = `${name}${target ? " → " + target : ""} (${row.groupLabel})\n${row.reason}`;
 
   return (
     <div

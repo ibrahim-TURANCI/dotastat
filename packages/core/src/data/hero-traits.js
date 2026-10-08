@@ -40,6 +40,8 @@
  *   planOnly      true ise cevap itemi TAKIM onerisinde de yalnizca planinda
  *                 (gerekli/durumsal) o item olan hero'ya onerilir; kimsenin
  *                 planinda yoksa "Duruma göre"ye DUSMEZ, hic onerilmez.
+ *   fact          hero adlarindan sonra gelen yuklem ("Rakipte Zeus
+ *                 büyü hasarı veriyor"); item onerisinin gerekce cumlesi.
  *   answerHeroes  pick sirasinda rakipte bu ozellik varsa one cikarilan
  *                 hero'lar (bkz. draft/draft-advisor.js).
  *   answerReason  o hero'larin pick onerisinde gorunen gerekce kalibi.
@@ -54,6 +56,7 @@ export default [
   {
     key: "invisible",
     label: "Görünmez",
+    fact: "görünmez olabiliyor",
     tooltip: "Heroya karşı Distiller, dust önerilir",
     reason: "Rakipte görünmez hero var",
     items: ["essence_distiller", "dust", "gem"],
@@ -73,6 +76,7 @@ export default [
   {
     key: "regen",
     label: "Can Yenileme",
+    fact: "hızlı can yeniliyor",
     tooltip: "Vessel, Skadi, Shiva's önerilir",
     reason: "Rakipte can yenileyen hero var",
     items: ["spirit_vessel", "skadi", "shivas_guard"],
@@ -92,6 +96,7 @@ export default [
   {
     key: "escape",
     label: "Kaçış",
+    fact: "kolay kaçabiliyor",
     tooltip: "Orchid / Bloodthorn / Scythe of Vyse önerilir",
     reason: "Rakipte kaçan hero var",
     items: ["orchid", "bloodthorn", "sheepstick"],
@@ -117,6 +122,7 @@ export default [
   {
     key: "magical",
     label: "Büyü Hasarı",
+    fact: "büyü hasarı veriyor",
     tooltip: "Pipe / BKB / Mekansm önerilir",
     reason: "Rakip büyü hasarı basıyor",
     items: ["pipe", "black_king_bar", "mekansm", "guardian_greaves"],
@@ -153,6 +159,7 @@ export default [
   {
     key: "targeted",
     label: "Tek Hedefli Ulti",
+    fact: "tek hedefli ulti/skill kullanıyor",
     tooltip: "Linken's Sphere / Aeon Disk önerilir",
     reason: "Rakipte tek hedefli ulti/skill var",
     items: ["sphere", "aeon_disk"],
@@ -175,6 +182,7 @@ export default [
   {
     key: "passive",
     label: "Güçlü Pasif",
+    fact: "güçlü pasif var",
     tooltip: "Silver Edge / Khanda önerilir",
     reason: "Rakipte pasifi güçlü hero var",
     items: ["silver_edge", "angels_demise"],
@@ -198,6 +206,7 @@ export default [
   {
     key: "ranged",
     label: "Uzak Savaşçı",
+    fact: "uzaktan vuruyor",
     tooltip: "Dagger / Force / Harpoon önerilir",
     reason: "Rakip uzaktan dövüyor",
     items: ["blink", "force_staff", "harpoon"],
@@ -237,6 +246,7 @@ export default [
   {
     key: "shield",
     label: "Kalkan / Bariyer",
+    fact: "kalkan/bariyer basıyor",
     tooltip: "Diffusal, Disperser, Nullifier önerilir",
     reason: "Rakipte kalkan/bariyer basan hero var",
     items: ["diffusal_blade", "disperser", "nullifier"],
@@ -261,6 +271,7 @@ export default [
   {
     key: "armor",
     label: "Yüksek Zırh",
+    fact: "zırhı yüksek",
     tooltip: "Desolator, Assault Cuirass önerilir",
     reason: "Rakipte zırhı yüksek hero var",
     items: ["desolator", "assault"],
@@ -291,6 +302,7 @@ export default [
   {
     key: "movespeed",
     label: "Yüksek Hareket Hızı",
+    fact: "çok hızlı hareket ediyor",
     tooltip: "Rod of Atos, Gleipnir, Skadi önerilir",
     reason: "Rakipte hızlı hero var",
     items: ["rod_of_atos", "gungir", "skadi"],
@@ -328,6 +340,7 @@ export default [
     // itemi onermek her macta ayni gereksiz oneriyi uretirdi.
     key: "debuff",
     label: "Debuff",
+    fact: "güçlü debuff basıyor",
     tooltip: "Eul's, Manta, Lotus, Greaves, BKB, Disperser önerilir",
     reason: "Rakipte güçlü debuff basan hero var",
     items: [
@@ -374,6 +387,7 @@ export default [
   {
     key: "spellspam",
     label: "Çok Büyü Kullanır",
+    fact: "sık büyü kullanıyor",
     tooltip: "Erken oyunda Magic Wand önerilir",
     reason: "Rakip sık büyü kullanıyor",
     items: ["magic_wand"],
@@ -409,6 +423,7 @@ export default [
   {
     key: "burst",
     label: "Ani Büyü Patlaması",
+    fact: "ani büyü hasarı patlatıyor",
     tooltip: "Erken oyunda Infused Raindrop önerilir",
     reason: "Rakip ani büyü hasarı patlatıyor",
     items: ["infused_raindrop"],

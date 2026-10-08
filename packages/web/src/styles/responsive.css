@@ -1,0 +1,99 @@
+/**
+ * Dar ekran (telefon) duzeni.
+ *
+ * Bilesen stilleri masaustu genisligi icin yazildi; burada yalnizca telefonda
+ * TASAN ya da sikisan yerler duzeltilir. Ayri dosyada tutuluyor ki "mobilde ne
+ * degisiyor" sorusunun cevabi tek yerde dursun. Diger stillerden SONRA yuklenir
+ * (bkz. main.jsx), boylece ayni secicileri ezer.
+ *
+ * Kural: sayfa hicbir zaman yatay kaymaz. Genis tablolar kendi kutularinda
+ * kayar (bkz. .live-table-wrap, .data-table-wrap).
+ */
+
+/* Sabit en-kucuk genislikli izgaralar 320px'lik ekranlarda tasiyordu
+   (oyuncu kartlari 258px + bosluklar). Tek sutuna inerler. */
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 10px 10px 48px;
+    gap: 12px;
+  }
+
+  .section {
+    padding: 12px;
+  }
+
+  .app-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .app-header-brand h1 {
+    font-size: 17px;
+  }
+
+  /* Bolum basligindaki sag kontroller (donem secici, rozetler) alt satira
+     tam genislikte iner. */
+  .section-head > .row {
+    width: 100%;
+  }
+
+  .player-grid,
+  .draft-blocks,
+  .overview-grid,
+  .overview-summary,
+  .eval-lists,
+  .trait-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Oyuncu detayi: baslik iki satira bolunur, dugmeler saga yaslanir. */
+  .player-detail {
+    padding: 10px;
+  }
+
+  .player-detail-head > .row:last-child {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Sekme satiri: sekmeler kendi icinde kayar, donem secici alt satira iner. */
+  .tabs-bar {
+    flex-wrap: wrap;
+  }
+
+  .tabs-bar .period-switch {
+    margin-left: 0;
+  }
+
+  .data-table {
+    font-size: 12px;
+  }
+
+  /* Canli mac: skor kutusu sikisir, takim tablolari kendi icinde kayar. */
+  .live-scoreboard {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .team-score strong {
+    font-size: 24px;
+  }
+
+  .team-column {
+    padding: 8px;
+  }
+
+  .live-player-text strong,
+  .live-player-text .micro {
+    max-width: 96px;
+  }
+
+  /* Dokunmatik ekranda kucuk dugmeler parmakla rahat basilsin. */
+  .btn.small {
+    min-height: 32px;
+  }
+
+  .app-footer {
+    text-align: center;
+  }
+}

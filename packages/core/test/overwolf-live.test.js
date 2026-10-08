@@ -605,3 +605,39 @@ test("pick oncesi: baska macta olan online arkadas olasi oyuncu sayilmaz", () =>
   assert.ok(!names.includes(second.name));
   assert.ok(context.draftAdvice.probablePlayerCount <= 1);
 });
+
+test("secilen pozisyon oyuncunun satirina ve draft'taki yerine yazilir", () => {
+  const me = listRoster().find(
+    (row) =>
+      row.dotaProfile?.primaryRole && row.dotaProfile.primaryRole !== "pos4",
+  );
+  const friend = listRoster().find(
+    (row) => row.id !== me.id && row.dotaProfile?.primaryRole,
+  );
+  const steamOf = (player) =>
+    String(BigInt(player.player_id) + 76561197960265728n);
+  const context = buildLiveMatchContext({
+    liveState: {
+      matchId: "200",
+      phase: "DOTA_GAMERULES_STATE_HERO_SELECTION",
+      updatedAt: new Date().toISOString(),
+      uploaderSteamId: steamOf(me),
+      // Arkadasin masaustu kurulumu kendi secimini gondermis.
+      localRoles: { [friend.player_id]: "pos5" },
+      radiantPlayers: [
+        { steamId: steamOf(friend), team: "radiant", hero: "", slot: 1 },
+      ],
+      direPlayers: [],
+      draft: { picks: [], bans: [] },
+    },
+    viewerSteamId: steamOf(me),
+    viewerRole: "pos4",
+  });
+
+  // Izleyici tabloda yok ama maci kendisi yayinliyor: secimiyle eklenir.
+  const blocks = context.draftAdvice.blocks;
+  assert.equal(blocks.find((row) => row.role === "pos4").player?.id, me.id);
+  // Arkadasin secimi kendi satirina yazilir; draft onu pos5'e koyar.
+  assert.equal(context.radiantPlayers[0].position, 5);
+  assert.equal(blocks.find((row) => row.role === "pos5").player?.id, friend.id);
+});

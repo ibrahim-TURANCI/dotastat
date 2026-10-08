@@ -161,16 +161,16 @@ test("tahmine dayanan gerekce kendini belli eder", () => {
     result.radiantPlayers[0].itemAdvice.find((row) => row.key === key)
       ?.reason || "";
 
-  // Gorulen esya kesin konusur, tahmin edilen "bekleniyor" der. BKB'ye
+  // Gorulen esya kesin konusur ("aldı"), tahmin edilen "büyük ihtimalle". BKB'ye
   // hangi cevabin (Nullifier ya da Abyssal) secildigi Riki'nin plan sirasina
   // bagli; test sirayi degil, gerekcenin kesin konusmasini olcer.
   assert.match(
     reasonFor(seen, "nullifier") || reasonFor(seen, "abyssal_blade"),
-    /Black King Bar var/,
+    /Black King Bar aldı/,
   );
   const predictedReasons = out.radiantPlayers[0].itemAdvice
     .map((row) => row.reason)
-    .filter((reason) => /bekleniyor/.test(reason));
+    .filter((reason) => /büyük ihtimalle/.test(reason));
   for (const reason of predictedReasons) {
     assert.doesNotMatch(reason, / var\./, "tahmin kesin konusmamali");
   }

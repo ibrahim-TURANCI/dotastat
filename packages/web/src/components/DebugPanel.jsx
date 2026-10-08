@@ -3,6 +3,7 @@ import { api, ROSTER_CHANGED_EVENT } from "../lib/api.js";
 import { useAsyncData } from "../hooks/useAsyncData.js";
 import { formatRelativeTime } from "../lib/format.js";
 import { Accordion, EmptyState, SkeletonBlock } from "./primitives.jsx";
+import { HelpDialog } from "./HelpDialog.jsx";
 import "./DebugPanel.css";
 
 /**
@@ -14,10 +15,28 @@ import "./DebugPanel.css";
  * @param {{ live: Record<string, any>|null, user: Record<string, any>|null }} props
  */
 export function DebugPanel({ live, user }) {
+  // "Nasıl çalışır?" paneli kapaliyken de gorunur: merak eden kullanici once
+  // debug verisini acmak zorunda kalmasin.
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
-    <Accordion title="Debug Panel" hint="tıklayınca açılır">
-      <DebugBody live={live} user={user} />
-    </Accordion>
+    <>
+      <Accordion
+        title="Debug Panel"
+        hint="tıklayınca açılır"
+        action={
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => setHelpOpen(true)}
+          >
+            Nasıl çalışır?
+          </button>
+        }
+      >
+        <DebugBody live={live} user={user} />
+      </Accordion>
+      {helpOpen ? <HelpDialog onClose={() => setHelpOpen(false)} /> : null}
+    </>
   );
 }
 

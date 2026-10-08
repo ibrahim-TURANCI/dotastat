@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./lib/api.js";
 import { useAsyncData } from "./hooks/useAsyncData.js";
+import { usePosition } from "./hooks/usePosition.js";
 import { useSession } from "./hooks/useSession.js";
 import { AppHeader } from "./components/AppHeader.jsx";
 import { HeroManagerDialog } from "./components/HeroManagerDialog.jsx";
 import { LiveMatchPanel } from "./components/LiveMatchPanel.jsx";
+import { PositionPicker } from "./components/PositionPicker.jsx";
 import { DebugPanel } from "./components/DebugPanel.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { PlayerEvaluationScreen } from "./screens/PlayerEvaluationScreen.jsx";
@@ -54,6 +56,10 @@ const LIVE_PANELS = { evaluation: false, live: true };
  */
 export default function App() {
   const session = useSession();
+  // Kullanicinin pozisyonu: draft ve item tavsiyesi buna gore hazirlanir.
+  // Kimlik bilinince (sitede Steam girisi, masaustunde oyundan tespit) secim
+  // alani gorunur.
+  const position = usePosition(session);
   // Ayar ekrani yalnizca masaustunde vardir; sitede boyle bir uc yok.
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Hero tavsiye katalogu tek bir yerden yonetiliyor (ust bardaki dugme).
@@ -72,12 +78,17 @@ export default function App() {
     (options) => {
       const hello = Boolean(session.user) && !greetedRef.current;
       greetedRef.current = greetedRef.current || Boolean(session.user);
-      return api.live(session.user?.steamId || "", { ...options, hello });
+      return api.live(session.user?.steamId || "", {
+        ...options,
+        hello,
+        myRole: position.value,
+      });
     },
     {
       intervalMs: livePollMs,
       enabled: !session.loading,
-      deps: [session.user?.steamId || ""],
+      // Pozisyon degisince oneriler hemen yeniden hesaplansin.
+      deps: [session.user?.steamId || "", position.value],
     },
   );
 
@@ -217,6 +228,14 @@ export default function App() {
           canManageHeroes ? () => setHeroManagerOpen(true) : null
         }
       />
+
+      {session.user ? (
+        <PositionPicker
+          value={position.value}
+          onChange={position.choose}
+          disabled={position.saving}
+        />
+      ) : null}
 
       {heroManagerOpen && canManageHeroes ? (
         <HeroManagerDialog

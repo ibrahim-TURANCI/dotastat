@@ -92,7 +92,7 @@ function refreshFailureNote(result) {
  * @param {{
  *   playerKey: string,
  *   onClose: () => void,
- *   onDataChanged?: () => void,
+ *   onDataChanged?: (fetchedAt?: string) => void,
  *   dataVersion?: string,
  *   period?: string
  * }} props `period`: listede secili donem; Genel sekmesi onunla acilir.
@@ -112,9 +112,15 @@ export function PlayerDetail({
     setPeriod(listPeriod);
   }, [listPeriod]);
   // Panel acilirken onbellekten okur; saglayiciya yalnizca "Yenile" ile gider.
-  const detail = useAsyncData((options) => api.player(playerKey, options), {
-    deps: [playerKey],
-  });
+  // Kadronun en yeni veri zamani surum olarak eklenir (bkz. api.player): liste
+  // yeni veriyi gordugunde detay da CDN'in eski kopyasini degil onu okur.
+  const versionRef = useRef(dataVersion);
+  versionRef.current = dataVersion;
+  const detail = useAsyncData(
+    (options) =>
+      api.player(playerKey, { ...options, version: versionRef.current }),
+    { deps: [playerKey] },
+  );
 
   // Pozisyon secimleri yerelde de tutulur: sunucuya yazarken listenin aninda
   // guncellenmesi icin. Sunucudan yeni veri gelince buradan tazelenir.
@@ -261,7 +267,7 @@ export function PlayerDetail({
               const result = await detail.reload({ refresh: true });
               // Ayni veri kartlari da besliyor; liste eski kalmasin.
               if (result?.ok) {
-                onDataChanged?.();
+                onDataChanged?.(result.data?.fetchedAt || "");
               }
               setRefreshNote(refreshFailureNote(result));
             }}

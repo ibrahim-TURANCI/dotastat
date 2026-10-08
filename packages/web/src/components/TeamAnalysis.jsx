@@ -209,12 +209,21 @@ function RecoSlot({ row }) {
   const [failed, setFailed] = useState(false);
   const name = row.name || itemDisplayName(row.key);
   // Kimin alacagi onerinin yarisi: "Pipe al" tek basina eyleme donmuyor.
-  const buyers = row.buyerNames?.length
-    ? " Alabilir: " + row.buyerNames.join(", ") + "."
+  // "Rakipte Zeus büyü hasarı veriyor. Dark Seer veya Lich Pipe of Insight
+  // alabilir."
+  const names = row.buyerNames || [];
+  const buyers = names.length
+    ? " " +
+      (names.length > 1
+        ? names.slice(0, -1).join(", ") + " veya " + names[names.length - 1]
+        : names[0]) +
+      " " +
+      name +
+      " alabilir."
     : "";
 
   return (
-    <div className="reco-slot" title={name + " — " + row.reason + buyers}>
+    <div className="reco-slot" title={name + "\n" + row.reason + buyers}>
       {failed ? (
         <span className="reco-fallback">{name.slice(0, 2).toUpperCase()}</span>
       ) : (
