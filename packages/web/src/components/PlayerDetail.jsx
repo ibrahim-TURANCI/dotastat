@@ -68,6 +68,25 @@ export function refreshTooltip(waitMs, busy) {
 }
 
 /**
+ * "Yenile" yeni veri getirmediyse kullaniciya gosterilecek not.
+ *
+ * Basarili tazeleme verinin yasini sifirlar ve sunucu bekleme suresi doner
+ * (`refreshAvailableInMs` > 0). Bekleme gelmediyse veri tazelenmemistir.
+ *
+ * @param {{ ok: boolean, data: any, error: any }|undefined} result
+ * @returns {string}
+ */
+function refreshFailureNote(result) {
+  if (!result?.ok) {
+    return "Kaynak zamanında yanıt vermedi, tekrar dene.";
+  }
+  if (Number(result.data?.refreshAvailableInMs) > 0) {
+    return "";
+  }
+  return "Kaynaktan yeni veri alınamadı, biraz sonra tekrar dene.";
+}
+
+/**
  * Secilen oyuncunun detay paneli.
  *
  * @param {{
@@ -104,6 +123,13 @@ export function PlayerDetail({
   // Onbellek paylasildigi icin cok yeni veri yeniden cekilmez; buton verinin
   // yasina gore kapanir (bkz. player-data-service -> MIN_REFRESH_INTERVAL_MS).
   const refreshWaitMs = detail.data?.refreshAvailableInMs || 0;
+  // Tazeleme yeni veri getirmediyse (kaynak yanit vermedi, istek zaman
+  // asimina ugradi) buton yeniden acilir; sebebi yanina yazilir, yoksa
+  // "bekledi ama hicbir sey olmadi" gibi gorunuyordu.
+  const [refreshNote, setRefreshNote] = useState("");
+  useEffect(() => {
+    setRefreshNote("");
+  }, [playerKey]);
 
   useEffect(() => {
     setMatchRoles(detail.data?.matchRoles || {});
@@ -231,17 +257,24 @@ export function PlayerDetail({
             type="button"
             className="btn ghost small"
             onClick={async () => {
+              setRefreshNote("");
               const result = await detail.reload({ refresh: true });
               // Ayni veri kartlari da besliyor; liste eski kalmasin.
               if (result?.ok) {
                 onDataChanged?.();
               }
+              setRefreshNote(refreshFailureNote(result));
             }}
             disabled={detail.refreshing || refreshWaitMs > 0}
             title={refreshTooltip(refreshWaitMs, detail.refreshing)}
           >
             {detail.refreshing ? "Yenileniyor…" : "Yenile"}
           </button>
+          {refreshNote && !detail.refreshing ? (
+            <span className="muted micro" role="status">
+              {refreshNote}
+            </span>
+          ) : null}
           <button type="button" className="btn ghost small" onClick={onClose}>
             Kapat
           </button>

@@ -33,8 +33,17 @@ const {
  * @param {number} [options.port]
  */
 function createServerApp(options) {
-  const { core, settings, storage, relay, webDir, mmr, overwolf, cloudLive } =
-    options;
+  const {
+    core,
+    settings,
+    storage,
+    relay,
+    webDir,
+    mmr,
+    overwolf,
+    cloudLive,
+    cloudPresence,
+  } = options;
   const logger = options.logger || console;
 
   const playerData = core.createPlayerDataService({
@@ -1087,6 +1096,9 @@ function createServerApp(options) {
       // Katalog siteden gelir ve 60 saniye hafizada tutulur; arayuz bir
       // kayit sonrasi `?plans=fresh` ile hafizayi atlatir.
       heroOverrides: await readHeroPlans({ fresh: options.freshPlans }),
+      // Sitedeki online listesi (bkz. services/cloud-presence.js). Pick
+      // oncesi draft, online arkadaslari "olasi" oyuncu sayar.
+      onlinePlayers: cloudPresence?.online?.() || [],
     });
   }
 
@@ -1243,10 +1255,20 @@ function createServerApp(options) {
   });
 
   // --- Online listesi ---------------------------------------------------------
-  // Yerel modda yalnizca bu bilgisayardaki kullanici bilinir. Gercek liste
-  // canli sitede tutulur.
+  // Gercek liste canli sitede tutulur; masaustu her heartbeat'te onu geri
+  // alir (bkz. services/cloud-presence.js). Site erisilemezse ya da adresi
+  // tanimli degilse yalnizca bu bilgisayardaki kullanici gosterilir.
 
   app.get("/api/presence", (request, response) => {
+    const cloudOnline = cloudPresence?.online?.();
+    if (cloudOnline) {
+      response.json({
+        ok: true,
+        online: cloudOnline,
+        count: cloudOnline.length,
+      });
+      return;
+    }
     const steamId = settings.resolveSteamId();
     const rosterPlayer = steamId
       ? core.findRosterPlayer(core.toAccountId(steamId))

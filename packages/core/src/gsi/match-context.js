@@ -50,6 +50,18 @@ export function isLiveMatchOver(liveState) {
   if (ENDED_PHASES.some((candidate) => phase.includes(candidate))) {
     return true;
   }
+  // Overwolf logu maci bitmis olarak isaretlediyse kayit canli degildir.
+  if (liveState.overwolf?.ended) {
+    return true;
+  }
+  // "UNKNOWN": GSI kaydinda harita blogu yok, yani oyuncu ana menude (bkz.
+  // normalizeGsiPayload). Eski masaustu surumleri bu kaydi Overwolf'un
+  // hafizasindaki BITMIS macla zenginlestirip gonderiyordu: mac kimligi ve 10
+  // oyuncu dolu, saat 0 — site onu yeni bir mac sanip sayaci 0'dan
+  // baslatiyordu.
+  if (phase === "UNKNOWN") {
+    return true;
+  }
   const hasPlayers =
     (liveState.radiantPlayers || []).length > 0 ||
     (liveState.direPlayers || []).length > 0 ||
@@ -80,6 +92,78 @@ function matchToRoster(livePlayer) {
     return null;
   }
   return findRosterPlayer(accountId);
+}
+
+/**
+ * Kadro oyuncusunu mac verisinden TURETILMIS profiliyle doner.
+ *
+ * Oyuncu kartinda gorunen hero havuzu mac verisinden turetiliyor; draft da
+ * AYNI havuzu kullanmali, yoksa iki ekran farkli "imza kahraman" soyler.
+ *
+ * @param {Record<string, any>|null} seedPlayer
+ * @param {Record<string, Object>} profilesByPlayerId
+ * @returns {Record<string, any>|null}
+ */
+function withDerivedProfile(seedPlayer, profilesByPlayerId) {
+  const derivedProfile = seedPlayer ? profilesByPlayerId[seedPlayer.id] : null;
+  return seedPlayer && derivedProfile
+    ? { ...seedPlayer, dotaProfile: derivedProfile }
+    : seedPlayer;
+}
+
+/**
+ * Pick oncesi draft icin "macta olabilecek" online kadro oyunculari.
+ *
+ * Online listesinde (bkz. netlify _lib/presence.mjs) kimin hangi macta
+ * oldugu yalnizca masaustu uygulamasi kullananlar icin bilinir:
+ *   - Masaustu "oyunda degil" ya da BASKA bir mac diyorsa aday degildir.
+ *   - Masaustu bu maci diyorsa ya da kisi yalnizca sitedeyse (durumu
+ *     bilinmiyor) aday sayilir.
+ * Macta zaten taninan oyuncular ve sayfaya bakan kisi (macin disindan
+ * izliyor) ayiklanir.
+ *
+ * @param {Object} args
+ * @param {Array<Record<string, any>>|undefined} args.online
+ * @param {Record<string, any>} args.liveState
+ * @param {Array<{ player: { id: string } }>} args.knownPlayers
+ * @param {string} [args.viewerSteamId]
+ * @param {Record<string, Object>} args.statsByPlayerId
+ * @param {Record<string, Object>} args.profilesByPlayerId
+ * @returns {Array<{ player: Object, role: string, matchRole: string, stats: Object|null }>}
+ */
+function probableFromOnline(args) {
+  const matchId = String(args.liveState.matchId || "");
+  const viewer = toAccountId(args.viewerSteamId || "");
+  const taken = new Set(args.knownPlayers.map((row) => row.player.id));
+  const out = [];
+  for (const row of Array.isArray(args.online) ? args.online : []) {
+    const accountId = String(row?.accountId || "") || toAccountId(row?.steamId);
+    if (!accountId || accountId === viewer) {
+      continue;
+    }
+    if (row.client === "desktop") {
+      const otherMatch =
+        row.matchId && matchId && String(row.matchId) !== matchId;
+      if (!row.inGame || otherMatch) {
+        continue;
+      }
+    }
+    const player = withDerivedProfile(
+      findRosterPlayer(accountId),
+      args.profilesByPlayerId,
+    );
+    if (!player || taken.has(player.id)) {
+      continue;
+    }
+    taken.add(player.id);
+    out.push({
+      player,
+      role: player.dotaProfile?.primaryRole || "",
+      matchRole: "",
+      stats: args.statsByPlayerId[player.id] || null,
+    });
+  }
+  return out;
 }
 
 /**
@@ -249,6 +333,9 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  * @param {Record<string, { add?: string[], remove?: string[] }>} [input.itemPlanOverrides]
  *   ESKI sekil: yalnizca ekle/cikar listesi. Depoda hala bu sekilde duran
  *   kayitlar var, bu yuzden kabul edilmeye devam ediyor.
+ * @param {Array<Record<string, any>>} [input.onlinePlayers] Online listesi
+ *   (bkz. _lib/presence.mjs). Pick oncesi draft, macta kimligi gorunmeyen
+ *   online arkadaslari "olasi" oyuncu olarak degerlendirir.
  * @param {number} [input.minAdvice] Oyuncu basina en az oneri sayisi; oyun
  *   ici overlay kullanir. Verilmezse veri seviyesinin kotasi gecerli.
  */
@@ -270,16 +357,10 @@ export function buildLiveMatchContext(input = {}) {
   /** @type {Array<{ player: Object, team: string, slot: number|null, hero: string, live: Object, stats: Object|null }>} */
   const knownPlayers = [];
   const decorated = allPlayers.map((livePlayer) => {
-    const seedPlayer = matchToRoster(livePlayer);
-    // Oyuncu kartinda gorunen hero havuzu mac verisinden turetiliyor; draft da
-    // AYNI havuzu kullanmali, yoksa iki ekran farkli "imza kahraman" soyler.
-    const derivedProfile = seedPlayer
-      ? profilesByPlayerId[seedPlayer.id]
-      : null;
-    const rosterPlayer =
-      seedPlayer && derivedProfile
-        ? { ...seedPlayer, dotaProfile: derivedProfile }
-        : seedPlayer;
+    const rosterPlayer = withDerivedProfile(
+      matchToRoster(livePlayer),
+      profilesByPlayerId,
+    );
     // Oyuncunun BU MACTAKI pozisyonu (Overwolf) kadrodaki birincil rolunden
     // once gelir: pos1 oynayan bir oyuncu bu macta pos3 alabilir.
     const matchRole =
@@ -319,6 +400,41 @@ export function buildLiveMatchContext(input = {}) {
 
   const myTeam = resolveMyTeam({ liveState, allPlayers, knownPlayers, input });
 
+  // Overwolf'un bildirdigi PARTI: partideki herkes bizim takimdadir. Pick
+  // oncesinde mac tablosunda kimlikleri henuz gorunmeyebilir; draft onlarin
+  // havuzunu kesin bilgi olarak kullanir.
+  for (const steamId of liveState.overwolf?.partySteamIds || []) {
+    const rosterPlayer = withDerivedProfile(
+      findRosterPlayer(toAccountId(steamId)),
+      profilesByPlayerId,
+    );
+    if (
+      !rosterPlayer ||
+      knownPlayers.some((row) => row.player.id === rosterPlayer.id)
+    ) {
+      continue;
+    }
+    knownPlayers.push({
+      player: rosterPlayer,
+      team: myTeam,
+      slot: null,
+      hero: "",
+      role: rosterPlayer.dotaProfile?.primaryRole || "",
+      matchRole: "",
+      stats: statsByPlayerId[rosterPlayer.id] || null,
+      live: null,
+    });
+  }
+
+  const probablePlayers = probableFromOnline({
+    online: input.onlinePlayers,
+    liveState,
+    knownPlayers,
+    viewerSteamId: input.viewerSteamId,
+    statsByPlayerId,
+    profilesByPlayerId,
+  });
+
   const itemAdvice = buildLiveItemAdvice({
     radiantPlayers: decorated.filter((row) => row.team === "radiant"),
     direPlayers: decorated.filter((row) => row.team === "dire"),
@@ -342,6 +458,7 @@ export function buildLiveMatchContext(input = {}) {
     bans: liveState.draft?.bans || [],
     phase: liveState.phase,
     knownPlayers,
+    probablePlayers,
     // Takimin pozisyon dizilimi: kadroda olmayan oyuncular da dahil. Pozisyonu
     // ve hero'su bilinen oyuncunun pozisyonu draftta "dolu" gosterilir.
     lineup: decorated

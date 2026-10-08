@@ -37,6 +37,7 @@
 
 import {
   heroPlansFromItemPlans,
+  heroSeed,
   isKnownHero,
   normalizeHeroKey,
   normalizeHeroOverride,
@@ -112,6 +113,89 @@ async function migrateLegacyPlans() {
 }
 
 /**
+ * Depodaki duzenlemelerin repodaki varsayilan dosyasina
+ * (core data/hero-seed-overrides.js) en son TASINDIGI surum.
+ *
+ * NEDEN GEREKLI: depodaki kayit hero'nun TUM alanlarini tasir ve tohumu
+ * tamamen ezer. Sitede yapilan duzenlemeler dosyaya tasinip dosyaya ayrica
+ * yeni veri eklendiginde (ornek: yeni counter listeleri), depodaki eski kopya
+ * o yeni veriyi gizlemeye devam ederdi.
+ *
+ * Surum degistiginde depo BIR KEZ temizlenir (bkz. foldIntoSeed): varsayilan
+ * olarak kaydedilmis VE dosyada eksiksiz bulunan kayitlar depodan duser,
+ * boylece dosyadaki hal gecerli olur. Kaydedilmemis (yeni) duzenlemelere ve
+ * dosyada karsiligi eksik olan kayitlara dokunulmaz. Dosyaya yeniden
+ * duzenleme tasindiginda bu deger guncellenir.
+ */
+const SEED_FOLD_VERSION = "2026-10-08";
+
+/**
+ * Depodaki kayit dosyadaki varsayilanda eksiksiz var mi?
+ *
+ * Listelerde dosya FAZLASINI tasiyabilir (dosyaya eklenen yeni veri); depodaki
+ * her eleman dosyada olmali. Diger alanlar birebir esit olmali.
+ *
+ * @param {string} hero
+ * @param {Record<string, any>} record Temizlenmis duzenleme
+ * @returns {boolean}
+ */
+function coveredBySeed(hero, record) {
+  const seed = heroSeed(hero);
+  if (!seed) {
+    return false;
+  }
+  return Object.entries(record).every(([field, value]) => {
+    const current = seed[field];
+    if (Array.isArray(value)) {
+      return (
+        Array.isArray(current) && value.every((key) => current.includes(key))
+      );
+    }
+    if (value && typeof value === "object") {
+      return Object.entries(value).every(
+        ([key, inner]) => current?.[key] === inner,
+      );
+    }
+    return current === value;
+  });
+}
+
+/**
+ * Dosyaya tasinmis duzenlemeleri depodan bir kez dusurur.
+ *
+ * @param {Record<string, any>} row Depodaki ortak kayit
+ * @param {Record<string, Record<string, any>>} heroes
+ * @param {Record<string, Record<string, any>>} defaults
+ * @returns {Promise<{ heroes: Record<string, any>, defaults: Record<string, any>, row: Record<string, any> }>}
+ */
+async function foldIntoSeed(row, heroes, defaults) {
+  const nextHeroes = { ...heroes };
+  const nextDefaults = { ...defaults };
+  for (const [hero, record] of Object.entries(heroes)) {
+    const saved =
+      JSON.stringify(record) === JSON.stringify(defaults[hero] || null);
+    if (saved && coveredBySeed(hero, record)) {
+      delete nextHeroes[hero];
+      delete nextDefaults[hero];
+    }
+  }
+  const next = {
+    ...row,
+    heroes: nextHeroes,
+    defaults: nextDefaults,
+    seedFold: SEED_FOLD_VERSION,
+    seedFoldedAt: new Date().toISOString(),
+  };
+  try {
+    await heroPlanStore().set(SHARED_KEY, next);
+  } catch {
+    // Yazilamazsa bir sonraki okumada yeniden denenir; bu istekte yine
+    // temizlenmis hal kullanilir.
+  }
+  return { heroes: nextHeroes, defaults: nextDefaults, row: next };
+}
+
+/**
  * Ortak kaydin tamami: gecerli duzenlemeler ve varsayilan.
  *
  * @returns {Promise<{ heroes: Record<string, Record<string, any>>, defaults: Record<string, Record<string, any>>, row: Record<string, any> }>}
@@ -121,11 +205,12 @@ export async function readHeroCatalog() {
   const row = await store.get(SHARED_KEY);
   const stored = row && typeof row === "object" ? row.heroes : null;
   if (stored && typeof stored === "object") {
-    return {
-      heroes: normalizeHeroPlans(stored),
-      defaults: normalizeHeroPlans(row.defaults || {}),
-      row,
-    };
+    const heroes = normalizeHeroPlans(stored);
+    const defaults = normalizeHeroPlans(row.defaults || {});
+    if (row.seedFold !== SEED_FOLD_VERSION) {
+      return foldIntoSeed(row, heroes, defaults);
+    }
+    return { heroes, defaults, row };
   }
 
   // Ortak kayit henuz yok: eski kisisel kayitlar tasinir ve BIR KEZ yazilir.

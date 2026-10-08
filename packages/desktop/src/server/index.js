@@ -13,6 +13,7 @@ const { createSettingsStore } = require("./settings.js");
 const { configureDeviceIdentity } = require("../services/cloud-session.js");
 const { createCloudRelay } = require("../services/cloud-relay.js");
 const { createCloudLiveWatcher } = require("../services/cloud-live.js");
+const { createCloudPresence } = require("../services/cloud-presence.js");
 const { createMmrWatcher } = require("../services/mmr-watcher.js");
 const { createOverwolfWatcher } = require("../services/overwolf-watcher.js");
 
@@ -97,6 +98,29 @@ async function startServer(options) {
     getLocalState: () => getLocalLiveState(),
   });
 
+  // Bu bilgisayarin kullanicisini sitedeki online listesine ekler ve listeyi
+  // geri alir. Oyun durumu sunucu kurulduktan sonra baglanir.
+  const cloudPresence = createCloudPresence({
+    logger,
+    getConfig: () => ({
+      cloudUrl: settings.get().cloudUrl,
+      steamId: settings.resolveSteamId(),
+    }),
+    getStatus: () => {
+      const local = getLocalLiveState();
+      const steamId = settings.resolveSteamId();
+      const own = [
+        ...(local?.radiantPlayers || []),
+        ...(local?.direPlayers || []),
+      ].find((row) => steamId && String(row?.steamId || "") === steamId);
+      return {
+        inGame: Boolean(local),
+        hero: String(own?.hero || ""),
+        matchId: String(local?.matchId || ""),
+      };
+    },
+  });
+
   const app_ = createServerApp({
     core,
     settings,
@@ -105,6 +129,7 @@ async function startServer(options) {
     mmr,
     overwolf,
     cloudLive,
+    cloudPresence,
     webDir: options.webDir || "",
     logger,
     version: options.version || "",
@@ -115,6 +140,7 @@ async function startServer(options) {
   getLocalLiveState = app_.getLocalLiveState;
   overwolf.start();
   cloudLive.start();
+  cloudPresence.start();
 
   const server = await new Promise((resolve, reject) => {
     const instance = app.listen(port, "127.0.0.1", () => resolve(instance));
@@ -139,6 +165,7 @@ async function startServer(options) {
       mmr.stop();
       overwolf.stop();
       cloudLive.stop();
+      await cloudPresence.stop();
       await new Promise((resolve) => server.close(resolve));
     },
   };

@@ -312,7 +312,9 @@ export default async (request) => {
       .join(",");
     const context = memoContext(
       viewerSteamId + "|" + statesKey,
-      [heroOverrides, statsByPlayerId, profilesByPlayerId],
+      // Online listesi hafizadan geldiginde ayni nesnedir (bkz. readOnline);
+      // degistiginde baglam yeniden hesaplanir.
+      [heroOverrides, statsByPlayerId, profilesByPlayerId, online],
       () =>
         buildLiveMatchContext({
           liveState,
@@ -320,6 +322,8 @@ export default async (request) => {
           profilesByPlayerId,
           viewerSteamId,
           heroOverrides,
+          // Pick oncesi draft, online arkadaslari "olasi" oyuncu sayar.
+          onlinePlayers: online || [],
         }),
     );
 

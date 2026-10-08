@@ -105,8 +105,12 @@ export function laneRoleOf(value) {
   return LANE_ROLE_BY_POSITION[/^[1-5]$/.test(raw) ? "pos" + raw : raw] || "";
 }
 
-/** Bir listede tutulabilecek en fazla kayit (kotuye kullanimi sinirlar). */
-export const MAX_LIST_LENGTH = 12;
+/**
+ * Bir listede tutulabilecek en fazla kayit (kotuye kullanimi sinirlar).
+ * Elle birlestirilen counter listeleri 15'e kadar cikiyor; 12'lik sinir
+ * fazlasini sessizce kesiyordu.
+ */
+export const MAX_LIST_LENGTH = 20;
 
 /** Gecerli hero anahtarlari. */
 const KNOWN_HEROES = new Set(Object.keys(heroOverrides));

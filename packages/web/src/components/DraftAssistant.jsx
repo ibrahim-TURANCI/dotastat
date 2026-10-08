@@ -34,6 +34,14 @@ export function DraftAssistant({ advice }) {
               {advice.knownPlayerCount} tanınan oyuncu
             </span>
           ) : null}
+          {advice.probablePlayerCount ? (
+            <span
+              className="chip"
+              title="Online, maçta olabilir; hero havuzu yarım ağırlıkla sayılıyor"
+            >
+              {advice.probablePlayerCount} olası oyuncu
+            </span>
+          ) : null}
           {advice.bannedHeroes?.length ? (
             <span className="chip">{advice.bannedHeroes.length} ban</span>
           ) : null}
@@ -71,9 +79,20 @@ export function DraftAssistant({ advice }) {
               <strong>{block.roleLabel}</strong>
               {block.player ? (
                 <span
-                  className={"chip" + (block.player.guest ? "" : " accent")}
+                  className={
+                    "chip" +
+                    (block.player.guest || block.player.probable
+                      ? ""
+                      : " accent")
+                  }
+                  title={
+                    block.player.probable
+                      ? "Online, maçta olabilir (kesin değil)"
+                      : undefined
+                  }
                 >
                   {block.player.name}
+                  {block.player.probable ? " · olası" : ""}
                 </span>
               ) : (
                 <span className="muted micro">oyuncu atanmadı</span>
@@ -91,10 +110,22 @@ export function DraftAssistant({ advice }) {
             ) : (
               <ul className="draft-suggestions">
                 {block.suggestions.map((row, index) => (
-                  <li key={row.hero} className={index === 0 ? "top" : ""}>
+                  <li
+                    key={row.hero}
+                    className={
+                      row.variety ? "variety" : index === 0 ? "top" : ""
+                    }
+                  >
                     <HeroIcon hero={row.hero} size={34} />
                     <div className="draft-suggestion-text">
-                      <strong>{row.heroName}</strong>
+                      <strong>
+                        {row.heroName}
+                        {row.variety ? (
+                          <span className="draft-variety-tag">
+                            {row.varietyLabel}
+                          </span>
+                        ) : null}
+                      </strong>
                       <span className="muted micro">
                         {row.reasons.join(" · ") || "genel uyum"}
                       </span>

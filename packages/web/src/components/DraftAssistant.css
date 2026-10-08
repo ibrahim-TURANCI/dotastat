@@ -90,6 +90,20 @@
   background: var(--accent-soft);
 }
 
+/* Cesitlilik onerisi: ilk dortten ayrildigi belli olsun. */
+.draft-suggestions li.variety {
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.draft-variety-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--warn);
+}
+
 .draft-suggestion-text {
   display: flex;
   flex-direction: column;

@@ -37,7 +37,7 @@ let listMemo = null;
 
 /**
  * @param {{ steamId: string, accountId?: string, name?: string, avatar?: string }} session
- * @param {{ inGame?: boolean, hero?: string }} [body]
+ * @param {{ inGame?: boolean, hero?: string, matchId?: string, client?: string }} [body]
  */
 function presenceRow(session, body = {}) {
   const accountId = session.accountId || toAccountId(session.steamId);
@@ -50,7 +50,37 @@ function presenceRow(session, body = {}) {
     rosterId: rosterPlayer?.id || "",
     inGame: Boolean(body.inGame),
     hero: String(body.hero || ""),
+    // Masaustu uygulamasi oyundaki maci da bildirir. Draft asistani pick
+    // oncesinde online arkadaslari "bu macta olabilir" diye degerlendirirken
+    // BASKA bir mactakileri bununla ayiklar.
+    matchId: String(body.matchId || ""),
+    client: body.client === "desktop" ? "desktop" : "site",
+    // Masaustu durumunun (inGame/hero/matchId) en son bildirildigi an.
+    desktopAt: body.client === "desktop" ? new Date().toISOString() : "",
     seenAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Sitenin heartbeat'i oyun durumunu BILMEZ. Ayni kullanicinin masaustu
+ * uygulamasi yakin zamanda durum bildirdiyse o bilgi korunur; aksi halde
+ * siteyi de acik tutan oyuncu her dakika "oyunda degil"e dusuyordu.
+ *
+ * @param {Record<string, any>} row Yeni kayit (site)
+ * @param {Record<string, any>|null} previous Depodaki kayit
+ */
+function keepDesktopStatus(row, previous) {
+  const at = new Date(previous?.desktopAt || 0).getTime();
+  if (!Number.isFinite(at) || Date.now() - at >= PRESENCE_TTL_MS) {
+    return row;
+  }
+  return {
+    ...row,
+    inGame: Boolean(previous.inGame),
+    hero: String(previous.hero || ""),
+    matchId: String(previous.matchId || ""),
+    client: "desktop",
+    desktopAt: previous.desktopAt,
   };
 }
 
@@ -71,7 +101,13 @@ export async function touchPresence(session, options = {}) {
   if (!options.force && Date.now() - last < TOUCH_EVERY_MS) {
     return null;
   }
-  const row = presenceRow(session, options.body);
+  let row = presenceRow(session, options.body);
+  if (options.body?.client !== "desktop") {
+    const previous = await presenceStore()
+      .get("user:" + session.steamId)
+      .catch(() => null);
+    row = keepDesktopStatus(row, previous);
+  }
   await presenceStore().set("user:" + session.steamId, row, {
     ttlMs: PRESENCE_TTL_MS,
   });
