@@ -5,6 +5,8 @@ import {
   buildDraftAdvice,
   resolveDraftStage,
 } from "../src/draft/draft-advisor.js";
+import { scoreDraftPick } from "../src/draft/draft-analyzer.js";
+import { heroKeys } from "../src/heroes/hero-catalog.js";
 import { listRoster } from "../src/players/roster.js";
 
 /**
@@ -196,4 +198,76 @@ test("Overwolf pozisyonu kadrodaki birincil rolun onune gecer", () => {
     "janissary",
   );
   assert.equal(advice.blocks.find((row) => row.role === primary).player, null);
+});
+
+test("ihtiyac puani pick yokken zayif, takim olustukca guclu ve tavanli", () => {
+  const heroes = heroKeys();
+  // Pick yokken genel guc yalnizca kucuk bir etken: tavan 20 x 0.4.
+  for (const hero of heroes) {
+    const { score } = scoreDraftPick({ candidateHero: hero });
+    assert.ok(score <= 8, hero + " pick yokken: " + score);
+  }
+  // Uc pickten sonra tam agirlik; combo/sinerji olmayan bir takimda puan
+  // yalnizca ihtiyactan gelir ve tavani gecmez.
+  const team = ["crystal_maiden", "lion", "lich"];
+  let strongest = 0;
+  for (const hero of heroes) {
+    const result = scoreDraftPick({ candidateHero: hero, teamHeroes: team });
+    if (!result.reasons.some((reason) => reason.includes("ihtiyacını"))) {
+      continue;
+    }
+    if (result.reasons.every((reason) => reason.includes("ihtiyacını"))) {
+      assert.ok(result.score <= 20, hero + " takimla: " + result.score);
+      strongest = Math.max(strongest, result.score);
+    }
+  }
+  assert.ok(strongest > 8, "takim olusunca ihtiyac agirligi artmali");
+});
+
+test("her pozisyona ilk dorde benzemeyen besinci bir oneri eklenir", () => {
+  const advice = buildDraftAdvice({ picks: [] });
+  const seen = new Set();
+  let varietyCount = 0;
+  for (const block of advice.blocks) {
+    assert.ok(block.suggestions.length <= 5);
+    const variety = block.suggestions.filter((row) => row.variety);
+    assert.ok(variety.length <= 1);
+    if (variety.length) {
+      varietyCount += 1;
+      // Besinci her zaman listenin sonunda ve etiketli.
+      assert.equal(block.suggestions.at(-1), variety[0]);
+      assert.ok(variety[0].varietyLabel);
+    }
+    for (const row of block.suggestions) {
+      assert.ok(!seen.has(row.hero), row.hero + " iki pozisyonda");
+      seen.add(row.hero);
+    }
+  }
+  assert.ok(varietyCount >= 3);
+});
+
+test("pick oncesi online arkadas olasi oyuncu olur, havuzu besinci oneriye girer", () => {
+  const player = listRoster().find(
+    (row) =>
+      row.dotaProfile?.primaryRole &&
+      (row.dotaProfile?.signatureHeroes || []).length,
+  );
+  assert.ok(player, "kadroda imza kahramani olan oyuncu yok");
+  const slot = player.dotaProfile.primaryRole;
+
+  const pre = buildDraftAdvice({
+    picks: [],
+    probablePlayers: [{ player, role: slot }],
+  });
+  const block = pre.blocks.find((row) => row.role === slot);
+  assert.equal(pre.probablePlayerCount, 1);
+  assert.equal(block.player.id, player.id);
+  assert.equal(block.player.probable, true);
+
+  // Takimdan pick gelince olasi oyuncu devreden cikar.
+  const active = buildDraftAdvice({
+    picks: picks(["lion"], []),
+    probablePlayers: [{ player, role: slot }],
+  });
+  assert.equal(active.probablePlayerCount, 0);
 });

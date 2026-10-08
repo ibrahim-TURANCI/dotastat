@@ -18,6 +18,15 @@
  * alindigini hero'ya bakarak tahmin etmek yaniltiyordu (Pudge pos3 alinmis,
  * pos5 dolu sanilmis, asil bos pozisyonun onerisi kaybolmustu).
  *
+ * PICK ONCESI OLASI OYUNCULAR: macta kimligi gorunmeyen ama online olan
+ * kadro oyunculari (bkz. match-context `probablePlayers`) bos kalan
+ * pozisyonlara "olasi" olarak yerlesir; havuz puanlari yarim agirlikla
+ * sayilir. Takimdan ilk pick geldiginde devreden cikarlar.
+ *
+ * CESITLILIK: her pozisyonun ilk dort onerisinin ardindan bir BESINCI oneri
+ * gelir: o pozisyondaki oyuncunun havuzundan listede olmayan bir hero, yoksa
+ * ilk dorde en az benzeyen makul bir aday (bkz. `pickVariety`).
+ *
  * AYNI HERO IKI POZISYONDA ONERILMEZ. Her hero en iyi puani aldigi pozisyona
  * yerlesir (bkz. `distributeSuggestions`); boylece pos4 ile pos5 ayni destek
  * listesini, pos1 ile pos2 ayni core listesini tekrarlamaz.
@@ -30,7 +39,7 @@ import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { detectThreats } from "../live/threats.js";
 import { shrunkWinRate } from "../players/hero-pool.js";
 import { ROLE_KEYS, ROLE_LABELS } from "../players/player-types.js";
-import { scoreDraftPick } from "./draft-analyzer.js";
+import { getDraftMetrics, scoreDraftPick } from "./draft-analyzer.js";
 
 /** Bir takimin toplam pick sayisi. */
 const PICKS_PER_TEAM = 5;
@@ -63,6 +72,31 @@ const OFF_POSITION_PENALTY = 4;
 
 /** Rakipte bu adayi counter'layan her hero icin ceza. */
 const COUNTERED_PENALTY = 20;
+
+/**
+ * Pick oncesi "olasi" (online ama macta kimligi gorunmeyen) oyuncunun hero
+ * havuzu puaninin agirligi. Gercekten macta olup olmadigi bilinmiyor; tam
+ * agirlik verilseydi yanlis kisinin havuzu oneriyi yonetebilirdi.
+ */
+const PROBABLE_AFFINITY_WEIGHT = 0.5;
+
+/**
+ * Cesitlilik onerisinin ilk dortten en fazla ne kadar dusuk puanli
+ * olabilecegi: listedeki en dusuk puanin bu orani, en az VARIETY_MIN_GAP.
+ * Amac farkli ama MAKUL bir secenek; listenin dibindeki hero degil.
+ */
+const VARIETY_SCORE_RATIO = 0.35;
+const VARIETY_MIN_GAP = 6;
+
+/** Cesitlilik icin karsilastirilan draft ozellikleri ve okunur adlari. */
+const VARIETY_METRICS = {
+  teamfight: "takım savaşı",
+  tempo: "tempo",
+  scaling: "geç oyun",
+  pushPotential: "push",
+  saveMechanics: "kurtarma",
+  catchPotential: "yakalama",
+};
 
 /**
  * Bir hero'nun oynanabilecegi pozisyonlar.
@@ -221,6 +255,7 @@ function playerAffinity(player, stats, heroKey) {
  *   tasidigi, hero cevabi olan ozellikler
  * @param {Record<string, Record<string, any>>} [input.overrides]
  * @param {string} [input.slot] Adayin puanlandigi pozisyon
+ * @param {boolean} [input.probable] Pozisyondaki oyuncu yalnizca "olasi"
  */
 function scoreCandidate(input) {
   const hero = normalizeHeroKey(input.hero);
@@ -259,7 +294,9 @@ function scoreCandidate(input) {
     input.stats || null,
     hero,
   );
-  score += affinity.score;
+  score += input.probable
+    ? affinity.score * PROBABLE_AFFINITY_WEIGHT
+    : affinity.score;
   reasons.push(...affinity.reasons);
 
   if (input.slot) {
@@ -383,6 +420,143 @@ function distributeSuggestions(scoredBySlot, perSlot) {
 }
 
 /**
+ * Hero'nun cesitlilik icin karsilastirilan ozellik vektoru (1..10).
+ * @param {string} hero
+ * @returns {Record<string, number>}
+ */
+function varietyVector(hero) {
+  const metrics = getDraftMetrics(hero);
+  const out = {};
+  for (const key of Object.keys(VARIETY_METRICS)) {
+    out[key] = Number(metrics[key] || 5);
+  }
+  return out;
+}
+
+/**
+ * Iki hero'nun oyun tarzi farki (0 = ayni profil).
+ * @param {Record<string, number>} a
+ * @param {Record<string, number>} b
+ * @returns {number}
+ */
+function styleDistance(a, b) {
+  let sum = 0;
+  for (const key of Object.keys(VARIETY_METRICS)) {
+    sum += (a[key] - b[key]) ** 2;
+  }
+  return Math.sqrt(sum);
+}
+
+/**
+ * Oyuncunun havuzundaki hero'lar: imza, tercih, deneme ve son maclarda en az
+ * iki kez oynananlar. Zayif oldugu hero'lar disarida kalir.
+ *
+ * @param {{ player: Record<string, any>, stats?: Object|null }|null} owner
+ * @returns {Set<string>}
+ */
+function poolOf(owner) {
+  const profile = owner?.player?.dotaProfile || {};
+  const weak = new Set((profile.weakHeroes || []).map(normalizeHeroKey));
+  const heroes = [
+    ...(profile.signatureHeroes || []),
+    ...(profile.preferredHeroes || []),
+    ...(profile.experimentalHeroes || []),
+    ...(owner?.stats?.heroes || [])
+      .filter((row) => Number(row?.matches || 0) >= 2)
+      .map((row) => row.hero),
+  ].map(normalizeHeroKey);
+  return new Set(heroes.filter((hero) => hero && !weak.has(hero)));
+}
+
+/**
+ * Pozisyonun BESINCI, cesitlilik onerisi.
+ *
+ * Ilk dort oneri ayni puanlama mantigindan geldigi icin cogu zaman birbirine
+ * benzer (hepsi teamfight'i yuksek hero'lar gibi). Bu oneri bilerek farkli
+ * bir kapi acar:
+ *
+ *   1. Pozisyonda bir oyuncu varsa onun HAVUZUNDAN, listede olmayan en iyi
+ *      puanli hero. Oyuncunun rahat oynadigi bir secenek hep gorunur kalir.
+ *   2. Yoksa (ya da havuzdan aday kalmadiysa), puani ilk dorde yakin
+ *      adaylardan oyun tarzi onlara EN AZ benzeyen.
+ *
+ * @param {Array<Record<string, any>>} rows Pozisyondaki tum puanli adaylar
+ * @param {Array<Record<string, any>>} chosen Ilk dort oneri
+ * @param {Set<string>} used Baska yerde onerilmis hero'lar
+ * @param {{ player: Record<string, any>, stats?: Object|null }|null} owner
+ * @returns {Record<string, any>|null}
+ */
+function pickVariety(rows, chosen, used, owner) {
+  const free = rows.filter((row) => !used.has(row.hero));
+  if (!free.length) {
+    return null;
+  }
+
+  const pool = poolOf(owner);
+  const fromPool = free
+    .filter((row) => pool.has(row.hero))
+    .sort((a, b) => b.score - a.score)[0];
+  if (fromPool) {
+    return {
+      ...fromPool,
+      variety: "pool",
+      varietyLabel: owner.player.name + " havuzundan",
+    };
+  }
+
+  if (!chosen.length) {
+    return null;
+  }
+  const lowest = Math.min(...chosen.map((row) => row.score));
+  const floor =
+    lowest - Math.max(VARIETY_MIN_GAP, Math.abs(lowest) * VARIETY_SCORE_RATIO);
+  const chosenVectors = chosen.map((row) => varietyVector(row.hero));
+
+  let best = null;
+  for (const row of free) {
+    // Eksi puanli aday (counter'lanmis, oyuncunun zayif hero'su) "farkli"
+    // diye onerilmez.
+    if (row.score < floor || row.score <= 0) {
+      continue;
+    }
+    const vector = varietyVector(row.hero);
+    // Listedeki EN YAKIN hero'ya uzaklik: birine bile cok benziyorsa
+    // "farkli" sayilmaz.
+    const distance = Math.min(
+      ...chosenVectors.map((other) => styleDistance(vector, other)),
+    );
+    if (
+      !best ||
+      distance > best.distance ||
+      (distance === best.distance && row.score > best.row.score)
+    ) {
+      best = { row, vector, distance };
+    }
+  }
+  if (!best || best.distance <= 0) {
+    return null;
+  }
+
+  // Farki en cok yaratan ozellik okunur bir etiket olarak yazilir.
+  const lead = Object.keys(VARIETY_METRICS)
+    .map((key) => {
+      const average =
+        chosenVectors.reduce((sum, vector) => sum + vector[key], 0) /
+        chosenVectors.length;
+      return { key, gap: best.vector[key] - average };
+    })
+    .sort((a, b) => b.gap - a.gap)[0];
+  return {
+    ...best.row,
+    variety: "different",
+    varietyLabel:
+      lead.gap > 0
+        ? "Farklı tarz: daha çok " + VARIETY_METRICS[lead.key]
+        : "Farklı tarz",
+  };
+}
+
+/**
  * Draft onerisini uretir.
  *
  * @param {Object} input
@@ -396,6 +570,9 @@ function distributeSuggestions(scoredBySlot, perSlot) {
  * @param {number} [input.suggestionsPerRole]
  * @param {Record<string, Record<string, any>>} [input.heroOverrides] hero ->
  *   duzenleme; rol, counter ve ozellikler kullanicinin kaydina gore okunur
+ * @param {Array<{ player: import("../players/player-types.js").Player, role?: string, stats?: Object }>} [input.probablePlayers]
+ *   Pick ONCESI macta olabilecek (online) kadro oyunculari; kesin bilinen
+ *   oyuncular yerlestikten sonra bos pozisyonlara "olasi" olarak atanir
  */
 export function buildDraftAdvice(input = {}) {
   const myTeam = input.myTeam === "dire" ? "dire" : "radiant";
@@ -485,6 +662,24 @@ export function buildDraftAdvice(input = {}) {
   );
   const assigned = assignPlayers(unpickedPlayers, openSlots);
 
+  // Pick oncesi: kesin bilinen oyunculardan bos kalan pozisyonlara online
+  // arkadaslar "olasi" olarak yerlesir. Takimdan ilk pick gelince devreden
+  // cikarlar; o noktada lobidekiler macin kendisinden okunuyor.
+  const knownIds = new Set(knownPlayers.map((row) => row.player.id));
+  const probablePlayers =
+    stage === "pre" && Array.isArray(input.probablePlayers)
+      ? input.probablePlayers.filter(
+          (row) => row?.player && !knownIds.has(row.player.id),
+        )
+      : [];
+  const probableAssigned = assignPlayers(
+    probablePlayers,
+    openSlots.filter((slot) => !assigned.has(slot)),
+  );
+  for (const [slot, row] of probableAssigned) {
+    assigned.set(slot, { ...row, probable: true });
+  }
+
   const candidates = heroKeys().filter((hero) => !unavailable.has(hero));
 
   const scoredBySlot = new Map(
@@ -500,6 +695,7 @@ export function buildDraftAdvice(input = {}) {
             enemyHeroes,
             player: owner?.player || null,
             stats: owner?.stats || null,
+            probable: Boolean(owner?.probable),
             enemyThreats,
             overrides,
           }),
@@ -512,11 +708,33 @@ export function buildDraftAdvice(input = {}) {
     suggestionsPerRole,
   );
 
+  // Cesitlilik onerisi (besinci). Baska bir pozisyonda onerilen hero burada
+  // tekrar cikmaz.
+  const usedHeroes = new Set(
+    [...suggestionsBySlot.values()].flat().map((row) => row.hero),
+  );
+  for (const slot of openSlots) {
+    const variety = pickVariety(
+      scoredBySlot.get(slot) || [],
+      suggestionsBySlot.get(slot) || [],
+      usedHeroes,
+      assigned.get(slot) || null,
+    );
+    if (variety) {
+      suggestionsBySlot.get(slot).push(variety);
+      usedHeroes.add(variety.hero);
+    }
+  }
+
   const blocks = ROLE_KEYS.map((slot) => {
     const owner = assigned.get(slot) || null;
     const lineupName = lineupNames.get(slot) || "";
     const player = owner
-      ? { id: owner.player.id, name: owner.player.name }
+      ? {
+          id: owner.player.id,
+          name: owner.player.name,
+          ...(owner.probable ? { probable: true } : {}),
+        }
       : lineupName
         ? { id: "", name: lineupName, guest: true }
         : null;
@@ -532,10 +750,16 @@ export function buildDraftAdvice(input = {}) {
   const notes = [];
   if (stage === "pre") {
     notes.push(
-      knownPlayers.length
+      knownPlayers.length || probableAssigned.size
         ? "Pick başlamadı. Öneriler lobideki tanınan oyuncuların hero havuzuna göre sıralandı."
         : "Pick başlamadı. Lobide tanınan oyuncu yok; öneriler genel rol dengesine göre sıralandı.",
     );
+    if (probableAssigned.size) {
+      notes.push(
+        probableAssigned.size +
+          " online arkadaş maçta olabilir diye boş pozisyonlara yerleştirildi; hero havuzları yarım ağırlıkla sayıldı.",
+      );
+    }
   } else {
     notes.push(
       "Öneriler kendi " +
@@ -568,6 +792,7 @@ export function buildDraftAdvice(input = {}) {
       new Set(bans.map((row) => normalizeHeroKey(row.hero))),
     ),
     knownPlayerCount: knownPlayers.length,
+    probablePlayerCount: probableAssigned.size,
     notes,
     blocks,
   };

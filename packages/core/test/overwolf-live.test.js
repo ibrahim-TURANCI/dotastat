@@ -12,8 +12,11 @@ import {
   applyOverwolfSnapshot,
   buildLiveMatchContext,
   buildOverwolfSnapshot,
+  isLiveMatchActive,
+  listRoster,
   isSnapshotForLiveState,
   mergeLiveStatesByMatch,
+  normalizeGsiPayload,
   parseDotaPlusControllerLog,
   parseDotaPlusObjectLog,
 } from "../src/index.js";
@@ -431,8 +434,18 @@ test("uc arkadas ayni macta: Overwolf'lu + iki GSI'ci tek tabloda toplanir", () 
 
 test("farkli maclardaki kayitlar birlestirilmez", () => {
   const now = new Date().toISOString();
-  const a = { matchId: "1", radiantPlayers: [], direPlayers: [], updatedAt: now };
-  const b = { matchId: "2", radiantPlayers: [], direPlayers: [], updatedAt: now };
+  const a = {
+    matchId: "1",
+    radiantPlayers: [],
+    direPlayers: [],
+    updatedAt: now,
+  };
+  const b = {
+    matchId: "2",
+    radiantPlayers: [],
+    direPlayers: [],
+    updatedAt: now,
+  };
 
   const merged = mergeLiveStatesByMatch([a, b]);
   assert.equal(merged.length, 2);
@@ -523,4 +536,72 @@ test("masaustu: arkadasin siteden gelen envanteri ve Overwolf iskeleti yerel dur
     local,
   );
   assert.equal(mergeRemoteLiveState(local, null), local);
+});
+
+test("mac bitince ana menu kaydi Overwolf ile 'canli' maca donusmez", () => {
+  // Ana menu: GSI'da harita blogu yok. Overwolf hafizasinda biten mac duruyor.
+  const menu = normalizeGsiPayload({
+    player: { steamid: "76561198000000001" },
+  });
+  const snapshot = {
+    matchId: "8972022536",
+    activity: "playing",
+    ended: false,
+    players: [{ hero: "npc_dota_hero_axe", team: "radiant", slot: 0 }],
+    picks: [{ hero: "npc_dota_hero_axe", team: "radiant", slot: 0 }],
+    bans: [],
+  };
+
+  const enriched = applyOverwolfSnapshot(menu, snapshot);
+  assert.equal(enriched, menu);
+  assert.equal(isLiveMatchActive(enriched), false);
+
+  // Eski masaustu surumu zenginlestirilmis kaydi gondermis olsa bile site
+  // onu canli saymaz.
+  const legacy = {
+    ...menu,
+    matchId: "8972022536",
+    radiantPlayers: [{ hero: "axe", team: "radiant" }],
+  };
+  assert.equal(isLiveMatchActive(legacy), false);
+
+  // Overwolf maci bitti diye isaretlediyse de canli degildir.
+  assert.equal(
+    isLiveMatchActive({
+      ...legacy,
+      phase: "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS",
+      overwolf: { ended: true },
+    }),
+    false,
+  );
+});
+
+test("pick oncesi: baska macta olan online arkadas olasi oyuncu sayilmaz", () => {
+  const [first, second] = listRoster().filter(
+    (row) => row.dotaProfile?.primaryRole,
+  );
+  const context = buildLiveMatchContext({
+    liveState: {
+      matchId: "100",
+      phase: "DOTA_GAMERULES_STATE_HERO_SELECTION",
+      updatedAt: new Date().toISOString(),
+      radiantPlayers: [],
+      direPlayers: [],
+      draft: { picks: [], bans: [] },
+    },
+    onlinePlayers: [
+      { accountId: first.player_id, client: "site" },
+      {
+        accountId: second.player_id,
+        client: "desktop",
+        inGame: true,
+        matchId: "999",
+      },
+    ],
+  });
+  const names = context.draftAdvice.blocks
+    .filter((block) => block.player?.probable)
+    .map((block) => block.player.name);
+  assert.ok(!names.includes(second.name));
+  assert.ok(context.draftAdvice.probablePlayerCount <= 1);
 });

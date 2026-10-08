@@ -347,6 +347,19 @@ export function applyOverwolfSnapshot(liveState, snapshot) {
   if (!isSnapshotForLiveState(liveState, snapshot)) {
     return liveState;
   }
+  // Biten mac ya da ana menu kaydi zenginlestirilmez. Mac bitince Overwolf'un
+  // goruntusu bir sure o maci tutmaya devam ediyor; ana menudeki bos GSI
+  // kaydina eklenirse kayit eski mac kimligi ve 10 oyuncuyla "canli" gorunur,
+  // site paneli kapanmaz ve saat 0'dan saymaya baslardi.
+  const phase = String(liveState.phase || "").toUpperCase();
+  if (
+    snapshot.ended ||
+    phase === "UNKNOWN" ||
+    phase.includes("POST_GAME") ||
+    phase.includes("DISCONNECT")
+  ) {
+    return liveState;
+  }
 
   const gsiPlayers = [
     ...(liveState.radiantPlayers || []),

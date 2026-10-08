@@ -235,6 +235,26 @@ function summarizeTeamDraft(teamHeroes = []) {
   };
 }
 
+/**
+ * Takim ihtiyaci puaninin tavani.
+ *
+ * Ihtiyac puani heronun GENEL ozelliklerine bakar (teamfight, push, tempo...)
+ * ve maca ozel degildir. Tavansiz hali 45'e kadar cikiyor, counter (+16) ve
+ * combo (+18) gibi maca ozel sinyalleri eziyordu: cok yonlu "her seyi iyi
+ * yapan" herolar her draftta ayni siralamayla one cikiyordu.
+ */
+const NEED_SCORE_MAX = 20;
+
+/**
+ * Takimdaki pick sayisina gore ihtiyac puaninin agirligi.
+ *
+ * Hic pick yokken "takim neye ihtiyac duyuyor" sorusunun cevabi yoktur;
+ * ortalama notr kabul edildigi icin her ozellik "eksik" gorunur ve puan
+ * aslinda heronun genel gucunu olcer. Takim olustukca ihtiyac belirginlesir
+ * ve agirlik tam degerine cikar.
+ */
+const NEED_CONFIDENCE_BY_PICKS = [0.4, 0.6, 0.8, 1];
+
 function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
   const candidate = normalizeHeroName(candidateHero);
   if (!candidate) {
@@ -254,6 +274,9 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
   let score = 0;
   const reasons = [];
 
+  // Ihtiyac kalemleri once ayri toplanir; tavan ve guven agirligi toplama
+  // uygulanir (bkz. NEED_SCORE_MAX, NEED_CONFIDENCE_BY_PICKS).
+  let needScore = 0;
   const addNeed = (
     label,
     candidateValue,
@@ -267,8 +290,12 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
     }
     const gain = (Number(candidateValue || 0) - 5) * need * weight;
     if (gain > 0) {
-      score += gain;
-      reasons.push(`${label} ihtiyacını tamamlıyor`);
+      needScore += gain;
+      // Pick yokken her ozellik "eksik" gorunur; gerekce yalnizca takim
+      // olusmaya basladiginda anlamlidir.
+      if (ownTeam.length) {
+        reasons.push(`${label} ihtiyacını tamamlıyor`);
+      }
     }
   };
 
@@ -284,6 +311,16 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
   addNeed("Save", draft.saveMechanics, ownSummary.avg.saveMechanics, 5.5, 1.8);
   addNeed("Tempo", draft.tempo, ownSummary.avg.tempo, 6.5, 2.1);
   addNeed("Scaling", draft.scaling, ownSummary.avg.scaling, 6.5, 2.2);
+
+  const confidence =
+    NEED_CONFIDENCE_BY_PICKS[
+      Math.min(ownTeam.length, NEED_CONFIDENCE_BY_PICKS.length - 1)
+    ];
+  // YUMUSAK tavan: puan tavana yaklastikca yavaslar ama siralama korunur.
+  // Sert kesmede (Math.min) hero'larin cogu tavana takilip esit puan aliyor,
+  // sira katalog sirasina dusuyordu.
+  score +=
+    NEED_SCORE_MAX * (1 - Math.exp(-needScore / NEED_SCORE_MAX)) * confidence;
 
   // Combo IKI YONDE aranir: veri simetrik tutulmamis, aday takim
   // arkadasini listelemiyor olsa bile takim arkadasi adayi listeliyor olabilir.

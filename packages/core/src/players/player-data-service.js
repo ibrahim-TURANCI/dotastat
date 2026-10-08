@@ -355,9 +355,15 @@ export function createPlayerDataService(options) {
     // programina gore aliyor ve bir mac bittikten sonra saatlerce gorunmeyebi-
     // liyor. Bu istek bir tarama isi kuyruga atar. Sonucu beklemeyiz — mac bu
     // cagrida degil, birkac dakika sonrakinde gorunur.
-    if (matchOptions.refresh && typeof client.requestRefresh === "function") {
-      await client.requestRefresh(player.player_id);
-    }
+    //
+    // Tetikleme mac listesi istegiyle AYNI ANDA gider. Eskiden once o
+    // bekleniyordu; yavas bir OpenDota'da ikisi arka arkaya ~14 sn tutuyor,
+    // Netlify fonksiyonu sure sinirina takilip olduruluyordu. Kullanici "Yenile"
+    // nin bir sey getirmeden yeniden acildigini goruyordu.
+    const refreshKick =
+      matchOptions.refresh && typeof client.requestRefresh === "function"
+        ? client.requestRefresh(player.player_id).catch(() => {})
+        : Promise.resolve();
 
     try {
       // `expectMatchId` verildiginde (canli mac yeni bitti) sonuc dogrulanir:
@@ -468,6 +474,10 @@ export function createPlayerDataService(options) {
         stale: Boolean(stale?.matches?.length),
         error: String(error?.message || "opendota-hatasi"),
       };
+    } finally {
+      // Sunucusuz ortamda yanit dondukten sonra yarim kalan istek dondurulur;
+      // tetikleme liste istegiyle paralel gittigi icin beklemek sure eklemez.
+      await refreshKick;
     }
   }
 
@@ -645,17 +655,35 @@ export function createPlayerDataService(options) {
     // Profil ONCE okunur: "Expose Public Match Data" kapali bir oyuncuda mac
     // ve hero uclarina gitmenin anlami yok, ikisi de her zaman bos doner.
     // Boyle bir oyuncu icin istek harcamiyoruz.
-    const profile = await getPlayerProfile(player, effectiveOptions);
+    //
+    // ELLE TAZELEMEDE ise bilinen profili gizli DEGILSE profil, maclar ve hero
+    // istatistigi AYNI ANDA istenir. Sirayla gidince yavas bir kaynakta toplam
+    // sure Netlify'in fonksiyon sinirini asiyordu: istek olduruluyor, "Yenile"
+    // bir sey getirmeden yeniden aciliyor ve ancak birkac denemede (kaynak
+    // isindiginda) veri geliyordu.
+    let profile;
+    let matchResult;
+    let heroResult;
+    const knownProfile = effectiveOptions.refresh
+      ? await storage.get("profile:" + player.player_id + ":stale")
+      : null;
+    if (knownProfile && !knownProfile.historyUnavailable) {
+      [profile, matchResult, heroResult] = await Promise.all([
+        getPlayerProfile(player, effectiveOptions),
+        getPlayerMatches(player, effectiveOptions),
+        getHeroPerformance(player, effectiveOptions),
+      ]);
+    } else {
+      profile = await getPlayerProfile(player, effectiveOptions);
+      const dataOptions = profile?.historyUnavailable
+        ? { ...effectiveOptions, allowFetch: false }
+        : effectiveOptions;
+      [matchResult, heroResult] = await Promise.all([
+        getPlayerMatches(player, dataOptions),
+        getHeroPerformance(player, dataOptions),
+      ]);
+    }
     const historyBlocked = Boolean(profile?.historyUnavailable);
-
-    const dataOptions = historyBlocked
-      ? { ...effectiveOptions, allowFetch: false }
-      : effectiveOptions;
-
-    const [matchResult, heroResult] = await Promise.all([
-      getPlayerMatches(player, dataOptions),
-      getHeroPerformance(player, dataOptions),
-    ]);
 
     // Canli profil verisi (avatar, rank madalyasi) tohum profilin uzerine yazilir.
     const merged = {
@@ -711,8 +739,13 @@ export function createPlayerDataService(options) {
        * Arayuz butonu buna gore kapatip "son guncelleme: 2 dk once" yazar.
        */
       refreshSkipped: Boolean(bundleOptions.refresh) && !refreshGate.allowed,
-      /** Yeni tazelemeye ne kadar kaldi (ms). */
-      refreshAvailableInMs: refreshGate.availableInMs,
+      /**
+       * Yeni tazelemeye ne kadar kaldi (ms). DONEN verinin yasina gore
+       * hesaplanir: basarili tazelemenin yanitinda buton hemen kilitlenir,
+       * yeni veri getirmeyen tazelemede ise acik kalir.
+       */
+      refreshAvailableInMs: refreshWindow(matchResult.fetchedAt || "")
+        .availableInMs,
       // Onbellekten servis edildiginde bu istekte hicbir saglayici cagrilmaz,
       // dolayisiyla `lastUsedProvider` bos kalir. O durumda veriyi kimin
       // urettigi mac satirlarinin kendisinde yazar.
