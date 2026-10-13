@@ -800,6 +800,36 @@ function inferRoleFromMatch(match) {
 }
 
 /**
+ * OpenDota'nin `lane_role` alani POZISYON degil KORIDOR soyler: safe lane'deki
+ * Pos 5 destek "pos1", offlane'deki Pos 4 destek "pos3" gelir. Istatistik
+ * cikarimi grubu (core / destek) KESIN olarak tersini soyluyorsa grup ondan,
+ * pozisyon koridordan secilir: safe lane destegi Pos 5, digerleri Pos 4;
+ * jungle'daki core Pos 1.
+ *
+ * Stratz'in `position` alani gercek pozisyondur; takim dagilimindan gelen rol
+ * (`roleFromTeam`) da oyle. Ikisine dokunulmaz.
+ *
+ * @param {import("./player-types").PlayerMatch & { provider?: string, roleFromTeam?: boolean }} match
+ * @param {import("./player-types").RoleKey} role
+ * @param {{ group: "core"|"support", confident: boolean }} inferred
+ * @returns {import("./player-types").RoleKey}
+ */
+function laneAwareRole(match, role, inferred) {
+  if (
+    match?.roleFromTeam ||
+    match?.provider === "stratz" ||
+    !inferred.confident ||
+    ROLE_GROUP[role] === inferred.group
+  ) {
+    return role;
+  }
+  if (inferred.group === "support") {
+    return role === "pos1" ? "pos5" : "pos4";
+  }
+  return "pos1";
+}
+
+/**
  * Degerlendirmede kullanilacak rolu belirler.
  *
  * Oncelik: manuel secim > provider verisi > mac istatistiginden cikarim >
@@ -824,16 +854,14 @@ function resolveEvaluationRole(match, player, forcedRole, teamRole = "") {
     return { role: assigned, group: ROLE_GROUP[assigned], source: "team" };
   }
 
+  const inferred = inferRoleFromMatch(match);
+
   const fromProvider = normalizeRoleKey(match?.role);
   if (fromProvider) {
-    return {
-      role: fromProvider,
-      group: ROLE_GROUP[fromProvider],
-      source: "provider",
-    };
+    const role = laneAwareRole(match, fromProvider, inferred);
+    return { role, group: ROLE_GROUP[role], source: "provider" };
   }
 
-  const inferred = inferRoleFromMatch(match);
   if (inferred.confident) {
     return { role: inferred.role, group: inferred.group, source: "inferred" };
   }

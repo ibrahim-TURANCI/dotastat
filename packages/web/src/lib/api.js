@@ -79,14 +79,23 @@ export const api = {
   },
 
   /**
-   * Tek oyuncunun detayi. `version`: bkz. `players`.
+   * Tek oyuncunun detayi. `version` ve `fresh`: bkz. `players`.
+   *
+   * `fresh` burada da gerekli: mac detayi takim pozisyonlarini kaydettikten
+   * ya da pozisyon elle degistirildikten sonra panel yeniden okunuyor. Adres
+   * ayni kalirsa CDN'in 60 saniyelik eski kopyasi geliyor ve Son Maclar'da
+   * pozisyon "Tahmin yok" olarak kaliyordu.
+   *
    * @param {string} playerKey
-   * @param {{ refresh?: boolean, version?: string }} [options]
+   * @param {{ refresh?: boolean, version?: string, fresh?: boolean }} [options]
    */
   player: (playerKey, options = {}) => {
     const params = new URLSearchParams();
     if (options.refresh) {
       params.set("refresh", "1");
+    }
+    if (options.fresh) {
+      params.set("fresh", String(Date.now()));
     }
     if (options.version) {
       params.set("v", options.version);

@@ -238,23 +238,25 @@ function factFor(key, pairs) {
 }
 
 /**
- * Degerlendirmede kullanilan pozisyonlarin payi (takim dagilimi, elle girilen
- * ya da tahmin — degerlendirme hangisini kullandiysa).
+ * Pozisyonu gercekten bilinen maclarda (bkz. RELIABLE_ROLE_SOURCES)
+ * pozisyonlarin payi. Basliktaki rollerle (deriveRoleProfile) ayni kural.
  * @param {Array<{ evaluation: Record<string, any> }>} pairs
  */
 function roleShares(pairs) {
   /** @type {Map<string, number>} */
   const counts = new Map();
+  let known = 0;
   for (const { evaluation } of pairs) {
-    const role = String(evaluation.role || "");
+    const role = reliableRoleOf(evaluation);
     if (role) {
+      known += 1;
       counts.set(role, (counts.get(role) || 0) + 1);
     }
   }
   return [...counts.entries()]
     .map(([role, count]) => ({
       role,
-      share: Math.round((count / pairs.length) * 100) / 100,
+      share: Math.round((count / known) * 100) / 100,
     }))
     .filter((row) => row.share >= ROLE_MIN_SHARE)
     .sort((a, b) => b.share - a.share || a.role.localeCompare(b.role));
@@ -294,4 +296,82 @@ function averagesOf(rows) {
 /** @param {number} value */
 function round1(value) {
   return Math.round(value * 10) / 10;
+}
+
+/**
+ * Pozisyonu GERCEKTEN bilinen degerlendirme kaynaklari: elle secim, takim
+ * dagilimi, saglayici. Istatistikten cikarim ("inferred") yalnizca core /
+ * destek ayrimini yapabiliyor — core oynanan her maci pos1 sayiyor — ve
+ * "profile" tohum rolunun kendisi; ikisi de rol dagilimina katilmaz.
+ */
+export const RELIABLE_ROLE_SOURCES = new Set(["manual", "team", "provider"]);
+
+/** @param {Record<string, any>|undefined} evaluation */
+export function reliableRoleOf(evaluation) {
+  const role = String(evaluation?.role || "");
+  return /^pos[1-5]$/.test(role) &&
+    RELIABLE_ROLE_SOURCES.has(String(evaluation?.roleSource || ""))
+    ? role
+    : "";
+}
+
+/** Rolleri mac verisinden turetmek icin gereken en az degerlendirme. */
+export const ROLE_PROFILE_MIN_MATCHES = 5;
+/** Oyuncunun rolu sayilmasi icin gereken en az pay. */
+const ROLE_PROFILE_MIN_SHARE = 0.15;
+/** Birincil + ikincil en fazla bu kadar rol. */
+const ROLE_PROFILE_MAX_ROLES = 3;
+
+/**
+ * Oyuncunun rollerini (birincil + ikincil) degerlendirmelerdeki pozisyon
+ * dagilimindan turetir: "Pos 3 %44 · Pos 2 %31 · Pos 4 %19" -> birincil
+ * pos3, ikincil [pos2, pos4].
+ *
+ * NEDEN: roller tohum veride (`players.seed.js`) elle yaziliydi; yeni
+ * eklenen oyuncuda hic yoktu, mevcut oyuncuda da oynadigi rolle
+ * celisebiliyordu. Yalnizca pozisyonu gercekten bilinen maclar sayilir (bkz.
+ * RELIABLE_ROLE_SOURCES): istatistik cikarimi core oynayan herkesi pos1
+ * yapiyordu, tohum rolune dusulmus degerlendirme ise tohumu kendi kendini
+ * dogrulayan bir donguye sokardi.
+ *
+ * @param {Array<Record<string, any>>} evaluations
+ * @returns {{
+ *   primaryRole: string,
+ *   secondaryRoles: string[],
+ *   roleShares: Array<{ role: string, share: number, matches: number }>,
+ *   sample: number
+ * }|null} Yeterli veri yoksa null (cagiran tohum rollerini korur)
+ */
+export function deriveRoleProfile(evaluations) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  let sample = 0;
+  for (const row of Array.isArray(evaluations) ? evaluations : []) {
+    const role = reliableRoleOf(row);
+    if (!role) {
+      continue;
+    }
+    sample += 1;
+    counts.set(role, (counts.get(role) || 0) + 1);
+  }
+  if (sample < ROLE_PROFILE_MIN_MATCHES) {
+    return null;
+  }
+  const roleShares = [...counts.entries()]
+    .map(([role, matches]) => ({
+      role,
+      matches,
+      share: Math.round((matches / sample) * 100) / 100,
+    }))
+    .sort((a, b) => b.matches - a.matches || a.role.localeCompare(b.role));
+  const roles = roleShares
+    .filter((row, index) => index === 0 || row.share >= ROLE_PROFILE_MIN_SHARE)
+    .slice(0, ROLE_PROFILE_MAX_ROLES)
+    .map((row) => row.role);
+  return {
+    primaryRole: roles[0],
+    secondaryRoles: roles.slice(1),
+    roleShares,
+    sample,
+  };
 }

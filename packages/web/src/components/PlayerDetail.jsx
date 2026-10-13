@@ -5,7 +5,9 @@ import {
   ROLE_KEYS,
   ROLE_LABELS,
   ROLE_SHORT_LABELS,
+  SYNERGY_MIN_MATCHES,
   buildPlayerOverview,
+  buildPlayerSynergy,
   heroDisplayName,
 } from "@dotastat/core";
 import { api } from "../lib/api.js";
@@ -83,7 +85,62 @@ function refreshFailureNote(result) {
   if (Number(result.data?.refreshAvailableInMs) > 0) {
     return "";
   }
-  return "Kaynaktan yeni veri alınamadı, biraz sonra tekrar dene.";
+  // Basarili kontrol, yeni mac olmasa da verinin zamanini "az once" yapar;
+  // buraya yalnizca kaynaga GERCEKTEN ulasilamadiginda gelinir. Sebep
+  // yazilir, yoksa "oyuncu oynamadi" ile "kaynak cevap vermedi" karisiyordu.
+  return (
+    "Kaynağa ulaşılamadı" +
+    providerFailureReason(result.data?.providerError) +
+    " — gösterilen veri değişmedi, biraz sonra tekrar dene."
+  );
+}
+
+/**
+ * Saglayici hata metninden kisa, okunur sebep (" (OpenDota: istek limiti)").
+ *
+ * @param {string} [error] ornek: "kaynak-yok opendota:rate-limit stratz:bos"
+ * @returns {string}
+ */
+export function providerFailureReason(error) {
+  const text = String(error || "");
+  const parts = [...text.matchAll(/(opendota|stratz):([\w-]+)/g)].map(
+    ([, provider, code]) =>
+      (provider === "opendota" ? "OpenDota" : "Stratz") +
+      ": " +
+      (PROVIDER_FAILURE_LABELS[code] || code),
+  );
+  if (parts.length) {
+    return " (" + parts.join(", ") + ")";
+  }
+  if (/limit|429/i.test(text)) {
+    return " (istek limiti doldu)";
+  }
+  return "";
+}
+
+const PROVIDER_FAILURE_LABELS = {
+  "rate-limit": "istek limiti",
+  unavailable: "yanıt vermedi",
+  "not-configured": "anahtar yok",
+  "not-found": "oyuncu bulunamadı",
+  bos: "boş liste",
+};
+
+/**
+ * Rol rozetinin ipucu: rolun mac verisindeki payi ("Son 60 maçın %44'ü").
+ * Roller tohum veriden geliyorsa bunu soyler.
+ *
+ * @param {Record<string, any>|undefined} profile
+ * @param {string} role
+ */
+function roleShareTitle(profile, role) {
+  if (profile?.roleSource !== "matches") {
+    return "Rol elle girilmiş profilden (yeterli maç verisi yok)";
+  }
+  const row = (profile.roleShares || []).find((item) => item.role === role);
+  return row
+    ? `Maçların %${Math.round(row.share * 100)}'ı (${row.matches} maç)`
+    : "";
 }
 
 /**
@@ -184,7 +241,8 @@ export function PlayerDetail({
       const response = await api.setMatchRole(matchId, role);
       setMatchRoles(response.roles || {});
       // Degerlendirme sunucuda yeniden hesaplandigi icin paneli tazele.
-      await detail.reload();
+      // `fresh`: CDN'in eski kopyasi yeni pozisyonu gizlemesin.
+      await detail.reload({ fresh: true });
       // Performance Rank degisti; kart listesi de bunu gostermeli.
       onDataChanged?.();
     } catch (error) {
@@ -237,12 +295,21 @@ export function PlayerDetail({
                 <RoleBadge
                   role={player.dotaProfile.primaryRole}
                   label={ROLE_LABELS[player.dotaProfile.primaryRole]}
+                  title={roleShareTitle(
+                    player.dotaProfile,
+                    player.dotaProfile.primaryRole,
+                  )}
                 />
               ) : (
                 <span className="chip">Rol belirtilmemiş</span>
               )}
               {(player.dotaProfile?.secondaryRoles || []).map((role) => (
-                <RoleBadge key={role} role={role} small />
+                <RoleBadge
+                  key={role}
+                  role={role}
+                  small
+                  title={roleShareTitle(player.dotaProfile, role)}
+                />
               ))}
             </div>
           </div>
@@ -351,15 +418,22 @@ export function PlayerDetail({
               onRosterRefreshed={() => {
                 // Mac detayi kadro uyelerini tazeledi ya da takim
                 // pozisyonlarini kaydetti: kadro eslesmesi, pozisyonlar ve
-                // kart listesi onbellekten yeniden okunur.
-                detail.reload();
+                // kart listesi onbellekten yeniden okunur. `fresh`: CDN'in
+                // 60 saniyelik eski kopyasi yeni pozisyonlari gizliyordu.
+                detail.reload({ fresh: true });
                 onDataChanged?.();
               }}
             />
           </>
         ) : null}
         {tab === "synergy" ? (
-          <SynergyTab synergies={detail.data.synergies} player={player} />
+          <SynergyTab
+            synergies={detail.data.synergies}
+            player={player}
+            matches={matches}
+            evaluations={evaluations}
+            squads={detail.data.squads || {}}
+          />
         ) : null}
       </div>
     </div>
@@ -577,8 +651,8 @@ function LiveOverview({ overview, form, onOpenTab }) {
 }
 
 /**
- * Tek tavsiye karti: veriden uretilen tavsiyeler (secili doneme gore), elle
- * yazilmis sinerji notlari ve oyuncuya ozel tavsiye. Eskiden uc ayri kartti.
+ * Tek tavsiye karti: veriden uretilen tavsiyeler (secili doneme gore:
+ * seri, performans, pozisyon, hero, sinerji) ve varsa oyuncuya ozel not.
  *
  * @param {{
  *   playerId: string,
@@ -589,10 +663,9 @@ function LiveOverview({ overview, form, onOpenTab }) {
 function AdviceCard({ playerId, overview, character }) {
   const fresh = useNewTipKeys(playerId, overview);
   const tips = overview?.hasData ? overview.tips : [];
-  const notes = [
-    ...(character.synergyNotes || []),
-    ...(character.funnyAdvice ? [character.funnyAdvice] : []),
-  ].filter(Boolean);
+  // Sinerji notlari artik maclardan uretiliyor (tavsiyeler + Sinerji
+  // sekmesi); elle yazilmis olanlardan yalnizca oyuncuya ozel not kalir.
+  const notes = character.funnyAdvice ? [character.funnyAdvice] : [];
 
   if (!tips.length && !notes.length) {
     return null;
@@ -1200,51 +1273,148 @@ function RoleCell({ matchId, detectedRole, selectedRole, editable, onChange }) {
 }
 
 /**
- * @param {{ synergies: Array<Record<string, any>>, player: Record<string, any> }} props
+ * Sinerji sekmesi: kadrodaki arkadaslarla AYNI TAKIMDA oynanan maclardan
+ * uretilir (bkz. core/player-synergy.js). Elle yazilmis ikili notu
+ * (`synergies.seed.js`) varsa kartin altinda "gozlem notu" olarak kalir.
+ *
+ * @param {{
+ *   synergies: Array<Record<string, any>>,
+ *   player: Record<string, any>,
+ *   matches: Array<Record<string, any>>,
+ *   evaluations: Array<Record<string, any>>,
+ *   squads: Record<string, any>
+ * }} props
  */
-function SynergyTab({ synergies, player }) {
-  if (!synergies?.length) {
-    return <EmptyState title="Bu oyuncu için sinerji notu girilmemiş" />;
+function SynergyTab({ synergies, player, matches, evaluations, squads }) {
+  const synergy = useMemo(
+    () =>
+      buildPlayerSynergy({
+        matches,
+        evaluations,
+        squads,
+        roleLabels: ROLE_SHORT_LABELS,
+        heroName: heroDisplayName,
+      }),
+    [matches, evaluations, squads],
+  );
+  const notesByPartner = new Map(
+    (synergies || []).map((row) => [
+      row.playerId1 === player.id ? row.playerId2 : row.playerId1,
+      row,
+    ]),
+  );
+
+  if (!synergy.partners.length) {
+    return (
+      <EmptyState
+        title="Kadrodan biriyle ortak maç bulunamadı"
+        detail="Sinerji, kadrodaki oyuncularla aynı takımda oynanan maçlardan hesaplanır."
+      />
+    );
   }
 
   return (
     <div className="stack" style={{ gap: 10 }}>
-      {synergies.map((row) => {
-        const partner =
-          row.playerId1 === player.id ? row.playerId2 : row.playerId1;
+      <p className="muted micro">
+        {synergy.known} maçta kadro eşleşmesi var · genel kazanma{" "}
+        {formatPercent(synergy.overall.winRate)}. Puan {SYNERGY_MIN_MATCHES}+
+        ortak maçta hesaplanır.
+      </p>
+      {synergy.partners.map((row) => {
+        const note = notesByPartner.get(row.id);
+        const tone =
+          row.score === null
+            ? ""
+            : row.score >= 60
+              ? " tone-good"
+              : row.score <= 40
+                ? " tone-bad"
+                : "";
         return (
-          <article key={row.id} className="note-card">
-            <h4>
-              {partner}
-              {row.synergyScore ? (
-                <span className="chip accent" style={{ marginLeft: 8 }}>
-                  {row.synergyScore}/100
-                </span>
+          <article key={row.id} className={"note-card" + tone}>
+            <h4 className="row" style={{ gap: 8 }}>
+              {row.avatar ? (
+                <img
+                  className="player-avatar small"
+                  src={row.avatar}
+                  alt=""
+                  width={22}
+                  height={22}
+                />
               ) : null}
+              {row.name}
+              {row.score !== null ? (
+                <span className="chip accent">{row.score}/100</span>
+              ) : (
+                <span className="chip">az veri</span>
+              )}
             </h4>
-            {row.description ? <p>{row.description}</p> : null}
-            <div className="eval-lists">
-              {(row.strengths || []).length ? (
-                <div>
-                  <span className="muted micro">Güçlü taraf</span>
-                  <ul>
-                    {row.strengths.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {(row.risks || []).length ? (
-                <div>
-                  <span className="muted micro">Risk</span>
-                  <ul>
-                    {row.risks.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
+            <p className="muted micro">
+              {row.matches} ortak maç · {row.wins}G {row.matches - row.wins}M ·{" "}
+              {formatPercent(row.winRate)}
+              {row.rankWith !== null
+                ? ` · birlikte ort. Rank ${row.rankWith}`
+                : ""}
+            </p>
+            {row.rolePairs.length || row.heroPairs.length ? (
+              <div className="synergy-pairs">
+                {row.rolePairs
+                  .filter((pair) => pair.selfKey && pair.partnerKey)
+                  .map((pair) => (
+                    <span
+                      key={"r" + pair.selfKey + pair.partnerKey}
+                      className="chip"
+                      title={`Sen ${ROLE_SHORT_LABELS[pair.selfKey] || pair.selfKey}, ${row.name} ${ROLE_SHORT_LABELS[pair.partnerKey] || pair.partnerKey}`}
+                    >
+                      {ROLE_SHORT_LABELS[pair.selfKey] || pair.selfKey} +{" "}
+                      {ROLE_SHORT_LABELS[pair.partnerKey] || pair.partnerKey} ·{" "}
+                      {pair.wins}/{pair.matches}
+                    </span>
+                  ))}
+                {row.heroPairs
+                  .filter((pair) => pair.selfKey && pair.partnerKey)
+                  .map((pair) => (
+                    <span
+                      key={"h" + pair.selfKey + pair.partnerKey}
+                      className="synergy-hero-pair"
+                      title={`${heroDisplayName(pair.selfKey)} + ${heroDisplayName(pair.partnerKey)}: ${pair.wins}/${pair.matches}`}
+                    >
+                      <HeroIcon hero={pair.selfKey} size={22} />
+                      <HeroIcon hero={pair.partnerKey} size={22} />
+                      <span className="muted micro">
+                        {pair.wins}/{pair.matches}
+                      </span>
+                    </span>
+                  ))}
+              </div>
+            ) : null}
+            {row.strengths.length || row.risks.length ? (
+              <div className="eval-lists">
+                {row.strengths.length ? (
+                  <div>
+                    <span className="muted micro">Güçlü taraf</span>
+                    <ul>
+                      {row.strengths.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {row.risks.length ? (
+                  <div>
+                    <span className="muted micro">Risk</span>
+                    <ul>
+                      {row.risks.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {note?.description ? (
+              <p className="muted micro">Gözlem notu: {note.description}</p>
+            ) : null}
           </article>
         );
       })}

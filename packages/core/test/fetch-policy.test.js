@@ -511,26 +511,78 @@ test("hicbir kaynakta yoksa eldeki en iyi sonuc doner", async () => {
   assert.equal(rows[0].matchId, "100");
 });
 
-test("elle tazelemede en taze kaynak secilir", async () => {
-  // Elle "Yenile"de hangi macin aranacagi bilinmez. Zincir sirasi korunsaydi
-  // OpenDota "basarili ama eski" cevabiyla yeni maci gizlerdi — olculen durum
-  // buydu: bir mac OpenDota'da 29 saat sonra bile yoktu, Stratz'ta vardi.
+test("elle tazelemede birincil kaynak mac donerse ikincisine gidilmez", async () => {
+  // Istek tasarrufu: eskiden iki kaynaga AYNI ANDA gidiliyordu. Birincil
+  // (yeni maci erken goren Stratz) mac donduruyorsa ikinci istek atilmaz.
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+
+  const yeni = { ...sampleMatch("200"), startedAt: "2026-08-30T21:00:00Z" };
+  let secondCalls = 0;
+
+  const chain = createProviderChain(
+    [
+      {
+        name: "opendota",
+        getRecentMatches: async () => {
+          secondCalls += 1;
+          return [];
+        },
+      },
+      { name: "stratz", getRecentMatches: async () => [yeni] },
+    ],
+    { order: { getRecentMatches: ["stratz", "opendota"] } },
+  );
+
+  const rows = await chain.getRecentMatchesFreshest("1", {});
+
+  assert.equal(rows[0].matchId, "200");
+  assert.equal(chain.lastUsedProvider, "stratz");
+  assert.equal(secondCalls, 0, "yedek kaynaga istek atilmamali");
+});
+
+test("elle tazelemede birincil bos donerse yedek denenir", async () => {
   const { createProviderChain } = await import(
     "../src/providers/provider-chain.js"
   );
 
   const eski = { ...sampleMatch("100"), startedAt: "2026-08-29T10:00:00Z" };
-  const yeni = { ...sampleMatch("200"), startedAt: "2026-08-30T21:00:00Z" };
-
   const chain = createProviderChain([
-    { name: "gecikmis", getRecentMatches: async () => [eski] },
-    { name: "guncel", getRecentMatches: async () => [yeni, eski] },
+    { name: "birincil", getRecentMatches: async () => [] },
+    { name: "yedek", getRecentMatches: async () => [eski] },
   ]);
 
   const rows = await chain.getRecentMatchesFreshest("1", {});
 
-  assert.equal(rows[0].matchId, "200", "en yeni maci iceren liste secilmeli");
-  assert.equal(chain.lastUsedProvider, "guncel");
+  assert.equal(rows[0].matchId, "100");
+  assert.equal(chain.lastUsedProvider, "yedek");
+});
+
+test("metot bazli sira: profil OpenDota, maclar Stratz'tan istenir", async () => {
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+  /** @type {string[]} */
+  const calls = [];
+  const provider = (name) => ({
+    name,
+    getPlayerProfile: async () => (calls.push(name + ":profil"), { name }),
+    getRecentMatches: async () => (calls.push(name + ":mac"), [sampleMatch("1")]),
+    requestRefresh: async () => calls.push(name + ":tarama"),
+  });
+  const chain = createProviderChain([provider("opendota"), provider("stratz")], {
+    order: {
+      getPlayerProfile: ["opendota", "stratz"],
+      getRecentMatches: ["stratz", "opendota"],
+    },
+  });
+
+  await chain.getPlayerProfile("1");
+  await chain.getRecentMatches("1");
+  await chain.requestRefresh("1");
+
+  assert.deepEqual(calls, ["opendota:profil", "stratz:mac", "stratz:tarama"]);
 });
 
 test("en taze secimde erisilemeyen kaynak atlanir", async () => {
@@ -551,6 +603,32 @@ test("en taze secimde erisilemeyen kaynak atlanir", async () => {
   const rows = await chain.getRecentMatchesFreshest("1", {});
   assert.equal(rows[0].matchId, "300");
   assert.equal(chain.lastUsedProvider, "calisan");
+});
+
+test("en taze secimde hicbir kaynak yoksa sebep kaynak bazinda doner", async () => {
+  // Arayuz "Yenile" neden bir sey getirmedigini bu metinden yaziyor.
+  const { createProviderChain } = await import(
+    "../src/providers/provider-chain.js"
+  );
+  const { providerError, RATE_LIMIT } = await import(
+    "../src/providers/provider-errors.js"
+  );
+
+  const chain = createProviderChain([
+    {
+      name: "opendota",
+      getRecentMatches: async () => {
+        throw providerError("opendota-429", RATE_LIMIT, "opendota");
+      },
+    },
+    { name: "stratz", getRecentMatches: async () => [] },
+  ]);
+
+  await assert.rejects(chain.getRecentMatchesFreshest("1", {}), (error) => {
+    assert.match(error.message, /opendota:rate-limit/);
+    assert.match(error.message, /stratz:bos/);
+    return true;
+  });
 });
 
 test("bekleme suresi tazeleme istenmese de bildirilir", async () => {

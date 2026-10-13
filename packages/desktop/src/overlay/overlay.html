@@ -22,6 +22,10 @@
         user-select: none;
       }
 
+      [hidden] {
+        display: none !important;
+      }
+
       body {
         display: flex;
         justify-content: flex-end;
@@ -81,6 +85,89 @@
         fill: #3b2708;
       }
 
+      /*
+       * Draft modu: pozisyon basina bir sutun, sutunda alt alta hero ikonu
+       * ve altinda puani. Pencere sag kenara yasli; sutunlar da saga yaslanir
+       * ki az pozisyon kaldiginda bosluk solda kalsin.
+       */
+      body.draft {
+        align-items: flex-start;
+      }
+
+      .draft-cols {
+        display: flex;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+
+      .draft-cols.ready {
+        opacity: 0.85;
+      }
+
+      .col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        width: 34px;
+      }
+
+      .col h6 {
+        margin: 0 0 1px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: rgba(230, 238, 247, 0.85);
+        text-shadow: 0 1px 2px #000;
+      }
+
+      .hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .hero .face {
+        width: 32px;
+        height: 32px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: rgba(8, 14, 22, 0.55);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+      }
+
+      .hero .face img {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .hero .face b {
+        display: grid;
+        place-items: center;
+        height: 100%;
+        font-size: 10px;
+        font-weight: 600;
+        color: rgba(230, 238, 247, 0.8);
+      }
+
+      .hero .score {
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 12px;
+        color: #f4cf6a;
+        text-shadow: 0 1px 2px #000;
+      }
+
+      /* Secilmis pozisyon: hero soluk, yesil cerceve. */
+      .hero.filled .face {
+        opacity: 0.55;
+        outline: 2px solid rgba(98, 196, 120, 0.8);
+        outline-offset: -2px;
+      }
+
       .icon b {
         display: grid;
         place-items: center;
@@ -95,14 +182,84 @@
   </head>
   <body>
     <div class="items" id="items"></div>
+    <div class="draft-cols" id="draft"></div>
 
     <script>
       const list = document.getElementById("items");
+      const draft = document.getElementById("draft");
       const STAR_SVG =
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
 
-      /** @param {{ items?: Array<Record<string, string>> }} state */
+      /**
+       * Ikon yuklenemezse bas harfler: bos kutu hicbir sey anlatmaz.
+       * @param {string} src
+       * @param {string} text
+       */
+      function iconImage(src, text) {
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = "";
+        img.onerror = () => {
+          const fallback = document.createElement("b");
+          fallback.textContent = String(text || "?")
+            .slice(0, 2)
+            .toUpperCase();
+          img.replaceWith(fallback);
+        };
+        return img;
+      }
+
+      /**
+       * @param {{ hero: string, name?: string, icon: string, score?: number }} row
+       * @param {boolean} filled
+       */
+      function heroCell(row, filled) {
+        const cell = document.createElement("div");
+        cell.className = "hero" + (filled ? " filled" : "");
+        const face = document.createElement("div");
+        face.className = "face";
+        face.append(iconImage(row.icon, row.name || row.hero));
+        cell.append(face);
+        if (!filled) {
+          const score = document.createElement("span");
+          score.className = "score";
+          score.textContent = String(row.score ?? "");
+          cell.append(score);
+        }
+        return cell;
+      }
+
+      /** @param {{ roles?: Array<Record<string, any>> }} state */
+      function renderDraft(state) {
+        draft.replaceChildren(
+          ...(state.roles || []).map((role) => {
+            const col = document.createElement("div");
+            col.className = "col";
+            const title = document.createElement("h6");
+            title.textContent = role.label;
+            col.append(title);
+            if (role.filled) {
+              col.append(heroCell(role.filled, true));
+            }
+            for (const row of role.heroes || []) {
+              col.append(heroCell(row, false));
+            }
+            return col;
+          }),
+        );
+      }
+
+      /** @param {{ mode?: string, items?: Array<Record<string, string>>, roles?: Array<Record<string, any>> }} state */
       function render(state) {
+        const isDraft = state.mode === "draft";
+        document.body.classList.toggle("draft", isDraft);
+        list.hidden = isDraft;
+        draft.hidden = !isDraft;
+        if (isDraft) {
+          renderDraft(state);
+          draft.classList.add("ready");
+          return;
+        }
         list.replaceChildren(
           ...(state.items || []).map((row) => {
             const icon = document.createElement("div");

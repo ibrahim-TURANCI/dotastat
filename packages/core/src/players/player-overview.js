@@ -24,7 +24,8 @@
  */
 
 import { heroDisplayName } from "../heroes/hero-names.js";
-import { buildPlayerStyle } from "./player-style.js";
+import { buildPlayerStyle, reliableRoleOf } from "./player-style.js";
+import { ROLE_SHORT_LABELS } from "./player-types.js";
 import {
   BASELINE_WINDOW_FACTOR,
   PERIODS,
@@ -46,6 +47,8 @@ const OVERVIEW_TOP_HEROES = 5;
 const MIN_SAMPLE = 3;
 /** Performance Rank degisiminin "anlamli" sayildigi fark. */
 const RANK_DELTA_MIN = 150;
+/** Iki pozisyonun kazanma orani arasinda tavsiyeye deger fark. */
+const ROLE_WIN_GAP = 0.25;
 /** En fazla gosterilen tavsiye sayisi. */
 const MAX_TIPS = 4;
 
@@ -94,6 +97,7 @@ export function buildPlayerOverview(input = {}) {
   const synergy = summarizeSynergy(window, squads);
   const recent = summarizeRecent(recentRows, rankByMatch, squads);
   const style = buildPlayerStyle({ matches: window, evaluations });
+  const roles = summarizeRoles(window, rankByMatch);
 
   /** @type {Array<{ key: string, text: string, tone: "good"|"bad"|"warn", weight: number }>} */
   const tips = [];
@@ -173,6 +177,17 @@ export function buildPlayerOverview(input = {}) {
     );
   }
 
+  // --- Pozisyon ---------------------------------------------------------------
+  if (roles.best && roles.worst) {
+    const label = (row) => ROLE_SHORT_LABELS[row.role] || row.role;
+    tip(
+      "role-" + roles.best.role + "-" + roles.worst.role,
+      `${label(roles.best)}: %${Math.round(roles.best.winRate * 100)} (${roles.best.matches} maç), ${label(roles.worst)}: %${Math.round(roles.worst.winRate * 100)} (${roles.worst.matches} maç) — draftta ${label(roles.best)} iste.`,
+      "warn",
+      48,
+    );
+  }
+
   // --- Sinerji ---------------------------------------------------------------
   if (synergy.best) {
     tip(
@@ -217,6 +232,7 @@ export function buildPlayerOverview(input = {}) {
     synergy,
     recent,
     style,
+    roles,
     tips: finalTips,
   };
 }
@@ -424,6 +440,55 @@ function summarizeSynergy(window, squads) {
       ...stack,
       winRate: stack.matches ? round2(stack.wins / stack.matches) : 0,
     },
+  };
+}
+
+/**
+ * Donemdeki pozisyon bazli sonuc. Degerlendirmenin kullandigi rol esas
+ * alinir; yalnizca pozisyonu gercekten bilinen maclar (bkz.
+ * RELIABLE_ROLE_SOURCES) sayilir.
+ *
+ * `best` / `worst`: en az `MIN_SAMPLE` macli iki pozisyon arasinda kazanma
+ * orani farki `ROLE_WIN_GAP` ve uzeriyse doldurulur; aksi halde null.
+ *
+ * @param {Array<Record<string, any>>} window
+ * @param {Map<string, Record<string, any>>} rankByMatch
+ */
+function summarizeRoles(window, rankByMatch) {
+  /** @type {Map<string, { role: string, matches: number, wins: number, ranks: number[] }>} */
+  const byRole = new Map();
+  for (const row of window) {
+    const evaluation = rankByMatch.get(String(row.matchId));
+    const role = reliableRoleOf(evaluation);
+    if (!role) {
+      continue;
+    }
+    const entry = byRole.get(role) || { role, matches: 0, wins: 0, ranks: [] };
+    entry.matches += 1;
+    entry.wins += row.result === "win" ? 1 : 0;
+    const rank = Number(evaluation?.performanceRank);
+    if (Number.isFinite(rank) && rank > 0) {
+      entry.ranks.push(rank);
+    }
+    byRole.set(role, entry);
+  }
+  const rows = [...byRole.values()]
+    .map(({ ranks, ...row }) => ({
+      ...row,
+      winRate: round2(row.wins / row.matches),
+      averageRank: ranks.length ? Math.round(average(ranks)) : null,
+    }))
+    .sort((a, b) => b.matches - a.matches || a.role.localeCompare(b.role));
+  const ordered = rows
+    .filter((row) => row.matches >= MIN_SAMPLE)
+    .sort((a, b) => b.winRate - a.winRate || b.matches - a.matches);
+  const best = ordered[0] || null;
+  const worst = ordered.length > 1 ? ordered[ordered.length - 1] : null;
+  const apart = best && worst && best.winRate - worst.winRate >= ROLE_WIN_GAP;
+  return {
+    rows,
+    best: apart ? best : null,
+    worst: apart ? worst : null,
   };
 }
 

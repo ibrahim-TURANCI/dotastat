@@ -37,6 +37,7 @@ function pair(id, scores, extra = {}) {
     evaluation: {
       matchId: id,
       role: extra.role || "pos4",
+      roleSource: extra.roleSource || "provider",
       breakdown: Object.entries(scores).map(([key, score]) => ({ key, score })),
     },
   };

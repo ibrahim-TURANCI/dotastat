@@ -39,6 +39,9 @@
  * @property {string[]} weakHeroes        Yeterince oynanip kazanilamayan
  * @property {string[]} [recommendedHeroes] Tarzina uyan, az/hic oynanmis
  * @property {string[]} experimentalHeroes `recommendedHeroes` ile ayni; eski ad
+ * @property {Array<{ role: RoleKey, share: number, matches: number }>} [roleShares]
+ *   Rollerin mac verisindeki dagilimi (bkz. player-style.js deriveRoleProfile)
+ * @property {"matches"|"seed"} [roleSource] Roller nereden geldi
  */
 
 /**

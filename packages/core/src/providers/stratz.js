@@ -1,19 +1,29 @@
 /**
- * Stratz veri kaynagi (OpenDota gunluk limitine takilinca devreye girer).
+ * Stratz veri kaynagi.
  *
- * OpenDota'dan iki farki var:
- *   - Tek bir GraphQL ucu vardir; profil + maclar tek istekte gelir.
- *   - API anahtari ZORUNLUDUR (ucretsiz: https://stratz.com/api).
- *     Anahtar yoksa istemci `isConfigured: false` doner ve zincir onu atlar.
+ * Mac listesi, mac detayi ve hero istatistiginde BIRINCIL kaynaktir (bkz.
+ * player-data-service -> PROVIDER_ORDER); OpenDota yedektir. Profil (rank
+ * madalyasi) OpenDota'dan gelir: Stratz'in sezon rank'i geride kalabiliyor.
  *
- * Ayrica Stratz maclarda dogrudan `position` (POSITION_1..POSITION_5) verir;
- * bu, OpenDota'nin `lane_role` + `is_roaming` tahmininden daha guvenilirdir.
+ * NEDEN BIRINCIL: ayni mac icin OpenDota'dan daha fazlasini verir —
+ *   - gercek `position` (POSITION_1..5). OpenDota'nin `lane_role` alani
+ *     KORIDOR soyler; safe lane'deki Pos 5'i "pos1" yapar.
+ *   - parse edilmis macta ward, stack, takim kill'i ve koridor sonucu.
+ *     OpenDota bunlari mac listesinde hic vermez, detayda da cogu mac
+ *     parse edilmemis oluyor.
+ *   - yeni biten maci dakikalar icinde gorur (OpenDota'da saatler surebiliyor).
+ *
+ * API anahtari ZORUNLUDUR (ucretsiz: https://stratz.com/api). Anahtar yoksa
+ * istemci `isConfigured: false` doner ve zincir onu atlar; o zaman her sey
+ * OpenDota'dan gelir.
  *
  * Sozlesme OpenDota istemcisiyle aynidir (bkz. providers/opendota.js), boylece
  * provider-chain ikisini ayirt etmeden kullanabilir.
  */
 
 import bundledHeroIds from "../data/hero-ids.js";
+import bundledItemIds from "../data/item-ids.js";
+import { averageTierOf } from "./opendota.js";
 import { buildStatsFromMatches } from "./match-stats.js";
 import {
   codeFromStatus,
@@ -35,6 +45,17 @@ const HERO_BY_ID = new Map(
     String(name),
   ]),
 );
+
+const ITEM_BY_ID = new Map(
+  Object.entries(bundledItemIds).map(([id, row]) => [
+    Number(id),
+    String(row?.key || ""),
+  ]),
+);
+
+/** Stratz `WardType` enum sirasi: 0 = OBSERVER, 1 = SENTRY. */
+const WARD_OBSERVER = 0;
+const WARD_SENTRY = 1;
 
 /** Stratz pozisyon enum'u -> projedeki RoleKey. */
 const POSITION_TO_ROLE_KEY = {
@@ -69,6 +90,13 @@ const PLAYER_MATCHES_QUERY = `
         didRadiantWin
         startDateTime
         durationSeconds
+        averageRank
+        rank
+        radiantKills
+        direKills
+        bottomLaneOutcome
+        midLaneOutcome
+        topLaneOutcome
         players(steamAccountId: $id) {
           heroId
           isRadiant
@@ -84,6 +112,13 @@ const PLAYER_MATCHES_QUERY = `
           numLastHits
           numDenies
           position
+          lane
+          stats {
+            campStack
+            wards {
+              type
+            }
+          }
         }
       }
     }
@@ -93,7 +128,10 @@ const PLAYER_MATCHES_QUERY = `
 const HERO_PERFORMANCE_QUERY = `
   query DotaStatHeroes($id: Long!) {
     player(steamAccountId: $id) {
-      heroesPerformance(request: { take: 250 }) {
+      # request.take BAKILAN MAC sayisidir: verilmezse yalnizca son ~25 mac
+      # sayiliyordu (olculdu: 7484 macli oyuncuda 28 mac, 10 hero). Buyuk
+      # deger tum zamanlari verir; OpenDota /heroes ile tutarli.
+      heroesPerformance(request: { take: 100000 }, take: 250) {
         heroId
         matchCount
         winCount
@@ -102,6 +140,150 @@ const HERO_PERFORMANCE_QUERY = `
     }
   }
 `;
+
+const MATCH_DETAIL_QUERY = `
+  query DotaStatMatch($id: Long!) {
+    match(id: $id) {
+      id
+      didRadiantWin
+      startDateTime
+      durationSeconds
+      averageRank
+      rank
+      radiantKills
+      direKills
+      bottomLaneOutcome
+      midLaneOutcome
+      topLaneOutcome
+      players {
+        steamAccountId
+        steamAccount {
+          name
+          seasonRank
+          isAnonymous
+        }
+        playerSlot
+        heroId
+        isRadiant
+        isVictory
+        kills
+        deaths
+        assists
+        goldPerMinute
+        experiencePerMinute
+        networth
+        level
+        heroDamage
+        heroHealing
+        towerDamage
+        numLastHits
+        numDenies
+        position
+        lane
+        item0Id
+        item1Id
+        item2Id
+        item3Id
+        item4Id
+        item5Id
+        neutral0Id
+        stats {
+          campStack
+          wards {
+            type
+          }
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * Parse edilmis mac mi? Parse edilmemis macta dakika dakika kill dizileri,
+ * pozisyon ve ward olaylari bos gelir; o alanlar "bilinmiyor" sayilmali.
+ * @param {Record<string, any>} match
+ */
+function isParsedMatch(match) {
+  return (
+    (Array.isArray(match?.radiantKills) && match.radiantKills.length > 0) ||
+    (Array.isArray(match?.direKills) && match.direKills.length > 0)
+  );
+}
+
+/** @param {unknown} values */
+function sumOf(values) {
+  return (Array.isArray(values) ? values : []).reduce(
+    (total, value) => total + (Number(value) || 0),
+    0,
+  );
+}
+
+/**
+ * Oyuncunun koridor sonucu ("won" | "draw" | "lost" | "").
+ *
+ * Stratz sonucu koridor bazinda verir (alt / orta / ust). Radiant'in safe
+ * lane'i alt, Dire'inki ust koridordur; offlane tersidir.
+ *
+ * @param {Record<string, any>} match
+ * @param {Record<string, any>} row
+ */
+function laneResultOf(match, row) {
+  const radiant = Boolean(row?.isRadiant);
+  const lane = String(row?.lane || "");
+  const outcome =
+    lane === "MID_LANE"
+      ? match?.midLaneOutcome
+      : lane === "SAFE_LANE"
+        ? radiant
+          ? match?.bottomLaneOutcome
+          : match?.topLaneOutcome
+        : lane === "OFF_LANE"
+          ? radiant
+            ? match?.topLaneOutcome
+            : match?.bottomLaneOutcome
+          : null;
+  const value = String(outcome || "");
+  if (!value) {
+    return "";
+  }
+  if (value === "TIE") {
+    return "draw";
+  }
+  const radiantWon = value.startsWith("RADIANT");
+  return radiantWon === radiant ? "won" : "lost";
+}
+
+/**
+ * Ward ve stack sayilari. Parse edilmemis macta null: "sifir ward" ile
+ * "bilmiyoruz" ayni sey degil (bkz. opendota.js'teki ayni gerekce).
+ * @param {Record<string, any>} match
+ * @param {Record<string, any>} row
+ */
+function visionOf(match, row) {
+  if (!isParsedMatch(match) || !row?.stats) {
+    return { obsPlaced: null, senPlaced: null, campsStacked: null };
+  }
+  const wards = Array.isArray(row.stats.wards) ? row.stats.wards : [];
+  const stacks = Array.isArray(row.stats.campStack) ? row.stats.campStack : [];
+  return {
+    obsPlaced: wards.filter((ward) => Number(ward?.type) === WARD_OBSERVER)
+      .length,
+    senPlaced: wards.filter((ward) => Number(ward?.type) === WARD_SENTRY)
+      .length,
+    // Dizi kumulatif (dakika basina o ana kadarki toplam).
+    campsStacked: stacks.length ? Number(stacks[stacks.length - 1]) || 0 : null,
+  };
+}
+
+/**
+ * Macin rank kademesi (ornek 54 = Legend 4). `averageRank` cogu macta bos
+ * geliyor; `rank` macin kademesidir.
+ * @param {Record<string, any>} match
+ */
+function matchRankTierOf(match) {
+  const tier = Number(match?.averageRank || match?.rank || 0);
+  return Number.isFinite(tier) && tier > 0 ? tier : null;
+}
 
 /**
  * @param {{ apiKey?: string, timeoutMs?: number }} [options]
@@ -185,6 +367,9 @@ export function createStratzClient(options = {}) {
 
     const heroId = Number(row.heroId || 0);
     const startSeconds = Number(match?.startDateTime || 0);
+    const parsed = isParsedMatch(match);
+    const radiantKills = sumOf(match?.radiantKills);
+    const direKills = sumOf(match?.direKills);
 
     return {
       matchId: String(match?.id || ""),
@@ -212,20 +397,12 @@ export function createStratzClient(options = {}) {
       towerDamage: Number(row.towerDamage || 0),
       lastHits: Number(row.numLastHits || 0),
       denies: Number(row.numDenies || 0),
-      // Bu sorguda ward alanlari istenmiyor; 0 yazmak "hic ward dikmedi"
-      // anlamina gelip support puanini dusururdu. Bkz. opendota.js'teki
-      // ayni gerekce.
-      obsPlaced: null,
-      senPlaced: null,
-      campsStacked: null,
-      teamKills: 0,
-      teamDeaths: 0,
-      // Stratz mac ortalamasini bu sorguda istemiyoruz: yedek kaynagin
-      // sorgusuna dogrulanmamis bir alan eklemek, alan yoksa TUM sorguyu
-      // GraphQL hatasina dusurur. Motor null gorunce ortalamayi oyuncunun
-      // kendi rankindan tahmin eder.
-      averageRankTier: null,
-      laneResult: "",
+      ...visionOf(match, row),
+      // Takim skoru yalnizca parse edilmis macta bilinir; 0 = bilinmiyor.
+      teamKills: parsed ? (row.isRadiant ? radiantKills : direKills) : 0,
+      teamDeaths: parsed ? (row.isRadiant ? direKills : radiantKills) : 0,
+      averageRankTier: matchRankTierOf(match),
+      laneResult: laneResultOf(match, row),
       provider: PROVIDER_NAME,
     };
   }
@@ -300,6 +477,90 @@ export function createStratzClient(options = {}) {
         limit: Number(statsOptions.limit) || 100,
       });
       return buildStatsFromMatches(String(playerId), matches, PROVIDER_NAME);
+    },
+
+    /**
+     * Tek macin TAM kadrosu. OpenDota'daki ayni adli metotla ayni sekli
+     * doner (bkz. opendota.js -> getMatchDetail).
+     *
+     * GIZLILIK: Stratz, mac verisini gizlemis (`isAnonymous`) oyuncularin da
+     * hesap kimligini ve adini donduruyor. OpenDota bunlari gizliyor; ayni
+     * davranis korunur — hesap ve ad bos birakilir.
+     *
+     * @param {string} matchId
+     * @returns {Promise<Record<string, any>|null>} Oyuncu listesi yoksa null
+     */
+    async getMatchDetail(matchId) {
+      const data = await graphql(MATCH_DETAIL_QUERY, { id: Number(matchId) });
+      const match = data?.match;
+      const players = Array.isArray(match?.players) ? match.players : [];
+      if (!match || !players.length) {
+        return null;
+      }
+
+      // Parse edilmemis macta dakika dizileri bos: skor oyuncularin kill
+      // toplamindan hesaplanir (on oyuncunun hepsi detayda var).
+      const parsed = isParsedMatch(match);
+      const killsOf = (radiant) =>
+        players
+          .filter((row) => Boolean(row?.isRadiant) === radiant)
+          .reduce((total, row) => total + (Number(row?.kills) || 0), 0);
+      const radiantScore = parsed ? sumOf(match.radiantKills) : killsOf(true);
+      const direScore = parsed ? sumOf(match.direKills) : killsOf(false);
+      const averageRankTier =
+        matchRankTierOf(match) ??
+        averageTierOf(players.map((row) => row?.steamAccount?.seasonRank));
+
+      return {
+        matchId: String(match.id || matchId),
+        startedAt: match.startDateTime
+          ? new Date(Number(match.startDateTime) * 1000).toISOString()
+          : "",
+        durationSeconds: Number(match.durationSeconds || 0),
+        radiantWin: Boolean(match.didRadiantWin),
+        radiantScore,
+        direScore,
+        averageRankTier,
+        players: players.map((row) => {
+          const radiant = Boolean(row?.isRadiant);
+          const hidden = Boolean(row?.steamAccount?.isAnonymous);
+          const accountId =
+            !hidden && row?.steamAccountId ? String(row.steamAccountId) : "";
+          const base = toPlayerMatch({ ...match, players: [row] }, accountId);
+          const tier = Number(row?.steamAccount?.seasonRank);
+          return {
+            ...base,
+            teamKills: radiant ? radiantScore : direScore,
+            teamDeaths: radiant ? direScore : radiantScore,
+            averageRankTier,
+            accountId,
+            personaName: hidden ? "" : String(row?.steamAccount?.name || ""),
+            rankTier: Number.isFinite(tier) && tier > 0 ? tier : null,
+            level: Number.isFinite(Number(row?.level))
+              ? Number(row.level)
+              : null,
+            netWorth: Number.isFinite(Number(row?.networth))
+              ? Number(row.networth)
+              : null,
+            slot: Number(row?.playerSlot || 0),
+            // Stratz gercek pozisyonu verir; takim dagilimi ipucu olarak
+            // ayni alani okur (bkz. players/role-assignment.js).
+            laneRole: base.role,
+            items: [
+              row?.item0Id,
+              row?.item1Id,
+              row?.item2Id,
+              row?.item3Id,
+              row?.item4Id,
+              row?.item5Id,
+              row?.neutral0Id,
+            ]
+              .map((id) => ITEM_BY_ID.get(Number(id)))
+              .filter(Boolean),
+          };
+        }),
+        provider: PROVIDER_NAME,
+      };
     },
 
     /**

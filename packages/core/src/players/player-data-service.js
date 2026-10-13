@@ -258,6 +258,25 @@ const MATCH_DETAIL_RETRY_MS = 15 * 60 * 1000;
 const MAX_REFRESH_PER_REQUEST = 4;
 
 /**
+ * Uc bazinda kaynak onceligi (bkz. providers/provider-chain.js -> order).
+ *
+ * Stratz once: mac listesi, mac detayi ve hero istatistiginde ayni ya da
+ * daha zengin veriyi verir (gercek pozisyon, ward, stack, takim kill'i,
+ * koridor sonucu; yeni maci daha erken gorur). OpenDota'ya giden istek
+ * sayisi boylece en cok tuketilen uclarda yedege duser.
+ *
+ * OpenDota once: profil. Rank madalyasi OpenDota'da guncel; Stratz'in sezon
+ * rank'i geride kalabiliyor (olculdu: 63'e karsi 62).
+ */
+export const PROVIDER_ORDER = {
+  getRecentMatches: ["stratz", "opendota"],
+  getPlayerStats: ["stratz", "opendota"],
+  getMatchDetail: ["stratz", "opendota"],
+  getHeroPerformance: ["stratz", "opendota"],
+  getPlayerProfile: ["opendota", "stratz"],
+};
+
+/**
  * @param {Object} options
  * @param {{ get: Function, set: Function }} options.storage
  * @param {string} [options.apiKey] OpenDota API anahtari (opsiyonel)
@@ -272,13 +291,16 @@ export function createPlayerDataService(options) {
 
   const timeoutMs = Number(options.timeoutMs) || 8000;
 
-  // OpenDota birincil kaynaktir (anahtarsiz da calisir). Gunluk limite
-  // takildiginda ayni sozlesmeyi uygulayan Stratz devreye girer; Stratz
-  // anahtari yoksa zincir onu sessizce atlar.
-  const client = createProviderChain([
-    createOpenDotaClient({ apiKey: options.apiKey || "", timeoutMs }),
-    createStratzClient({ apiKey: options.stratzApiKey || "", timeoutMs }),
-  ]);
+  // Iki kaynak ayni sozlesmeyi uygular; hangisinin once sorulacagi uca gore
+  // degisir (bkz. PROVIDER_ORDER). Stratz anahtari yoksa zincir onu sessizce
+  // atlar ve her sey OpenDota'dan gelir.
+  const client = createProviderChain(
+    [
+      createOpenDotaClient({ apiKey: options.apiKey || "", timeoutMs }),
+      createStratzClient({ apiKey: options.stratzApiKey || "", timeoutMs }),
+    ],
+    { order: PROVIDER_ORDER },
+  );
 
   const maxRefresh =
     Number(options.maxRefreshPerRequest) || MAX_REFRESH_PER_REQUEST;
@@ -700,7 +722,7 @@ export function createPlayerDataService(options) {
     const teamRoles = await readTeamRoles(String(player.player_id));
     const allMatches = (matchResult.matches || []).map((row) =>
       teamRoles[String(row?.matchId)]
-        ? { ...row, role: teamRoles[String(row.matchId)] }
+        ? { ...row, role: teamRoles[String(row.matchId)], roleFromTeam: true }
         : row,
     );
     return {
@@ -1113,8 +1135,9 @@ export function createPlayerDataService(options) {
       await storage.set(key, detail);
     }
 
-    // MAC SEVIYESI: OpenDota'nin resmi ortalamasi (`average_rank`) mac
-    // detayinda yok, oyuncunun mac listesinde var. Pencere ile Son Maclar'in
+    // MAC SEVIYESI: oyuncunun mac listesindeki kademe (OpenDota `average_rank`,
+    // Stratz `rank`) tercih edilir; detaydaki deger bazen yalnizca
+    // oyuncularin madalyalarindan hesaplanmis yedektir. Pencere ile Son Maclar'in
     // ayni sayiyi gostermesi icin o deger tercih edilir. Bir kez bakilir ve
     // sonuc kayda yazilir; sonraki acilislar listeleri okumaz.
     if (!detail.averageRankChecked) {
@@ -1124,7 +1147,7 @@ export function createPlayerDataService(options) {
       detail = {
         ...detail,
         averageRankTier: official || detail.averageRankTier || null,
-        averageRankSource: official ? "opendota" : "players",
+        averageRankSource: official ? "list" : "players",
         averageRankChecked: true,
       };
       await storage.set(key, detail);

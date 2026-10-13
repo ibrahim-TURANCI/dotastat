@@ -180,31 +180,34 @@ export class StoreUnavailableError extends Error {
  * @param {string} name kova adi
  */
 export function createStore(name) {
-  /** @type {ReturnType<typeof getStore>|null} */
-  let blobs = null;
-
   /**
-   * Blobs baglantisi. Kurulamazsa SONRAKI cagrida yeniden denenir; ilk
-   * hatanin kabin omru boyunca kalici olmasi yukaridaki sorunu doguruyordu.
+   * Blobs baglantisi — HER ISLEMDE YENIDEN kurulur, saklanmaz.
+   *
+   * `getStore` erisim jetonunu CAGRILDIGI ANDA ortamdan okuyup nesnenin
+   * icine gomer; Netlify ise jetonu her cagrida yeniler. Baglanti saklandiginda
+   * (servis sicak kapta yasadigi icin, bkz. player-data.mjs -> cachedService)
+   * jetonun suresi doluyor ve kab yasadikca TUM okumalar "Failed to decode
+   * token: Token expired" ile patliyordu; yazmalar ise SESSIZCE kayboluyordu.
+   * Olculen sonuc: kart listesi 500 donuyor, herkes tarayicisindaki farkli
+   * yasta kopyayi goruyor, "Yenile" ile cekilen veri depoya hic yazilmiyordu.
+   *
+   * `getStore` ag istegi atmaz, yalnizca bir nesne kurar; her seferinde
+   * cagirmak ucuzdur.
    * @returns {ReturnType<typeof getStore>|null}
    */
   function connect() {
-    if (!blobs) {
-      try {
-        blobs = getStore({ name, consistency: "strong" });
-      } catch {
-        blobs = null;
-      }
+    try {
+      return getStore({ name, consistency: "strong" });
+    } catch {
+      return null;
     }
-    return blobs;
   }
-  connect();
 
   /**
    * Blobs yoksa her sey diske; varsa yalnizca yerelde diske de aynalanir.
    * Netlify uzerinde diske HIC dusulmez (bkz. ON_NETLIFY).
    */
-  const mirrorToDisk = !ON_NETLIFY && (!blobs || IS_DEV);
+  const mirrorToDisk = !ON_NETLIFY && (!connect() || IS_DEV);
 
   /**
    * Netlify uzerinde Blobs zorunludur.
@@ -304,12 +307,22 @@ export function createStore(name) {
 
       const store = requireBlobs();
       if (store) {
-        try {
-          await store.setJSON(key, row);
-          return true;
-        } catch {
-          return mirrorToDisk;
+        for (let attempt = 0; attempt <= READ_RETRIES; attempt += 1) {
+          try {
+            await store.setJSON(key, row);
+            return true;
+          } catch (error) {
+            if (attempt === READ_RETRIES) {
+              // Yazma hatasi sessiz kalmamali: tazelenen verinin depoya
+              // ulasmamasi disaridan "Yenile calismiyor" gibi gorunuyor.
+              console.error(
+                "[store] yazilamadi (" + name + "/" + key + "):",
+                String(/** @type {any} */ (error)?.message || error),
+              );
+            }
+          }
         }
+        return mirrorToDisk;
       }
 
       return true;

@@ -24,7 +24,12 @@ export function playerDataService() {
       // OpenDota gunluk limitine takilinca devreye giren yedek kaynak.
       // Anahtar yoksa zincir Stratz'i sessizce atlar.
       stratzApiKey: process.env.STRATZ_API_KEY || "",
-      timeoutMs: 7000,
+      // Kaynak basina sure. Netlify'da senkron fonksiyon siniri 60 sn ve
+      // degistirilemez. En kotu yol: profil (iki kaynak sirayla = 2 x 10 sn),
+      // ardindan maclar + hero istatistigi paralel (yine 2 x 10 sn) = 40 sn.
+      // 7 sn yavas bir OpenDota'yi gereksiz yere kesip yedege dusuruyordu.
+      // Kaynaklar yanit vermezse onbellekteki son veri doner; fonksiyon olmez.
+      timeoutMs: 10000,
     });
   }
   return cachedService;
