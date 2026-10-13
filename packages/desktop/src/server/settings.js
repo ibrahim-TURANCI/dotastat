@@ -14,7 +14,7 @@
  *   - useOverwolf    : Overwolf/DotaPlus loglarindan canli draft okunsun mu
  *   - startMinimized : acilista pencere gosterilmesin, tepside kalsin
  *   - autoLaunch     : Windows oturumu acilinca uygulama kendiliginden kalksin
- *   - showOverlay    : oyun sirasinda item tavsiyesi overlay'i gosterilsin
+ *   - showOverlay    : oyun ici overlay (draft + item tavsiyesi) gosterilsin
  */
 
 const crypto = require("node:crypto");

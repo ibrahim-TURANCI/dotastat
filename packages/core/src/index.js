@@ -144,7 +144,15 @@ export {
   OVERVIEW_ALL_MATCHES,
   OVERVIEW_RECENT_COUNT,
 } from "./players/player-overview.js";
-export { buildPlayerStyle, STYLE_MIN_MATCHES } from "./players/player-style.js";
+export {
+  buildPlayerStyle,
+  deriveRoleProfile,
+  STYLE_MIN_MATCHES,
+} from "./players/player-style.js";
+export {
+  buildPlayerSynergy,
+  SYNERGY_MIN_MATCHES,
+} from "./players/player-synergy.js";
 
 // --- Veri kaynaklari --------------------------------------------------------
 export { createOpenDotaClient, PROVIDER_NAME } from "./providers/opendota.js";

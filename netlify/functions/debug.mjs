@@ -68,6 +68,8 @@ export default async (request) => {
       },
       config: {
         openDotaKey: Boolean(process.env.OPENDOTA_API_KEY),
+        // Yedek kaynak. Yoksa OpenDota limite takildiginda "Yenile" bos doner.
+        stratzKey: Boolean(process.env.STRATZ_API_KEY),
         sessionSecret: Boolean(process.env.SESSION_SECRET),
         liveIngestToken: Boolean(process.env.LIVE_INGEST_TOKEN),
         githubRepo: process.env.GITHUB_REPO || "",

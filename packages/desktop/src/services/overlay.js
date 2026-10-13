@@ -1,12 +1,16 @@
 /**
- * Oyun ici overlay: Dota on plandayken ekranin sag altinda, Discord'un oyun
- * ustu bildirimleri gibi soluk duran kucuk bir item tavsiyesi seridi.
+ * Oyun ici overlay: Dota on plandayken, Discord'un oyun ustu bildirimleri
+ * gibi soluk duran kucuk bir tavsiye penceresi. Iki modu var:
+ *   - "draft": hero secimi sirasinda ekranin SAG kenarinda, pozisyon basina
+ *     alt alta hero onerileri ve puanlari (son pick yapilinca kaybolur).
+ *   - "items": mac basladiktan sonra sag altta item tavsiyesi seridi.
  *
  * PENCERE: seffaf, cercevesiz, her zaman ustte, odak ALMAZ ve fareyi ALTINA
  * gecirir. Yani oyunda tiklamayi, kamerayi, kisayollari hic etkilemez.
  *
- * NE ZAMAN GORUNUR: ayar acik + Dota on planda + mac suruyor (PRE_GAME ya da
- * GAME_IN_PROGRESS) + kendi satirimiz icin en az bir tavsiye var.
+ * NE ZAMAN GORUNUR: ayar acik + Dota on planda + (hero secimi suruyor ve
+ * draft onerisi var) ya da (mac suruyor ve kendi satirimiz icin en az bir
+ * item tavsiyesi var).
  *
  * SINIR: Dota "Tam ekran" (exclusive fullscreen) modundayken hicbir harici
  * pencere oyunun ustune cizilemez; Discord bunu oyuna kod enjekte ederek
@@ -42,6 +46,21 @@ const BOTTOM_RATIO = 0.19;
 const RIGHT_MARGIN = 0;
 
 /**
+ * Draft modu: 5 pozisyon sutunu, her sutunda en fazla 5 hero (ikon + puan).
+ * Olculer 1080p icin; pencere ekran yuksekligiyle olceklenir (Dota'nin
+ * HUD'u da oyle).
+ */
+const DRAFT_WIDTH = 196;
+const DRAFT_HEIGHT = 290;
+/**
+ * Pencerenin ust kenarinin ekranin ustunden uzakligi (yukseklige oran).
+ * Pick ekraninda ust hero seridinin hemen altina, saga yasli durur; 16:9'da
+ * sagdaki "Dostlar ve dusmanlar" panelinin disinda kalan bosluga denk gelir.
+ */
+const DRAFT_TOP_RATIO = 0.15;
+const DRAFT_RIGHT_MARGIN = 6;
+
+/**
  * @param {Object} options
  * @param {{ info: Function, warn: Function }} options.logger
  * @param {() => Promise<Record<string, any>>} options.getState
@@ -58,14 +77,41 @@ function createOverlay(options) {
   let lastPayload = "";
   let busy = false;
 
+  /** Gosterilen mod ("items" | "draft"); konum ve boyut buna gore. */
+  let mode = "items";
+
+  /** Ekran yuksekligi / 1080: draft modunun olcegi. */
+  function scale() {
+    const { bounds: area } = screen.getPrimaryDisplay();
+    return Math.max(0.6, area.height / 1080);
+  }
+
   function bounds() {
     const { bounds: area } = screen.getPrimaryDisplay();
+    if (mode === "draft") {
+      const factor = scale();
+      const width = Math.round(DRAFT_WIDTH * factor);
+      return {
+        x: Math.round(
+          area.x + area.width - width - DRAFT_RIGHT_MARGIN * factor,
+        ),
+        y: Math.round(area.y + area.height * DRAFT_TOP_RATIO),
+        width,
+        height: Math.round(DRAFT_HEIGHT * factor),
+      };
+    }
     return {
       x: Math.round(area.x + area.width - WIDTH - RIGHT_MARGIN),
       y: Math.round(area.y + area.height * (1 - BOTTOM_RATIO) - HEIGHT),
       width: WIDTH,
       height: HEIGHT,
     };
+  }
+
+  /** Pencereyi moda gore konumlar; draft modu ekranla olceklenir. */
+  function place(target) {
+    target.setBounds(bounds());
+    target.webContents.setZoomFactor(mode === "draft" ? scale() : 1);
   }
 
   function ensureWindow() {
@@ -97,6 +143,7 @@ function createOverlay(options) {
     window.setIgnoreMouseEvents(true);
     window.loadFile(path.join(__dirname, "..", "overlay", "overlay.html"));
     window.webContents.once("did-finish-load", () => {
+      window?.webContents.setZoomFactor(mode === "draft" ? scale() : 1);
       if (lastPayload) {
         window?.webContents.send("overlay:update", JSON.parse(lastPayload));
       }
@@ -132,22 +179,35 @@ function createOverlay(options) {
       }
 
       const state = await getState();
-      if (!state?.active || !state.items?.length) {
+      const nextMode = state?.mode === "draft" ? "draft" : "items";
+      const hasContent =
+        nextMode === "draft" ? state?.roles?.length : state?.items?.length;
+      if (!state?.active || !hasContent) {
         hide();
         return;
       }
 
       const target = ensureWindow();
-      const payload = JSON.stringify({ hero: state.hero, items: state.items });
+      const modeChanged = nextMode !== mode;
+      mode = nextMode;
+      const payload = JSON.stringify({
+        mode,
+        hero: state.hero,
+        items: state.items,
+        roles: state.roles,
+      });
       if (payload !== lastPayload) {
         lastPayload = payload;
         if (!target.webContents.isLoading()) {
-          target.webContents.send("overlay:update", state);
+          target.webContents.send("overlay:update", JSON.parse(payload));
         }
+      }
+      if (modeChanged) {
+        place(target);
       }
       if (!target.isVisible()) {
         // Cozunurluk oyun icinde degismis olabilir.
-        target.setBounds(bounds());
+        place(target);
         target.showInactive();
       }
     } catch (error) {

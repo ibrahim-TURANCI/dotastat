@@ -1136,6 +1136,54 @@ function createServerApp(options) {
   const OVERLAY_PHASES = ["PRE_GAME", "GAME_IN_PROGRESS"];
   /** Overlay'de gosterilen tavsiye sayisi. */
   const OVERLAY_SLOTS = 4;
+  /**
+   * Overlay'in draft onerilerini gosterdigi evre: hero secimi. Son pick
+   * yapilinca (draft "complete") gizlenir; PRE_GAME'de item seridi gelir.
+   */
+  const OVERLAY_DRAFT_PHASES = ["HERO_SELECTION"];
+  /** Draft overlay'inde pozisyon basina en fazla hero. */
+  const OVERLAY_DRAFT_PER_ROLE = 5;
+
+  /**
+   * Pick ekraninda overlay icin draft onerileri: pozisyon basina hero ikonu
+   * ve puani. Panelde (`/api/live` -> draftAdvice) gorunenle AYNI oneriler.
+   *
+   * @param {Record<string, any>} state currentLiveState ciktisi
+   * @returns {Promise<{ active: boolean, reason?: string, mode?: "draft", roles?: Array<Record<string, any>> }>}
+   */
+  async function overlayDraftState(state) {
+    const context = await buildContext(state);
+    const advice = context.draftAdvice;
+    if (!advice?.visible || advice.stage === "complete") {
+      return { active: false, reason: "draft-bitti" };
+    }
+    const roles = (advice.blocks || [])
+      .map((block) => ({
+        role: block.role,
+        label: "P" + String(block.role).slice(3),
+        filled: block.filled
+          ? {
+              hero: block.filled.hero,
+              icon: core.heroImageUrl(block.filled.hero, "icon"),
+            }
+          : null,
+        heroes: block.filled
+          ? []
+          : (block.suggestions || [])
+              .slice(0, OVERLAY_DRAFT_PER_ROLE)
+              .map((row) => ({
+                hero: row.hero,
+                name: row.heroName,
+                score: row.score,
+                icon: core.heroImageUrl(row.hero, "icon"),
+              })),
+      }))
+      .filter((row) => row.filled || row.heroes.length);
+    if (!roles.some((row) => row.heroes.length)) {
+      return { active: false, reason: "oneri-yok" };
+    }
+    return { active: true, mode: "draft", roles };
+  }
 
   /**
    * Oyun ici overlay icin KENDI hero'muzun tavsiyesi.
@@ -1150,6 +1198,9 @@ function createServerApp(options) {
   async function overlayState() {
     const state = currentLiveState();
     const phase = String(state?.phase || "").toUpperCase();
+    if (state && OVERLAY_DRAFT_PHASES.some((name) => phase.includes(name))) {
+      return overlayDraftState(state);
+    }
     if (!state || !OVERLAY_PHASES.some((name) => phase.includes(name))) {
       return { active: false, reason: "oyunda-degil" };
     }
@@ -1181,6 +1232,7 @@ function createServerApp(options) {
 
     return {
       active: true,
+      mode: "items",
       hero: me.heroName || "",
       items: advice
         .filter((row) => picked.has(row))

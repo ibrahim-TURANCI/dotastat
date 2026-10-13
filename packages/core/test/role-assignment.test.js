@@ -279,3 +279,43 @@ test("mac ortalamasi dusukse ayni hasar daha degerli sayilir", () => {
     }).performanceRank;
   assert.ok(withLobby(450) > withLobby(900));
 });
+
+test("OpenDota koridoru destegi core pozisyonuna koymaz", async () => {
+  const { evaluateMatches } =
+    await import("../src/players/performance-evaluation-engine.js");
+  const base = {
+    durationSeconds: 2400,
+    hero: "crystal_maiden",
+    result: "win",
+    kills: 2,
+    deaths: 6,
+    assists: 18,
+    teamKills: 30,
+    gpm: 230,
+    xpm: 380,
+    lastHits: 25,
+    obsPlaced: 12,
+    senPlaced: 8,
+    heroDamage: 9000,
+    startedAt: "2026-10-01T00:00:00.000Z",
+  };
+  const [safe, off, stratz, team] = evaluateMatches({
+    player: null,
+    matches: [
+      { ...base, matchId: "1", role: "pos1", provider: "opendota" },
+      { ...base, matchId: "2", role: "pos3", provider: "opendota" },
+      { ...base, matchId: "3", role: "pos3", provider: "stratz" },
+      {
+        ...base,
+        matchId: "4",
+        role: "pos3",
+        provider: "opendota",
+        roleFromTeam: true,
+      },
+    ],
+  });
+  assert.equal(safe.role, "pos5");
+  assert.equal(off.role, "pos4");
+  assert.equal(stratz.role, "pos3", "Stratz pozisyonu gercek pozisyondur");
+  assert.equal(team.role, "pos3", "takim dagilimi ezilmez");
+});

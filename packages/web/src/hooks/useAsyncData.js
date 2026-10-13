@@ -29,6 +29,10 @@ export function useAsyncData(loader, options = {}) {
   // atlar. Her istek Netlify'da ayri bir fonksiyon cagrisi.
   const lastRunAtRef = useRef(0);
   const inFlightRef = useRef(false);
+  // Her istegin sira numarasi. Yalnizca EN SON istegin sonucu yazilir: oyuncu
+  // A'dan B'ye hizla gecilince A'nin gec gelen yaniti B'nin verisini
+  // ezmemeli.
+  const runIdRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -43,6 +47,8 @@ export function useAsyncData(loader, options = {}) {
    *   zamanlayici bos gecer, boylece onbellek kullanilir.
    */
   const run = useCallback(async (runOptions) => {
+    const runId = ++runIdRef.current;
+    const isLatest = () => mountedRef.current && runId === runIdRef.current;
     lastRunAtRef.current = Date.now();
     inFlightRef.current = true;
     if (hasDataRef.current) {
@@ -59,7 +65,7 @@ export function useAsyncData(loader, options = {}) {
           ? runOptions
           : undefined;
       const result = await loaderRef.current(safeOptions);
-      if (!mountedRef.current) {
+      if (!isLatest()) {
         return { ok: true, data: result, error: null };
       }
       setData(result);
@@ -70,13 +76,15 @@ export function useAsyncData(loader, options = {}) {
       // `error` durumunu tutar, iki kullanim birbirini engellemez.
       return { ok: true, data: result, error: null };
     } catch (caught) {
-      if (mountedRef.current) {
+      if (isLatest()) {
         setError(caught);
       }
       return { ok: false, data: null, error: caught };
     } finally {
-      inFlightRef.current = false;
-      if (mountedRef.current) {
+      if (runId === runIdRef.current) {
+        inFlightRef.current = false;
+      }
+      if (isLatest()) {
         setLoading(false);
         setRefreshing(false);
       }

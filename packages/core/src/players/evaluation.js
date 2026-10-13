@@ -17,6 +17,7 @@ import {
 import { buildStatsFromMatches } from "../providers/match-stats.js";
 import { buildHeroPool } from "./hero-pool.js";
 import { PERIOD_HERO_COUNT } from "./weekly-score.js";
+import { deriveRoleProfile } from "./player-style.js";
 
 /** Gozlemin profil beklentisini en fazla ne kadar kaydirabilecegi. */
 const POTENTIAL_BLEND_MAX_WEIGHT = 0.5;
@@ -99,18 +100,37 @@ export function buildPlayerEvaluation(input) {
   // Hero havuzu ONCE turetilir: degerlendirme motoru "bu hero onun imza
   // kahramani mi" sorusunu havuza sorar, dolayisiyla havuzun mac verisinden
   // gelen guncel hali tohum listelerin yerine gecmelidir.
-  const heroPool = buildHeroPool({
+  let heroPool = buildHeroPool({
     lifetime: input?.heroPerformance || [],
     matches,
     player,
   });
-
-  const evaluatedPlayer = withDerivedHeroPool(player, heroPool);
-  const evaluations = evaluateMatches({
+  let evaluatedPlayer = withDerivedHeroPool(player, heroPool);
+  let evaluations = evaluateMatches({
     player: evaluatedPlayer,
     matches,
     forcedRoles,
   });
+
+  // Roller de mac verisinden turetilir (bkz. player-style.js
+  // deriveRoleProfile). Rol uyumu ve "tarzina uyan" heroler role bagli
+  // oldugu icin havuz ve degerlendirme turetilen rollerle yeniden kurulur.
+  // Yeterli veri yoksa tohum rolleri kalir.
+  const roleProfile = deriveRoleProfile(evaluations);
+  if (roleProfile && player) {
+    const rolePlayer = withDerivedRoles(player, roleProfile);
+    heroPool = buildHeroPool({
+      lifetime: input?.heroPerformance || [],
+      matches,
+      player: rolePlayer,
+    });
+    evaluatedPlayer = withDerivedHeroPool(rolePlayer, heroPool);
+    evaluations = evaluateMatches({
+      player: evaluatedPlayer,
+      matches,
+      forcedRoles,
+    });
+  }
   const olderMatches = Array.isArray(input?.olderMatches)
     ? input.olderMatches
     : [];
@@ -135,6 +155,26 @@ export function buildPlayerEvaluation(input) {
     heroPool,
     effectivePotential: resolveEffectivePotential(evaluatedPlayer, form),
     stats: buildStatsFromMatches(player?.player_id || "", matches, "opendota"),
+  };
+}
+
+/**
+ * Mac verisinden turetilen rolleri oyuncu profiline yazar.
+ *
+ * @param {import("./player-types.js").Player} player
+ * @param {NonNullable<ReturnType<typeof deriveRoleProfile>>} roleProfile
+ * @returns {import("./player-types.js").Player}
+ */
+function withDerivedRoles(player, roleProfile) {
+  return {
+    ...player,
+    dotaProfile: {
+      ...(player.dotaProfile || {}),
+      primaryRole: roleProfile.primaryRole,
+      secondaryRoles: roleProfile.secondaryRoles,
+      roleShares: roleProfile.roleShares,
+      roleSource: "matches",
+    },
   };
 }
 

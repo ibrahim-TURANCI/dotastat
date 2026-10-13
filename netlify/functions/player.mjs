@@ -126,7 +126,12 @@ export default async (request) => {
       },
       // Kisiye ozel alan (canEditRoles/matchRoles) iceren yanit CDN'de
       // paylasilmamali; bu yuzden kendi sayfanda onbellek kapatilir.
-      { cacheSeconds: refresh || isOwnProfile ? 0 : 60 },
+      // `fresh`: istemci CDN kopyasini bilerek atladi (pozisyon kaydi, mac
+      // detayi); bu tek seferlik adresin yaniti da saklanmaz.
+      {
+        cacheSeconds:
+          refresh || isOwnProfile || url.searchParams.has("fresh") ? 0 : 60,
+      },
     );
   } catch (error) {
     return fail("oyuncu-detayi-alinamadi", {

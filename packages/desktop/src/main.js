@@ -14,6 +14,27 @@
  * noktada birlesir.
  */
 
+// VS Code terminalleri `ELECTRON_RUN_AS_NODE=1` tanimlar. Bu degisken varken
+// Electron pencere acmadan duz Node gibi calisir ve uygulama sessizce
+// kapanir. Terminalden de calissin diye surec kendini bu degisken OLMADAN
+// yeniden baslatir; cikti ayni terminale akar, cikis kodu aynen doner.
+if (process.env.ELECTRON_RUN_AS_NODE && process.versions.electron) {
+  const { spawn } = require("node:child_process");
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const child = spawn(process.execPath, process.argv.slice(1), {
+    env,
+    stdio: "inherit",
+    windowsHide: false,
+  });
+  child.on("exit", (code) => process.exit(code ?? 0));
+  child.on("error", (error) => {
+    console.error("DotaStat baslatilamadi:", error);
+    process.exit(1);
+  });
+  return;
+}
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { BrowserWindow, app, ipcMain, shell } = require("electron");

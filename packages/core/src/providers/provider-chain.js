@@ -14,9 +14,18 @@
  *
  * `lastUsedProvider` alani hangi kaynagin cevap verdigini tutar; arayuzde
  * "veri Stratz'tan geldi" rozetini gostermek icin kullanilir.
+ *
+ * METOT BAZLI SIRA (`options.order`): her uc icin ayri oncelik verilebilir
+ * (ornek: mac listesi Stratz -> OpenDota, profil OpenDota -> Stratz). Sirada
+ * adi gecmeyen saglayicilar listenin sonuna, verilis sirasiyla eklenir.
  */
 
-import { shouldFailover } from "./provider-errors.js";
+import {
+  providerError,
+  RATE_LIMIT,
+  shouldFailover,
+  UNAVAILABLE,
+} from "./provider-errors.js";
 
 /** Zincirin destekledigi metotlar. Hepsi ayni imzayi tasir. */
 const CHAINED_METHODS = [
@@ -24,13 +33,16 @@ const CHAINED_METHODS = [
   "getRecentMatches",
   "getPlayerStats",
   "getHeroPerformance",
-  // Yalnizca OpenDota uygular; metodu olmayan saglayici atlanir.
+  // Tek macin tam kadrosu (OpenDota ve Stratz).
   "getMatchDetail",
 ];
 
 /**
- * @param {Array<Record<string, any>>} providers Oncelik sirasiyla
- * @param {{ onFailover?: (info: { provider: string, code: string, message: string }) => void }} [options]
+ * @param {Array<Record<string, any>>} providers Varsayilan oncelik sirasiyla
+ * @param {{
+ *   onFailover?: (info: { provider: string, code: string, message: string }) => void,
+ *   order?: Record<string, string[]>
+ * }} [options] `order`: metot adi -> saglayici adlari (oncelik sirasiyla)
  */
 export function createProviderChain(providers, options = {}) {
   const chain = (Array.isArray(providers) ? providers : []).filter(Boolean);
@@ -44,6 +56,29 @@ export function createProviderChain(providers, options = {}) {
   /** @type {{ provider: string, code: string, message: string }[]} */
   const failures = [];
   let lastUsedProvider = "";
+
+  const order =
+    options.order && typeof options.order === "object" ? options.order : {};
+
+  /**
+   * Metodun saglayici sirasi: `order[method]` once, kalanlar varsayilan
+   * sirayla arkasina.
+   * @param {string} method
+   */
+  function chainFor(method) {
+    const names = Array.isArray(order[method]) ? order[method] : [];
+    if (!names.length) {
+      return chain;
+    }
+    const rank = (provider) => {
+      const index = names.indexOf(String(provider.name || ""));
+      return index === -1 ? names.length : index;
+    };
+    return chain
+      .map((provider, index) => ({ provider, index }))
+      .sort((a, b) => rank(a.provider) - rank(b.provider) || a.index - b.index)
+      .map((row) => row.provider);
+  }
 
   /**
    * Bir metodu zincir boyunca dener.
@@ -65,7 +100,7 @@ export function createProviderChain(providers, options = {}) {
     let hasRejected = false;
     const accept = typeof options.accept === "function" ? options.accept : null;
 
-    for (const provider of chain) {
+    for (const provider of chainFor(method)) {
       // Anahtari olmayan saglayici (ornek: STRATZ_API_KEY bos) atlanir.
       if (provider.isConfigured === false) {
         continue;
@@ -194,29 +229,41 @@ export function createProviderChain(providers, options = {}) {
    * @param {{ limit?: number }} [options]
    */
   client.getRecentMatchesFreshest = async (playerId, options = {}) => {
-    const usable = chain.filter(
+    const usable = chainFor("getRecentMatches").filter(
       (provider) =>
         provider.isConfigured !== false &&
         typeof provider.getRecentMatches === "function",
     );
 
-    const results = await Promise.all(
-      usable.map(async (provider) => {
-        try {
-          const rows = await provider.getRecentMatches(playerId, {
-            limit: options.limit,
-          });
-          return { provider, rows: Array.isArray(rows) ? rows : [] };
-        } catch (error) {
-          failures.push({
-            provider: String(provider.name || ""),
-            code: String(/** @type {any} */ (error)?.code || "unknown"),
-            message: String(/** @type {any} */ (error)?.message || error),
-          });
-          return null;
+    // ISTEK TASARRUFU: kaynaklar SIRAYLA sorulur; birincil kaynak mac
+    // donerse digerine gidilmez. Eskiden tazelemede iki kaynaga AYNI ANDA
+    // gidiliyordu (oyuncu basina 2 istek). Birincil kaynak Stratz yeni maci
+    // dakikalar icinde gordugu icin ikinci istek cogu zaman bosa gidiyordu.
+    // Birincil hata verir ya da bos donerse siradaki denenir.
+    /** @type {Array<{ provider: Record<string, any>, rows: Array<Record<string, any>> }|null>} */
+    const results = [];
+    for (const provider of usable) {
+      try {
+        const rows = await provider.getRecentMatches(playerId, {
+          limit: options.limit,
+        });
+        results.push({ provider, rows: Array.isArray(rows) ? rows : [] });
+        if (Array.isArray(rows) && rows.length) {
+          break;
         }
-      }),
-    );
+      } catch (error) {
+        failures.push({
+          provider: String(provider.name || ""),
+          code: String(/** @type {any} */ (error)?.code || "unknown"),
+          message: String(/** @type {any} */ (error)?.message || error),
+        });
+        results.push(null);
+        // Kalici hatada (oyuncu yok) sonraki kaynagi denemenin anlami yok.
+        if (!shouldFailover(error)) {
+          break;
+        }
+      }
+    }
 
     /** En yeni macin bitis zamani. */
     const newestAt = (rows) =>
@@ -230,7 +277,28 @@ export function createProviderChain(providers, options = {}) {
       .sort((a, b) => newestAt(b.rows) - newestAt(a.rows))[0];
 
     if (!best) {
-      throw new Error("provider-chain: hicbir kaynak mac veremedi");
+      // Hata kaynak bazinda yazilir ("opendota:rate-limit"): arayuz "Yenile"
+      // neden bir sey getirmedigini bundan soyler. Genel bir mesaj, cevap
+      // veren ama mac donmeyen kaynakla erisilemeyen kaynagi ayirt etmiyordu.
+      const reasons = results.map((row, index) =>
+        row
+          ? String(usable[index].name || "") + ":bos"
+          : String(usable[index].name || "") +
+            ":" +
+            String(
+              failures.findLast(
+                (failure) => failure.provider === usable[index].name,
+              )?.code || "unknown",
+            ),
+      );
+      const allLimited =
+        reasons.length > 0 &&
+        reasons.every((reason) => reason.endsWith(":" + RATE_LIMIT));
+      throw providerError(
+        "kaynak-yok " + reasons.join(" "),
+        allLimited ? RATE_LIMIT : UNAVAILABLE,
+        "chain",
+      );
     }
 
     lastUsedProvider = String(best.provider.name || "");
@@ -246,18 +314,19 @@ export function createProviderChain(providers, options = {}) {
     client.findLiveMatch = (...args) => passthrough.findLiveMatch(...args);
   }
 
-  // Tarama istegi zincirlenmez: destekleyen TUM saglayicilara gonderilir ve
-  // sonuc beklenmez. Amac veriyi almak degil, kaynagi tetiklemek.
+  // Tarama istegi (OpenDota'ya "bu oyuncunun maclarini Steam'den cek")
+  // yalnizca mac listesinin BIRINCIL kaynagina gonderilir ve sonuc beklenmez.
+  // Birincil kaynak Stratz ise (tarama ucu yok) istek atilmaz: OpenDota'yi
+  // taramak, verisini kullanmayacagimiz bir kaynaga istek harcamak olurdu.
   client.requestRefresh = async (...args) => {
-    await Promise.all(
-      chain
-        .filter(
-          (provider) =>
-            provider.isConfigured !== false &&
-            typeof provider.requestRefresh === "function",
-        )
-        .map((provider) => provider.requestRefresh(...args).catch(() => false)),
+    const primary = chainFor("getRecentMatches").find(
+      (provider) =>
+        provider.isConfigured !== false &&
+        typeof provider.getRecentMatches === "function",
     );
+    if (primary && typeof primary.requestRefresh === "function") {
+      await primary.requestRefresh(...args).catch(() => false);
+    }
   };
 
   return client;
