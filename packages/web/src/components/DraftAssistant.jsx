@@ -4,13 +4,15 @@ import "./DraftAssistant.css";
 const STAGE_LABELS = {
   pre: "Pick öncesi",
   active: "Pick sürüyor",
+  planning: "Strateji süresi",
 };
 
 /**
  * Draft asistani.
  *
- * Yalnizca `advice.visible` true iken cizilir; pickler tamamlandiginda
- * cekirdek modul `visible: false` dondurur ve panel hic gorunmez.
+ * Yalnizca `advice.visible` true iken cizilir; strateji suresi de bitince
+ * cekirdek modul `visible: false` dondurur ve panel hic gorunmez. Secilen
+ * hero'lar maca gore puanlariyla gosterilir.
  *
  * @param {{ advice: Record<string, any> }} props
  */
@@ -104,8 +106,23 @@ export function DraftAssistant({ advice }) {
                 <HeroIcon hero={block.filled.hero} size={34} />
                 <div className="draft-suggestion-text">
                   <strong>{block.filled.heroName}</strong>
-                  <span className="muted micro">seçildi</span>
+                  <span className="muted micro">
+                    {block.filled.guessed
+                      ? "seçildi · pozisyon tahmini"
+                      : "seçildi"}
+                    {block.filled.reasons?.length
+                      ? " · " + block.filled.reasons.join(" · ")
+                      : ""}
+                  </span>
                 </div>
+                {block.filled.score != null ? (
+                  <span
+                    className="draft-score"
+                    title="Seçimin maça uyum puanı (pick ilerledikçe güncellenir)"
+                  >
+                    {block.filled.score}
+                  </span>
+                ) : null}
               </div>
             ) : (
               <ul className="draft-suggestions">

@@ -14,7 +14,10 @@
  *   - useOverwolf    : Overwolf/DotaPlus loglarindan canli draft okunsun mu
  *   - startMinimized : acilista pencere gosterilmesin, tepside kalsin
  *   - autoLaunch     : Windows oturumu acilinca uygulama kendiliginden kalksin
- *   - showOverlay    : oyun ici overlay (draft + item tavsiyesi) gosterilsin
+ *   - showOverlay    : (eski) oyun ici overlay; yeni anahtarlar yoksa gecerli
+ *   - showDraftOverlay / showItemOverlay : overlay'in draft / item modu
+ *   - itemOverlayLayout / itemOverlayHeight / itemOverlayOpacity : item
+ *                      seridinin dizilimi, yuksekligi (%), opakligi (%)
  */
 
 const crypto = require("node:crypto");
@@ -85,6 +88,19 @@ const DEFAULTS = {
   // (bkz. services/overlay.js). Yeni anahtar oldugu icin goc gerekmez; dosyada
   // yoksa DEFAULTS'tan acik gelir.
   showOverlay: true,
+  // Overlay'in iki modu ayri ayri acilip kapanir. Dosyada yoksa eski tek
+  // anahtardan (`showOverlay`) turetilir; bkz. read().
+  showDraftOverlay: true,
+  showItemOverlay: true,
+  // Item seridinin dizilimi: "horizontal" (4 yan yana), "vertical" (en
+  // sagdaki itemin ustune dogru), "grid" (2x2; alt satir en sagdaki iki
+  // itemin yeri). Hepsi ayni sag alt koseye yaslanir.
+  itemOverlayLayout: "horizontal",
+  // Seridin alt kenarinin ekranin altindan uzakligi (yuksekligin yuzdesi).
+  // 19 = Zula panelinin hemen ustu; daha asagisi Dota'nin HUD'una biner.
+  itemOverlayHeight: 19,
+  // Item seridinin opakligi (yuzde).
+  itemOverlayOpacity: 75,
   // Kullanicinin ekranda sectigi pozisyon ("pos1".."pos5"; bos = secilmedi).
   // Draft ve item tavsiyesi bunu kullanir; canli mac yayiniyla siteye de
   // gider (bkz. app.js -> localRoles).
@@ -189,6 +205,10 @@ function createSettingsStore(filePath) {
       openDotaApiKey:
         process.env.OPENDOTA_API_KEY || stored.openDotaApiKey || "",
       stratzApiKey: process.env.STRATZ_API_KEY || stored.stratzApiKey || "",
+      // Ayri overlay anahtarlari yokken eski tek kutucugun degeri gecerli:
+      // overlay'i kapatmis kullanicida ikisi de kapali baslar.
+      showDraftOverlay: stored.showDraftOverlay ?? stored.showOverlay !== false,
+      showItemOverlay: stored.showItemOverlay ?? stored.showOverlay !== false,
     };
 
     // Goc diske de yazilir; aksi halde her acilista yeniden uygulanir ve

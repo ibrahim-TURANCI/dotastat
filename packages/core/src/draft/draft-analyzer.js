@@ -240,7 +240,7 @@ function summarizeTeamDraft(teamHeroes = []) {
  *
  * Ihtiyac puani heronun GENEL ozelliklerine bakar (teamfight, push, tempo...)
  * ve maca ozel degildir. Tavansiz hali 45'e kadar cikiyor, counter (+16) ve
- * combo (+18) gibi maca ozel sinyalleri eziyordu: cok yonlu "her seyi iyi
+ * combo gibi maca ozel sinyalleri eziyordu: cok yonlu "her seyi iyi
  * yapan" herolar her draftta ayni siralamayla one cikiyordu.
  */
 const NEED_SCORE_MAX = 20;
@@ -254,6 +254,27 @@ const NEED_SCORE_MAX = 20;
  * ve agirlik tam degerine cikar.
  */
 const NEED_CONFIDENCE_BY_PICKS = [0.4, 0.6, 0.8, 1];
+
+/**
+ * Combo ve sinerji etiketlerinden gelen puan: ortak basina ve etiket basina
+ * bonuslar toplanir, toplam YUMUSAK tavanla sinirlanir. Eskiden combo ortagi
+ * basina +18 ve etiket basina +16'ya kadar ekleniyordu; combo listesi uzun
+ * hero'lar (Faceless Void, Dark Seer) counter ve tehdit cevabi gibi rakibe
+ * ozel sinyalleri geride birakip her draftta ilk siraya oturuyordu.
+ */
+const COMBO_PER_PARTNER = 10;
+const COMBO_SCORE_MAX = 18;
+
+/**
+ * Yumusak tavan: deger tavana yaklastikca yavaslar, siralama korunur. Sert
+ * kesmede (Math.min) hero'larin cogu tavana takilip esit puan aliyordu.
+ * @param {number} value
+ * @param {number} max
+ * @returns {number}
+ */
+function softCap(value, max) {
+  return value > 0 ? max * (1 - Math.exp(-value / max)) : value;
+}
 
 function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
   const candidate = normalizeHeroName(candidateHero);
@@ -316,11 +337,7 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
     NEED_CONFIDENCE_BY_PICKS[
       Math.min(ownTeam.length, NEED_CONFIDENCE_BY_PICKS.length - 1)
     ];
-  // YUMUSAK tavan: puan tavana yaklastikca yavaslar ama siralama korunur.
-  // Sert kesmede (Math.min) hero'larin cogu tavana takilip esit puan aliyor,
-  // sira katalog sirasina dusuyordu.
-  score +=
-    NEED_SCORE_MAX * (1 - Math.exp(-needScore / NEED_SCORE_MAX)) * confidence;
+  score += softCap(needScore, NEED_SCORE_MAX) * confidence;
 
   // Combo IKI YONDE aranir: veri simetrik tutulmamis, aday takim
   // arkadasini listelemiyor olsa bile takim arkadasi adayi listeliyor olabilir.
@@ -329,8 +346,11 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
       (draft.comboWithHeroes || []).includes(ally) ||
       getDraftMetrics(ally).comboWithHeroes.includes(candidate),
   );
+  // Combo ve sinerji etiketleri ayri toplanir; tavan toplama uygulanir
+  // (bkz. COMBO_SCORE_MAX).
+  let comboScore = 0;
   if (comboPartners.length > 0) {
-    score += comboPartners.length * 18;
+    comboScore += comboPartners.length * COMBO_PER_PARTNER;
     reasons.push("Combo: " + comboPartners.map(heroDisplayName).join(", "));
   }
 
@@ -343,7 +363,7 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
           (profile?.draft?.synergyTags || []).includes("melee_core"),
       ).length;
     if (meleeCoreCount > 0) {
-      score += 16;
+      comboScore += 8;
       reasons.push("Melee carry ile yüksek sinerji");
     }
   }
@@ -357,7 +377,7 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
       );
     });
     if (hasAoeFollowup) {
-      score += 14;
+      comboScore += 7;
       reasons.push("Vacuum benzeri AoE combo penceresi güçlü");
     }
   }
@@ -374,10 +394,11 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
       );
     });
     if (hasRangedBurst) {
-      score += 16;
+      comboScore += 8;
       reasons.push("Chronosphere + ranged burst sinerjisi mevcut");
     }
   }
+  score += softCap(comboScore, COMBO_SCORE_MAX);
 
   if (
     Number(enemySummary.avg.pushPotential || 0) >= 6.8 &&
@@ -395,6 +416,7 @@ function scoreDraftPick({ candidateHero, teamHeroes = [], enemyHeroes = [] }) {
 }
 
 export {
+  softCap,
   getDraftHeroProfile,
   getDraftMetrics,
   summarizeTeamDraft,

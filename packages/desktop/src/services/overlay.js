@@ -3,12 +3,13 @@
  * gibi soluk duran kucuk bir tavsiye penceresi. Iki modu var:
  *   - "draft": hero secimi sirasinda ekranin SAG kenarinda, pozisyon basina
  *     alt alta hero onerileri ve puanlari (son pick yapilinca kaybolur).
- *   - "items": mac basladiktan sonra sag altta item tavsiyesi seridi.
+ *   - "items": mac basladiktan sonra sag altta item tavsiyesi seridi;
+ *     dizilimi, yuksekligi ve opakligi ayarlardan secilir.
  *
  * PENCERE: seffaf, cercevesiz, her zaman ustte, odak ALMAZ ve fareyi ALTINA
  * gecirir. Yani oyunda tiklamayi, kamerayi, kisayollari hic etkilemez.
  *
- * NE ZAMAN GORUNUR: ayar acik + Dota on planda + (hero secimi suruyor ve
+ * NE ZAMAN GORUNUR: o modun ayari acik + Dota on planda + (hero secimi suruyor ve
  * draft onerisi var) ya da (mac suruyor ve kendi satirimiz icin en az bir
  * item tavsiyesi var).
  *
@@ -27,21 +28,36 @@ const DOTA_PROCESS = "dota2";
 const POLL_MS = 1200;
 
 /**
- * 4 ikon (44x32) + araliklar. Yukseklik ikonla AYNI: pencere seridin alt
- * kenarina gore konumlaniyor, fazlasi yalnizca hesabi bulandirir.
+ * Item seridinin dizilimleri: 4 ikon (44x32), 4 px aralik. Pencere ikonlarla
+ * AYNI boyda: alt kenara ve sag kenara gore konumlaniyor, fazlasi yalnizca
+ * hesabi bulandirir. Uc dizilim de ayni sag alt koseye yaslanir:
+ *   - horizontal: 4 yan yana (varsayilan)
+ *   - vertical:   en sagdaki itemin yerinden yukari dogru alt alta
+ *   - grid:       2x2; alt satir en sagdaki iki itemin yeri
+ * Arayuzdeki on izleme (web SettingsPanel) ayni olculeri kullanir.
  */
-const WIDTH = 190;
-const HEIGHT = 32;
+const ITEM_LAYOUTS = {
+  horizontal: { width: 188, height: 32 },
+  vertical: { width: 44, height: 140 },
+  grid: { width: 92, height: 68 },
+};
 /**
- * Pencerenin alt kenarinin ekranin altindan uzakligi (ekran yuksekligine
- * oran). Dota'nin HUD'u ekran YUKSEKLIGIYLE olceklendigi icin oran her
+ * Seridin alt kenarinin ekranin altindan uzakligi (yukseklige yuzde).
+ * Dota'nin HUD'u ekran YUKSEKLIGIYLE olceklendigi icin oran her
  * cozunurlukte ayni yere denk gelir.
  *
- * Serit Zula (stash) panelinin tam ustune oturur: 1080p'de panelin ust
- * kenari ~204 px. Zula ile hizli alim arasindaki bosluk denendi ama o alan
- * oyunda bazi durumlarda doluyor.
+ * En dusuk deger Zula (stash) panelinin tam ustu: 1080p'de panelin ust
+ * kenari ~204 px. Daha asagisi HUD'a biner; Zula ile hizli alim arasindaki
+ * bosluk denendi ama o alan oyunda bazi durumlarda doluyor.
  */
-const BOTTOM_RATIO = 0.19;
+const MIN_HEIGHT_PERCENT = 19;
+/**
+ * Ekranin ustundeki ag bilgisi (FPS / ping) alani; serit bunun altinda
+ * kalir.
+ */
+const TOP_RESERVED_PERCENT = 7;
+const MIN_OPACITY_PERCENT = 15;
+const MAX_OPACITY_PERCENT = 100;
 /** Zula paneli gibi ekranin sag kenarina yaslidir. */
 const RIGHT_MARGIN = 0;
 
@@ -64,10 +80,12 @@ const DRAFT_RIGHT_MARGIN = 6;
  * @param {Object} options
  * @param {{ info: Function, warn: Function }} options.logger
  * @param {() => Promise<Record<string, any>>} options.getState
- * @param {() => boolean} options.isEnabled
+ * @param {(mode: "draft"|"items") => boolean} options.isEnabled Mod acik mi
+ * @param {() => { layout?: string, height?: number, opacity?: number }} [options.getItemConfig]
+ *   Item seridinin dizilim / yukseklik (%) / opaklik (%) ayari
  */
 function createOverlay(options) {
-  const { logger, getState, isEnabled } = options;
+  const { logger, getState, isEnabled, getItemConfig } = options;
   const foreground = createForegroundWatcher({ logger });
 
   /** @type {BrowserWindow|null} */
@@ -79,6 +97,25 @@ function createOverlay(options) {
 
   /** Gosterilen mod ("items" | "draft"); konum ve boyut buna gore. */
   let mode = "items";
+  /** Item seridinin dizilim ayari; degisince pencere yeniden konumlanir. */
+  let itemConfig = readItemConfig();
+
+  /**
+   * Item seridinin ayarlari, gecerli araliga kirpilmis.
+   * @returns {{ layout: string, height: number, opacity: number }}
+   */
+  function readItemConfig() {
+    const raw = getItemConfig?.() || {};
+    const layout = ITEM_LAYOUTS[raw.layout] ? raw.layout : "horizontal";
+    const opacity = Number(raw.opacity);
+    return {
+      layout,
+      height: Number(raw.height) || MIN_HEIGHT_PERCENT,
+      opacity: Number.isFinite(opacity)
+        ? Math.min(MAX_OPACITY_PERCENT, Math.max(MIN_OPACITY_PERCENT, opacity))
+        : 75,
+    };
+  }
 
   /** Ekran yuksekligi / 1080: draft modunun olcegi. */
   function scale() {
@@ -100,11 +137,19 @@ function createOverlay(options) {
         height: Math.round(DRAFT_HEIGHT * factor),
       };
     }
+    const size = ITEM_LAYOUTS[itemConfig.layout];
+    // Alt sinir Zula'nin ustu, ust sinir ag bilgisi alaninin alti.
+    const maxPercent =
+      100 - TOP_RESERVED_PERCENT - (size.height / area.height) * 100;
+    const percent = Math.min(
+      maxPercent,
+      Math.max(MIN_HEIGHT_PERCENT, itemConfig.height),
+    );
     return {
-      x: Math.round(area.x + area.width - WIDTH - RIGHT_MARGIN),
-      y: Math.round(area.y + area.height * (1 - BOTTOM_RATIO) - HEIGHT),
-      width: WIDTH,
-      height: HEIGHT,
+      x: Math.round(area.x + area.width - size.width - RIGHT_MARGIN),
+      y: Math.round(area.y + area.height * (1 - percent / 100) - size.height),
+      width: size.width,
+      height: size.height,
     };
   }
 
@@ -166,7 +211,7 @@ function createOverlay(options) {
     }
     busy = true;
     try {
-      if (!isEnabled()) {
+      if (!isEnabled("draft") && !isEnabled("items")) {
         hide();
         return;
       }
@@ -182,19 +227,27 @@ function createOverlay(options) {
       const nextMode = state?.mode === "draft" ? "draft" : "items";
       const hasContent =
         nextMode === "draft" ? state?.roles?.length : state?.items?.length;
-      if (!state?.active || !hasContent) {
+      if (!state?.active || !hasContent || !isEnabled(nextMode)) {
         hide();
         return;
       }
 
       const target = ensureWindow();
-      const modeChanged = nextMode !== mode;
+      const nextConfig = readItemConfig();
+      const modeChanged =
+        nextMode !== mode ||
+        (nextMode === "items" &&
+          (nextConfig.layout !== itemConfig.layout ||
+            nextConfig.height !== itemConfig.height));
       mode = nextMode;
+      itemConfig = nextConfig;
       const payload = JSON.stringify({
         mode,
         hero: state.hero,
         items: state.items,
         roles: state.roles,
+        layout: itemConfig.layout,
+        opacity: itemConfig.opacity,
       });
       if (payload !== lastPayload) {
         lastPayload = payload;

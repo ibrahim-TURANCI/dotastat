@@ -257,26 +257,43 @@ function DraftTab() {
         4 hero, altında da bir <strong>çeşitlilik önerisi</strong> gösterilir.
         Bir hero yalnızca en yüksek puanı aldığı pozisyonda çıkar.
       </p>
+      <p>
+        Oyuncu havuzu ve combo gibi maçtan bağımsız kalemler küçük tutulur;
+        sıralamayı çoğunlukla rakibe göre olanlar (counter, tehdide cevap, takım
+        ihtiyacı) belirler. <strong>Seçilen hero</strong> da aynı kalemlerle
+        puanlanır ve her pick'te güncellenir. Pickler bitince öneriler kalkar,
+        seçilen hero'lar puanlarıyla <strong>strateji süresi</strong> boyunca
+        görünür.
+      </p>
 
       <h4>Puan kalemleri</h4>
       <ScoreTable
         rows={[
           [
             "Oyuncu havuzu",
-            "+34 / +20 / +6 / −30",
+            "+16 / +10 / +3 / −20",
             "imza / tercih / deniyor / zayıf; pozisyonda oyuncu varsa",
           ],
           [
             "Son maçlarda oynama",
-            "18'e kadar, ±20",
+            "10'a kadar, ±10",
             "maç sayısı ve kazanma oranı",
+          ],
+          [
+            "Oyuncu havuzu toplamı",
+            "en fazla ~22",
+            "havuz + son maçlar yumuşak tavanla sınırlanır; zayıf hero cezası tavansız",
           ],
           [
             "Tehdide cevap",
             "+10 … +28",
             "rakipte o özellikten ne kadar çok varsa",
           ],
-          ["Combo", "+18", "takımdaki her combo ortağı için"],
+          [
+            "Combo / sinerji",
+            "+10 / +7…8, toplam en fazla ~18",
+            "her combo ortağı / sinerji etiketi (melee carry, vacuum, chrono…)",
+          ],
           ["Counter", "+16", "bu hero'dan zarar gören her rakip için"],
           ["Counter'lanıyor", "−20", "bu hero'yu zorlayan her rakip için"],
           [
@@ -286,7 +303,7 @@ function DraftTab() {
           ],
           [
             "Pozisyon uyumu",
-            "+8 / +4 / −4",
+            "+4 / +2 / −3",
             "asıl pozisyon / tek pozisyonlu / çok pozisyonlu hero'nun ikincili",
           ],
         ]}
@@ -297,6 +314,10 @@ function DraftTab() {
         <li>Senin seçtiğin pozisyon (üstteki "Pozisyonun" alanı).</li>
         <li>Overwolf'un pick sırasındaki pozisyon tahmini.</li>
         <li>Kadrodaki ana rolü, sonra ikincil rolleri.</li>
+        <li>
+          İki oyuncu aynı pozisyonu seçtiyse pick yapan pozisyonu alır; diğeri
+          kimsenin seçmediği boş bir pozisyona geçer, önerileri kaybolmaz.
+        </li>
         <li>
           Pick başlamadan, maçta görünmeyen <strong>online arkadaşlar</strong>{" "}
           "olası" olarak boş pozisyonlara yerleşir; havuzları yarım ağırlıkla

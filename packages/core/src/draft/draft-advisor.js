@@ -9,7 +9,14 @@
  *   2. "active"   - Pickler suruyor. Kendi takimin + rakip takimin secimlerine
  *                   gore skorlanir; counter, sinerji ve rakibin ozellikleri
  *                   birlikte degerlendirilir.
- *   3. "complete" - 10 pick tamamlandi. Asistan GORUNMEZ (visible: false).
+ *   3. "planning" - 10 pick tamamlandi, strateji suresi suruyor. Yeni oneri
+ *                   yok; secilen hero'lar maca gore puanlariyla gorunur.
+ *   4. "complete" - Strateji suresi de bitti. Asistan GORUNMEZ
+ *                   (visible: false).
+ *
+ * SECILEN HERO'NUN PUANI: dolu pozisyondaki hero, onerilerle AYNI puanlama
+ * ile (kendisi haric takim + rakip pickleri) her guncellemede yeniden
+ * puanlanir; pick ilerledikce secimin maca uyumu gorulur.
  *
  * POZISYONLAR: Overwolf pick sirasinda her oyuncunun pozisyonunu tahmin eder
  * ve bu tahmin genelde dogrudur. O bilgi varsa (`lineup`) takim arkadasinin
@@ -39,7 +46,7 @@ import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { detectThreats } from "../live/threats.js";
 import { shrunkWinRate } from "../players/hero-pool.js";
 import { ROLE_KEYS, ROLE_LABELS } from "../players/player-types.js";
-import { getDraftMetrics, scoreDraftPick } from "./draft-analyzer.js";
+import { getDraftMetrics, scoreDraftPick, softCap } from "./draft-analyzer.js";
 
 /** Bir takimin toplam pick sayisi. */
 const PICKS_PER_TEAM = 5;
@@ -53,8 +60,7 @@ const DEFAULT_SUGGESTIONS_PER_ROLE = 4;
  *
  * Sabit degil, rakipte o ozelligi tasiyan hero sayisiyla buyur: tek bir
  * Bounty Hunter'a karsi Oracle secmek zorunlu degil, ama Viper + Silencer +
- * Venomancer'a karsi dispel neredeyse sart. Tavan, bonusun oyuncunun hero
- * havuzunu (imza kahramani +34) tamamen ezmemesi icin.
+ * Venomancer'a karsi dispel neredeyse sart.
  */
 const ANSWER_BONUS_BASE = 10;
 const ANSWER_BONUS_PER_HERO = 6;
@@ -65,10 +71,22 @@ const ANSWER_BONUS_MAX = 28;
  * o pozisyonda oynanan uzman hero'lara ek bonus. Cok pozisyonlu bir hero'nun
  * ikincil pozisyonu hafif geri itilir. Amac: pos4 listesinde "pos4 de
  * oynanabilen" bir pos5 hero'su degil, gercek bir pos4 hero'su one ciksin.
+ * Maca ozel degil; bu yuzden kucuk tutulur.
  */
-const PRIMARY_POSITION_BONUS = 8;
-const SPECIALIST_BONUS = 4;
-const OFF_POSITION_PENALTY = 4;
+const PRIMARY_POSITION_BONUS = 4;
+const SPECIALIST_BONUS = 2;
+const OFF_POSITION_PENALTY = 3;
+
+/**
+ * Oyuncunun hero havuzundan gelen (maca ozel OLMAYAN) puanin yumusak tavani.
+ *
+ * Eskiden imza kahramani +34, ustune son maclar +18 ve kazanma orani +20'ye
+ * kadar ekleniyordu: ayni oyuncunun ayni hero'lari, rakip ne secerse secsin
+ * buyuk farkla ilk siradaydi. Artik havuz bir "egilim"; counter, tehdit
+ * cevabi ve takim ihtiyaci siralamayi degistirebilir. Eksi puan (zayif
+ * hero) tavanlanmaz.
+ */
+const AFFINITY_SCORE_MAX = 22;
 
 /** Rakipte bu adayi counter'layan her hero icin ceza. */
 const COUNTERED_PENALTY = 20;
@@ -151,22 +169,44 @@ function countersOf(heroKey, overrides = {}) {
 }
 
 /**
+ * Strateji (planlama) suresinden SONRAKI evreler: draft bitmistir. GSI bu
+ * evrelerde draft gondermez; pick sayisi 0 gorunur ve "pre" sanilirdi.
+ */
+const POST_DRAFT_PHASES = [
+  "TEAM_SHOWCASE",
+  "WAIT_FOR_MAP_TO_LOAD",
+  "PRE_GAME",
+  "GAME_IN_PROGRESS",
+  "POST_GAME",
+];
+
+/**
+ * Pickler bittikten sonra asistanin acik kaldigi evreler: hero secimi
+ * (son pick ile strateji suresi arasindaki an) ve strateji suresi.
+ */
+const PLANNING_PHASES = ["HERO_SELECTION", "STRATEGY_TIME"];
+
+/**
  * Draft'in hangi asamada oldugunu belirler.
  *
  * @param {{ picks?: Array<{ hero: string }>, phase?: string }} input
- * @returns {"pre"|"active"|"complete"}
+ * @returns {"pre"|"active"|"planning"|"complete"}
  */
 export function resolveDraftStage(input = {}) {
   const picks = Array.isArray(input.picks) ? input.picks : [];
   const phase = String(input.phase || "").toUpperCase();
   const pickCount = picks.filter((row) => row?.hero).length;
 
-  // Oyun basladiysa draft bitmistir; asistanin isi kalmaz.
-  if (phase.includes("GAME_IN_PROGRESS") || phase.includes("POST_GAME")) {
+  // Planlama bittiyse draft bitmistir; asistanin isi kalmaz.
+  if (POST_DRAFT_PHASES.some((name) => phase.includes(name))) {
     return "complete";
   }
   if (pickCount >= TOTAL_PICKS) {
-    return "complete";
+    // Pickler bitti ama strateji suresi suruyor: secilen hero'lar puanlariyla
+    // gorunmeye devam eder.
+    return PLANNING_PHASES.some((name) => phase.includes(name))
+      ? "planning"
+      : "complete";
   }
   if (pickCount === 0) {
     return "pre";
@@ -193,22 +233,23 @@ function playerAffinity(player, stats, heroKey) {
   let score = 0;
 
   if ((profile.signatureHeroes || []).map(normalizeHeroKey).includes(key)) {
-    score += 34;
+    score += 16;
     reasons.push(player.name + " imza kahramanı");
   } else if (
     (profile.preferredHeroes || []).map(normalizeHeroKey).includes(key)
   ) {
-    score += 20;
+    score += 10;
     reasons.push(player.name + " tercih ettiği havuzda");
   } else if (
     (profile.experimentalHeroes || []).map(normalizeHeroKey).includes(key)
   ) {
-    score += 6;
+    score += 3;
     reasons.push(player.name + " deniyor");
   }
 
+  let penalty = 0;
   if ((profile.weakHeroes || []).map(normalizeHeroKey).includes(key)) {
-    score -= 30;
+    penalty -= 20;
     reasons.push(player.name + " bu kahramanda zayıf");
   }
 
@@ -222,10 +263,8 @@ function playerAffinity(player, stats, heroKey) {
     const wins = Number.isFinite(Number(played.wins))
       ? Number(played.wins)
       : Math.round(Number(played.winRate || 0) * played.matches);
-    const winBonus = Math.round(
-      (shrunkWinRate(wins, played.matches) - 0.5) * 40,
-    );
-    score += Math.min(18, played.matches * 2) + winBonus;
+    const winBonus = (shrunkWinRate(wins, played.matches) - 0.5) * 20;
+    score += Math.min(10, played.matches) + winBonus;
     reasons.push(
       "Son maçlarda " +
         played.matches +
@@ -235,7 +274,7 @@ function playerAffinity(player, stats, heroKey) {
     );
   }
 
-  return { score, reasons };
+  return { score: softCap(score, AFFINITY_SCORE_MAX) + penalty, reasons };
 }
 
 /**
@@ -350,9 +389,11 @@ function scoreCandidate(input) {
  *
  * @param {Array<{ player: Record<string, any>, role?: string, matchRole?: string, stats?: Object }>} knownPlayers
  * @param {string[]} [slots] Acik pozisyonlar
+ * @param {Set<string>} [claimed] Takim diziliminde bir oyuncunun bildirdigi
+ *   pozisyonlar; mac pozisyonu acik olmayan oyuncu once bunlarin disina konur
  * @returns {Map<string, { player: Record<string, any>, role?: string, stats?: Object }>}
  */
-function assignPlayers(knownPlayers, slots = ROLE_KEYS) {
+function assignPlayers(knownPlayers, slots = ROLE_KEYS, claimed = new Set()) {
   const assigned = new Map();
   const usedPlayers = new Set();
   /** @param {(row: Record<string, any>, slot: string) => boolean} fits */
@@ -381,6 +422,21 @@ function assignPlayers(knownPlayers, slots = ROLE_KEYS) {
       !row.matchRole &&
       (row.player.dotaProfile?.secondaryRoles || []).includes(slot),
   );
+  // Mac pozisyonu ACIK DEGILSE (iki oyuncu ayni pozisyonu secti ve digeri
+  // pick yapti, ya da pozisyonu baskasi aldi) oyuncu dusmez: once kendi
+  // rolleri, yoksa kalan herhangi bir acik pozisyon. Eskiden atanmadan
+  // kaliyordu ve onerileri kayboluyordu.
+  // Baska bir oyuncunun dizilimde bildirdigi pozisyon once bos birakilir.
+  const free = (slot) => !claimed.has(slot);
+  pass(
+    (row, slot) =>
+      Boolean(row.matchRole) &&
+      free(slot) &&
+      (row.player.dotaProfile?.primaryRole === slot ||
+        (row.player.dotaProfile?.secondaryRoles || []).includes(slot)),
+  );
+  pass((row, slot) => Boolean(row.matchRole) && free(slot));
+  pass((row) => Boolean(row.matchRole));
   return assigned;
 }
 
@@ -557,6 +613,126 @@ function pickVariety(rows, chosen, used, owner) {
 }
 
 /**
+ * Takim dizilimini (Overwolf tahmini + oyuncularin "Pozisyon sec" beyani)
+ * dolu pozisyonlara ve pozisyon -> oyuncu adina cevirir.
+ *
+ * CAKISMA: iki oyuncu ayni pozisyonu bildirebilir. Eskiden ilk satir
+ * pozisyonu aliyor, ikincisi hicbir yere yerlesmiyordu: biri pick yapinca
+ * digerinin onerileri kayboluyor, iki pick de yapildiysa ikinci hero hic
+ * gorunmuyordu. Simdi pick yapan once yerlesir; pozisyonu dolu olan pick
+ * hero'nun oynanabildigi BOS (kimsenin bildirmedigi) bir pozisyona tasinir.
+ * Pick yapmamis ikinci oyuncunun adi cagirana `displacedNames` olarak doner.
+ *
+ * PLANLAMA: pickler bittiginde dizilimde yeri olmayan takim hero'lari bos
+ * pozisyonlara hero'nun rollerine gore yerlestirilir (`guessed`). Draft
+ * surerken bu tahmin yapilmaz: yaniltiyordu (bkz. dosya basi).
+ *
+ * @param {Array<{ position: number, hero?: string, heroConfirmed?: boolean, name?: string }>} lineup
+ * @param {string[]} teamHeroes
+ * @param {boolean} planning
+ * @param {Record<string, Record<string, any>>} overrides
+ * @returns {{ filled: Map<string, Record<string, any>>, names: Map<string, string>, displacedNames: string[] }}
+ */
+function resolveLineup(lineup, teamHeroes, planning, overrides) {
+  /** @type {Map<string, Record<string, any>>} */
+  const filled = new Map();
+  /** @type {Map<string, string>} pozisyon -> oyuncu adi (kadroda olmasa da) */
+  const names = new Map();
+  const displacedPicks = [];
+  const displacedNames = [];
+
+  /** @param {Record<string, any>} row */
+  const pickedHero = (row) => {
+    const hero = normalizeHeroKey(row.hero || "");
+    return hero &&
+      row.heroConfirmed !== false &&
+      (teamHeroes.includes(hero) || row.heroConfirmed === true)
+      ? hero
+      : "";
+  };
+  const placed = (hero) =>
+    [...filled.values()].some((entry) => entry.hero === hero);
+
+  // Once pick yapanlar: pozisyonu kesinlesmistir.
+  for (const row of lineup) {
+    const hero = pickedHero(row);
+    if (!hero || placed(hero)) {
+      continue;
+    }
+    const slot = "pos" + row.position;
+    const entry = {
+      hero,
+      heroName: heroDisplayName(hero),
+      playerName: String(row.name || ""),
+    };
+    if (filled.has(slot)) {
+      displacedPicks.push(entry);
+    } else {
+      filled.set(slot, entry);
+    }
+  }
+  // Sonra pick yapmamis oyuncularin bildirdigi pozisyonlar.
+  for (const row of lineup) {
+    if (pickedHero(row) || !row.name) {
+      continue;
+    }
+    const slot = "pos" + row.position;
+    if (filled.has(slot) || names.has(slot)) {
+      displacedNames.push(String(row.name));
+    } else {
+      names.set(slot, String(row.name));
+    }
+  }
+
+  /**
+   * Hero'lari bos pozisyonlara yerlestirir: once hero'nun en uygun oldugu
+   * (asil rolu) pozisyon, rolu disinda bir pozisyon en son.
+   * @param {Array<Record<string, any>>} entries
+   * @param {boolean} keepClaimed Pick yapmamis oyuncunun bildirdigi pozisyona
+   *   dokunma
+   */
+  const place = (entries, keepClaimed) => {
+    const pairs = [];
+    for (const entry of entries) {
+      const fits = heroSlots(entry.hero, overrides);
+      for (const slot of ROLE_KEYS) {
+        if (!filled.has(slot) && !(keepClaimed && names.has(slot))) {
+          pairs.push({
+            entry,
+            slot,
+            fit: fits.has(slot)
+              ? 100 + positionFit(entry.hero, slot, overrides)
+              : 0,
+          });
+        }
+      }
+    }
+    pairs.sort((a, b) => b.fit - a.fit);
+    for (const { entry, slot } of pairs) {
+      if (!filled.has(slot) && !placed(entry.hero)) {
+        filled.set(slot, entry);
+      }
+    }
+  };
+  place(displacedPicks, true);
+  if (planning) {
+    place(
+      teamHeroes
+        .filter((hero) => !placed(hero))
+        .map((hero) => ({
+          hero,
+          heroName: heroDisplayName(hero),
+          playerName: "",
+          guessed: true,
+        })),
+      false,
+    );
+  }
+
+  return { filled, names, displacedNames };
+}
+
+/**
  * Draft onerisini uretir.
  *
  * @param {Object} input
@@ -628,28 +804,11 @@ export function buildDraftAdvice(input = {}) {
       row.position >= 1 &&
       row.position <= 5,
   );
-  /** @type {Map<string, { hero: string, heroName: string, playerName: string }>} */
-  const filled = new Map();
-  /** @type {Map<string, string>} pozisyon -> oyuncu adi (kadroda olmasa da) */
-  const lineupNames = new Map();
-  for (const row of lineup) {
-    const slot = "pos" + row.position;
-    if (row.name && !lineupNames.has(slot)) {
-      lineupNames.set(slot, String(row.name));
-    }
-    const hero = normalizeHeroKey(row.hero || "");
-    const picked =
-      hero &&
-      row.heroConfirmed !== false &&
-      (teamHeroes.includes(hero) || row.heroConfirmed === true);
-    if (picked && !filled.has(slot)) {
-      filled.set(slot, {
-        hero,
-        heroName: heroDisplayName(hero),
-        playerName: String(row.name || ""),
-      });
-    }
-  }
+  const {
+    filled,
+    names: lineupNames,
+    displacedNames,
+  } = resolveLineup(lineup, teamHeroes, stage === "planning", overrides);
   const openSlots = ROLE_KEYS.filter((slot) => !filled.has(slot));
 
   // Taninan oyuncular kendi takimimizda olanlarla sinirlanir. Hero'sunu
@@ -660,7 +819,48 @@ export function buildDraftAdvice(input = {}) {
   const unpickedPlayers = knownPlayers.filter(
     (row) => !row.hero || !teamHeroes.includes(normalizeHeroKey(row.hero)),
   );
-  const assigned = assignPlayers(unpickedPlayers, openSlots);
+  const assigned = assignPlayers(
+    unpickedPlayers,
+    openSlots,
+    new Set(lineupNames.keys()),
+  );
+
+  // Pozisyonu baskasinda kalan kadro disi oyuncunun adi bos bir pozisyona
+  // tasinir (kadrodaki oyuncu zaten yukarida yerlesti).
+  const assignedNames = new Set(
+    [...assigned.values()].map((row) => row.player.name),
+  );
+  for (const name of displacedNames) {
+    const slot = openSlots.find(
+      (key) => !lineupNames.has(key) && !assigned.has(key),
+    );
+    if (slot && !assignedNames.has(name)) {
+      lineupNames.set(slot, name);
+    }
+  }
+
+  // Secilmis hero'lar da onerilerle ayni puanlamayla, KENDISI HARIC takim
+  // ve GUNCEL rakip picklerine gore puanlanir; pick ilerledikce guncellenir.
+  for (const [slot, entry] of filled) {
+    const picker = knownPlayers.find(
+      (row) => row.hero && normalizeHeroKey(row.hero) === entry.hero,
+    );
+    const scored = scoreCandidate({
+      hero: entry.hero,
+      slot,
+      teamHeroes: teamHeroes.filter((hero) => hero !== entry.hero),
+      enemyHeroes,
+      player: picker?.player || null,
+      stats: picker?.stats || null,
+      enemyThreats,
+      overrides,
+    });
+    filled.set(slot, {
+      ...entry,
+      score: scored.score,
+      reasons: scored.reasons,
+    });
+  }
 
   // Pick oncesi: kesin bilinen oyunculardan bos kalan pozisyonlara online
   // arkadaslar "olasi" olarak yerlesir. Takimdan ilk pick gelince devreden
@@ -680,7 +880,11 @@ export function buildDraftAdvice(input = {}) {
     assigned.set(slot, { ...row, probable: true });
   }
 
-  const candidates = heroKeys().filter((hero) => !unavailable.has(hero));
+  // Planlama evresinde pick kalmadi; yeni oneri uretilmez.
+  const candidates =
+    stage === "planning"
+      ? []
+      : heroKeys().filter((hero) => !unavailable.has(hero));
 
   const scoredBySlot = new Map(
     openSlots.map((slot) => {
@@ -760,6 +964,10 @@ export function buildDraftAdvice(input = {}) {
           " online arkadaş maçta olabilir diye boş pozisyonlara yerleştirildi; hero havuzları yarım ağırlıkla sayıldı.",
       );
     }
+  } else if (stage === "planning") {
+    notes.push(
+      "Pickler tamamlandı. Seçilen hero'ların maça uyum puanı strateji süresi boyunca gösterilir.",
+    );
   } else {
     notes.push(
       "Öneriler kendi " +

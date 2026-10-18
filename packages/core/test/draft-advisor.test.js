@@ -271,3 +271,111 @@ test("pick oncesi online arkadas olasi oyuncu olur, havuzu besinci oneriye girer
   });
   assert.equal(active.probablePlayerCount, 0);
 });
+
+test("iki oyuncu ayni pozisyonu secince, pick yapmayanin onerileri kaybolmaz", () => {
+  const janissary = listRoster().find((row) => row.id === "janissary");
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: picks(["pudge"], ["lion"]),
+    phase: "HERO_SELECTION",
+    knownPlayers: [
+      { player: janissary, team: "radiant", role: "pos3", matchRole: "pos3" },
+    ],
+    lineup: [
+      { position: 3, hero: "pudge", heroConfirmed: true, name: "Ali" },
+      { position: 3, hero: "", name: janissary.name },
+      { position: 5, hero: "", name: "Veli" },
+    ],
+  });
+  const pos3 = advice.blocks.find((row) => row.role === "pos3");
+  assert.equal(pos3.filled?.hero, "pudge");
+  const mine = advice.blocks.find((row) => row.player?.id === "janissary");
+  assert.ok(mine, "pozisyonu dolu oyuncu bos bir pozisyona yerlesmeli");
+  assert.notEqual(mine.role, "pos3");
+  assert.notEqual(mine.role, "pos5", "baskasinin bildirdigi pozisyon alinmaz");
+  assert.ok(mine.suggestions.length > 0);
+});
+
+test("iki oyuncu ayni pozisyondan pick yapinca ikinci hero bos pozisyona tasinir", () => {
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: picks(["axe", "crystal_maiden"], ["lion"]),
+    phase: "HERO_SELECTION",
+    lineup: [
+      { position: 3, hero: "axe", heroConfirmed: true, name: "Ali" },
+      { position: 3, hero: "crystal_maiden", heroConfirmed: true, name: "Can" },
+    ],
+  });
+  const filled = advice.blocks.filter((row) => row.filled);
+  assert.deepEqual(filled.map((row) => row.filled.hero).sort(), [
+    "axe",
+    "crystal_maiden",
+  ]);
+  assert.equal(
+    advice.blocks.find((row) => row.filled?.hero === "crystal_maiden").role,
+    "pos5",
+  );
+});
+
+test("secilen hero maca gore puanlanir ve rakip picklerle guncellenir", () => {
+  const lineup = [{ position: 1, hero: "juggernaut", heroConfirmed: true }];
+  const before = buildDraftAdvice({
+    picks: picks(["juggernaut"], []),
+    phase: "HERO_SELECTION",
+    lineup,
+  });
+  const after = buildDraftAdvice({
+    picks: picks(["juggernaut"], ["axe", "legion_commander"]),
+    phase: "HERO_SELECTION",
+    lineup,
+  });
+  const score = (advice) =>
+    advice.blocks.find((row) => row.role === "pos1").filled.score;
+  assert.equal(typeof score(before), "number");
+  assert.notEqual(score(before), score(after));
+});
+
+test("pickler bitince strateji suresi boyunca secilen hero'lar puanlariyla kalir", () => {
+  const all = picks(
+    ["juggernaut", "lina", "axe", "lion", "crystal_maiden"],
+    ["pudge", "tiny", "riki", "venomancer", "omniknight"],
+  );
+  const advice = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: all,
+    phase: "DOTA_GAMERULES_STATE_STRATEGY_TIME",
+    lineup: [{ position: 2, hero: "lina", heroConfirmed: true }],
+  });
+  assert.equal(advice.stage, "planning");
+  assert.equal(advice.visible, true);
+  const filled = advice.blocks.filter((row) => row.filled);
+  assert.equal(filled.length, 5, "dizilimde olmayanlar tahminle yerlesir");
+  assert.equal(
+    advice.blocks.find((row) => row.role === "pos2").filled.hero,
+    "lina",
+  );
+  for (const block of advice.blocks) {
+    assert.equal(block.suggestions.length, 0);
+    assert.equal(typeof block.filled.score, "number");
+  }
+
+  const later = buildDraftAdvice({
+    myTeam: "radiant",
+    picks: all,
+    phase: "DOTA_GAMERULES_STATE_TEAM_SHOWCASE",
+  });
+  assert.equal(later.visible, false);
+});
+
+test("profil ve combo puani pozisyondaki oneriler arasinda buyuk fark acmaz", () => {
+  const janissary = listRoster().find((row) => row.id === "janissary");
+  const advice = buildDraftAdvice({
+    picks: [],
+    knownPlayers: [{ player: janissary, team: "radiant", matchRole: "pos3" }],
+  });
+  const rows = advice.blocks
+    .find((row) => row.role === "pos3")
+    .suggestions.filter((row) => !row.variety);
+  const spread = rows[0].score - rows.at(-1).score;
+  assert.ok(spread <= 10, "pick oncesi fark: " + spread);
+});

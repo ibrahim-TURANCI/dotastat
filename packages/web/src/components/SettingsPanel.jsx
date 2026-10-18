@@ -225,16 +225,27 @@ export function SettingsPanel({ onClose }) {
           onChange={(v) => change("startMinimized", v)}
         />
         <Toggle
-          label="Oyun içinde draft ve item tavsiyesi göster"
-          checked={form.showOverlay !== false}
-          onChange={(v) => change("showOverlay", v)}
+          label="Oyun içinde draft önerilerini göster"
+          checked={form.showDraftOverlay !== false}
+          onChange={(v) => change("showDraftOverlay", v)}
         />
         <p className="muted micro">
-          Hero seçimi sırasında ekranın sağında pozisyon başına önerilen
-          hero'lar ve puanları, maç sürerken sağ altta sıradaki 4 item önerisi
-          görünür. Dota'nın görüntü modu “Kenarlıksız pencere” olmalı; tam ekran
-          modunda hiçbir uygulama oyunun üstüne çizilemez.
+          Hero seçimi ve strateji süresi boyunca ekranın sağında pozisyon başına
+          önerilen hero'lar ve puanları görünür.
         </p>
+        <Toggle
+          label="Oyun içinde item tavsiyesi göster"
+          checked={form.showItemOverlay !== false}
+          onChange={(v) => change("showItemOverlay", v)}
+        />
+        <p className="muted micro">
+          Maç sürerken sağ altta sıradaki 4 item önerisi görünür. Dota'nın
+          görüntü modu “Kenarlıksız pencere” olmalı; tam ekran modunda hiçbir
+          uygulama oyunun üstüne çizilemez.
+        </p>
+        {form.showItemOverlay !== false ? (
+          <ItemOverlaySettings form={form} change={change} />
+        ) : null}
         <Toggle
           label="GSI dosyasını otomatik kur"
           checked={form.autoInstallGsi !== false}
@@ -260,6 +271,185 @@ export function SettingsPanel({ onClose }) {
         >
           {saving ? "Kaydediliyor…" : "Kaydet"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Item seridinin dizilimleri; olculer 1080p'de piksel. Masaustundeki overlay
+ * penceresiyle (packages/desktop/src/services/overlay.js -> ITEM_LAYOUTS)
+ * AYNI olmali.
+ */
+const ITEM_LAYOUTS = [
+  { key: "horizontal", label: "Yatay", width: 188, height: 32, cols: 4 },
+  { key: "vertical", label: "Dikey", width: 44, height: 140, cols: 1 },
+  { key: "grid", label: "2x2", width: 92, height: 68, cols: 2 },
+];
+/** Zula panelinin ustu; daha asagisi Dota'nin HUD'una biner. */
+const ITEM_MIN_HEIGHT = 19;
+/** Ekranin ustundeki ag bilgisi (FPS / ping) alani; serit buraya cikamaz. */
+const TOP_RESERVED = 7;
+const OPACITY_MIN = 15;
+const OPACITY_MAX = 100;
+
+/**
+ * Dizilime gore secilebilecek en yuksek konum (%): seridin ust kenari ag
+ * bilgisi alaninin altinda kalir.
+ * @param {{ height: number }} layout
+ */
+function maxItemHeight(layout) {
+  return Math.floor(100 - TOP_RESERVED - (layout.height / 1080) * 100);
+}
+
+/**
+ * Item tavsiyesi seridinin dizilim, yukseklik ve opaklik ayarlari ile
+ * ekranin sag kenarini temsil eden on izleme.
+ *
+ * @param {{ form: Record<string, any>, change: (key: string, value: any) => void }} props
+ */
+function ItemOverlaySettings({ form, change }) {
+  const layout =
+    ITEM_LAYOUTS.find((row) => row.key === form.itemOverlayLayout) ||
+    ITEM_LAYOUTS[0];
+  const max = maxItemHeight(layout);
+  const height = Math.min(
+    max,
+    Math.max(
+      ITEM_MIN_HEIGHT,
+      Number(form.itemOverlayHeight) || ITEM_MIN_HEIGHT,
+    ),
+  );
+  const opacity = Math.min(
+    OPACITY_MAX,
+    Math.max(OPACITY_MIN, Number(form.itemOverlayOpacity ?? 75)),
+  );
+
+  /** @param {typeof ITEM_LAYOUTS[number]} next */
+  function pickLayout(next) {
+    change("itemOverlayLayout", next.key);
+    // Yeni dizilim daha uzunsa konum ag bilgisi alanina tasmasin.
+    if (height > maxItemHeight(next)) {
+      change("itemOverlayHeight", maxItemHeight(next));
+    }
+  }
+
+  return (
+    <div className="overlay-settings">
+      <div className="overlay-settings-controls">
+        <div className="settings-field">
+          <span className="settings-label">Dizilim</span>
+          <div className="overlay-layouts" role="radiogroup">
+            {ITEM_LAYOUTS.map((row) => (
+              <button
+                key={row.key}
+                type="button"
+                role="radio"
+                aria-checked={row.key === layout.key}
+                className={
+                  "btn small" + (row.key === layout.key ? " primary" : " ghost")
+                }
+                onClick={() => pickLayout(row)}
+              >
+                {row.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="settings-field">
+          <span className="settings-label">Yükseklik: %{height}</span>
+          <input
+            type="range"
+            min={ITEM_MIN_HEIGHT}
+            max={max}
+            step={1}
+            value={height}
+            onChange={(event) =>
+              change("itemOverlayHeight", Number(event.target.value))
+            }
+          />
+          <span className="muted micro">
+            Ekranın altından uzaklık. %{ITEM_MIN_HEIGHT} Zula'nın hemen üstü; en
+            üstteki ağ bilgisi alanına çıkamaz.
+          </span>
+        </label>
+
+        <label className="settings-field">
+          <span className="settings-label">Opaklık: %{opacity}</span>
+          <input
+            type="range"
+            min={OPACITY_MIN}
+            max={OPACITY_MAX}
+            step={5}
+            value={opacity}
+            onChange={(event) =>
+              change("itemOverlayOpacity", Number(event.target.value))
+            }
+          />
+        </label>
+      </div>
+
+      <OverlayPreview layout={layout} height={height} opacity={opacity} />
+    </div>
+  );
+}
+
+/** On izlemede temsil edilen ekran dilimi: 1080p'nin sagdaki 600 pikseli. */
+const PREVIEW_SCALE = 0.3;
+const px = (value) => Math.round(value * PREVIEW_SCALE);
+
+/**
+ * Ekranin sag kenarinin basit bir cizimi: ag bilgisi, sesli komut yazisi,
+ * Zula, alttaki HUD ve item tavsiyesinin secilen konumu.
+ *
+ * @param {{ layout: typeof ITEM_LAYOUTS[number], height: number, opacity: number }} props
+ */
+function OverlayPreview({ layout, height, opacity }) {
+  return (
+    <div
+      className="overlay-preview"
+      style={{ width: px(600), height: px(1080) }}
+      aria-label="Item tavsiyesinin ekrandaki konumu"
+    >
+      <div
+        className="op-zone op-reserved"
+        style={{ height: (TOP_RESERVED / 100) * px(1080) }}
+      />
+      <div
+        className="op-zone op-network"
+        style={{ top: px(6), right: px(8), width: px(200), height: px(46) }}
+      >
+        Ağ
+      </div>
+      <div
+        className="op-zone op-voice"
+        style={{ top: px(640), right: px(8), width: px(150), height: px(36) }}
+      >
+        Sesli komut
+      </div>
+      <div
+        className="op-zone op-stash"
+        style={{ bottom: px(130), right: 0, width: px(300), height: px(74) }}
+      >
+        Zula
+      </div>
+      <div className="op-zone op-hud" style={{ height: px(130) }}>
+        HUD · hızlı alım
+      </div>
+      <div
+        className="op-items"
+        style={{
+          bottom: (height / 100) * px(1080),
+          width: px(layout.width),
+          height: px(layout.height),
+          gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
+          opacity: opacity / 100,
+        }}
+      >
+        {[0, 1, 2, 3].map((index) => (
+          <span key={index} />
+        ))}
       </div>
     </div>
   );

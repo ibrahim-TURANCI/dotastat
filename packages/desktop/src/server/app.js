@@ -1137,10 +1137,11 @@ function createServerApp(options) {
   /** Overlay'de gosterilen tavsiye sayisi. */
   const OVERLAY_SLOTS = 4;
   /**
-   * Overlay'in draft onerilerini gosterdigi evre: hero secimi. Son pick
-   * yapilinca (draft "complete") gizlenir; PRE_GAME'de item seridi gelir.
+   * Overlay'in draft onerilerini gosterdigi evreler: hero secimi ve strateji
+   * suresi. Pickler bitince secilen hero'lar puanlariyla strateji suresi
+   * boyunca kalir (draft "planning"); PRE_GAME'de item seridi gelir.
    */
-  const OVERLAY_DRAFT_PHASES = ["HERO_SELECTION"];
+  const OVERLAY_DRAFT_PHASES = ["HERO_SELECTION", "STRATEGY_TIME"];
   /** Draft overlay'inde pozisyon basina en fazla hero. */
   const OVERLAY_DRAFT_PER_ROLE = 5;
 
@@ -1164,6 +1165,9 @@ function createServerApp(options) {
         filled: block.filled
           ? {
               hero: block.filled.hero,
+              name: block.filled.heroName,
+              // Secilen hero'nun maca uyumu; her pickte yeniden puanlanir.
+              score: block.filled.score,
               icon: core.heroImageUrl(block.filled.hero, "icon"),
             }
           : null,
@@ -1179,7 +1183,7 @@ function createServerApp(options) {
               })),
       }))
       .filter((row) => row.filled || row.heroes.length);
-    if (!roles.some((row) => row.heroes.length)) {
+    if (!roles.some((row) => row.heroes.length || row.filled)) {
       return { active: false, reason: "oneri-yok" };
     }
     return { active: true, mode: "draft", roles };
@@ -1427,6 +1431,11 @@ function createServerApp(options) {
       "autoLaunch",
       "autoInstallGsi",
       "showOverlay",
+      "showDraftOverlay",
+      "showItemOverlay",
+      "itemOverlayLayout",
+      "itemOverlayHeight",
+      "itemOverlayOpacity",
     ]) {
       if (body[key] !== undefined && body[key] !== "***") {
         patch[key] = body[key];
