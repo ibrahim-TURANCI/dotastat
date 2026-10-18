@@ -112,12 +112,14 @@ export function LiveMatchPanel({
           side="radiant"
           players={live.radiantPlayers}
           mine={live.myTeam === "radiant"}
+          risk={live.preMatchRisk}
         />
         <TeamColumn
           title="Dire"
           side="dire"
           players={live.direPlayers}
           mine={live.myTeam === "dire"}
+          risk={live.preMatchRisk}
         />
       </div>
 
@@ -191,10 +193,11 @@ function TeamScore({ side, score, mine }) {
  *   title: string,
  *   side: string,
  *   players: Array<Record<string, any>>,
- *   mine: boolean
+ *   mine: boolean,
+ *   risk?: Record<string, any>|null
  * }} props
  */
-function TeamColumn({ title, side, players, mine }) {
+function TeamColumn({ title, side, players, mine, risk }) {
   // Slot sirasi sabit tutulur: kaynaklar farkli siralarda gelebiliyor ve
   // satirlar her yoklamada yer degistirirse liste okunamaz hale geliyor.
   const rows = [...(players || [])].sort(
@@ -207,6 +210,8 @@ function TeamColumn({ title, side, players, mine }) {
         {title}
         {mine ? <span className="chip accent">bizim taraf</span> : null}
       </h3>
+
+      <WinChance risk={risk} side={side} mine={mine} />
 
       {rows.length ? (
         <div className="live-table-wrap">
@@ -229,6 +234,52 @@ function TeamColumn({ title, side, players, mine }) {
       ) : (
         <p className="muted micro">Oyuncu verisi gelmedi.</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Takimin kazanma ihtimali (mac oncesi risk analizi; bkz. core
+ * live/pre-match-risk.js): tek satir yazi + ince cubuk. Cubuk %44-%56
+ * araligini tam genislige yayar, %50 ortada durur.
+ *
+ * Uyarilar (tilt, erken baski, double down) yalnizca BIZIM takimin
+ * sutununda, kisa birer satir olarak.
+ *
+ * Veri yetersizse (profil gorunmuyor, draft yok) hic cizilmez: %50 yazmak
+ * bilgi gibi gorunur ama yazi-turadan farki yoktur.
+ *
+ * @param {{ risk?: Record<string, any>|null, side: "radiant"|"dire", mine: boolean }} props
+ */
+function WinChance({ risk, side, mine }) {
+  if (!risk?.visible) {
+    return null;
+  }
+  const percent = Number(risk[side]) || 50;
+  const tone = percent >= 52 ? "up" : percent <= 48 ? "down" : "even";
+  const fill = Math.min(100, Math.max(0, ((percent - 44) / 12) * 100));
+  const alerts = mine ? risk.alerts || [] : [];
+
+  return (
+    <div
+      className={"win-chance " + tone}
+      title={`Güven: %${Math.round((risk.confidence || 0) * 100)} · ${risk.knownPlayers} oyuncunun profili görünüyor. Ağırlıklar: %40 form, %35 draft, %25 davranış/profil.`}
+    >
+      <div className="win-chance-line">
+        <span className="muted micro">Kazanma ihtimali</span>
+        <strong>%{percent.toFixed(1)}</strong>
+      </div>
+      <div className="win-chance-bar">
+        <i style={{ width: fill + "%" }} />
+      </div>
+      {alerts.map((alert) => (
+        <p key={alert.type} className={"win-chance-alert " + alert.severity}>
+          <b>
+            {alert.icon} {alert.title}
+          </b>{" "}
+          <span className="muted">{alert.message}</span>
+        </p>
+      ))}
     </div>
   );
 }

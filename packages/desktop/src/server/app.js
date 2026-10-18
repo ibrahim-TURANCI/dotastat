@@ -1115,11 +1115,20 @@ function createServerApp(options) {
   async function buildContext(state, options = {}) {
     const { statsByPlayerId, profilesByPlayerId } =
       await playerData.getCachedLiveInputs();
+    // Kazanma ihtimali icin lobi verisi: kadrodakiler onbellekten, digerleri
+    // (Stratz anahtari ayarliysa) mac basina birkac toplu istekle. Hata
+    // panelin geri kalanini durdurmaz.
+    const lobbyPlayers = await playerData
+      .getLobbyInputs(core.lobbySlotsFromLiveState(state), {
+        matchId: state.matchId,
+      })
+      .catch(() => ({}));
     return core.buildLiveMatchContext({
       liveState: state,
       minAdvice: options.minAdvice,
       statsByPlayerId,
       profilesByPlayerId,
+      lobbyPlayers,
       viewerSteamId: settings.resolveSteamId(),
       // Kullanicinin ekranda sectigi pozisyon.
       viewerRole: validRole(settings.get().myRole),
@@ -1137,10 +1146,11 @@ function createServerApp(options) {
   /** Overlay'de gosterilen tavsiye sayisi. */
   const OVERLAY_SLOTS = 4;
   /**
-   * Overlay'in draft onerilerini gosterdigi evre: hero secimi. Son pick
-   * yapilinca (draft "complete") gizlenir; PRE_GAME'de item seridi gelir.
+   * Overlay'in draft onerilerini gosterdigi evreler: hero secimi ve strateji
+   * suresi. Pickler bitince secilen hero'lar puanlariyla strateji suresi
+   * boyunca kalir (draft "planning"); PRE_GAME'de item seridi gelir.
    */
-  const OVERLAY_DRAFT_PHASES = ["HERO_SELECTION"];
+  const OVERLAY_DRAFT_PHASES = ["HERO_SELECTION", "STRATEGY_TIME"];
   /** Draft overlay'inde pozisyon basina en fazla hero. */
   const OVERLAY_DRAFT_PER_ROLE = 5;
 
@@ -1164,6 +1174,9 @@ function createServerApp(options) {
         filled: block.filled
           ? {
               hero: block.filled.hero,
+              name: block.filled.heroName,
+              // Secilen hero'nun maca uyumu; her pickte yeniden puanlanir.
+              score: block.filled.score,
               icon: core.heroImageUrl(block.filled.hero, "icon"),
             }
           : null,
@@ -1179,10 +1192,19 @@ function createServerApp(options) {
               })),
       }))
       .filter((row) => row.filled || row.heroes.length);
-    if (!roles.some((row) => row.heroes.length)) {
+    if (!roles.some((row) => row.heroes.length || row.filled)) {
       return { active: false, reason: "oneri-yok" };
     }
-    return { active: true, mode: "draft", roles };
+    // Kazanma ihtimali hero onerilerinin ustunde, onlarla birlikte kaybolur
+    // (draft bitince overlay item moduna gecer ve bu alan gonderilmez).
+    const risk = context.preMatchRisk;
+    const winChance = risk?.visible
+      ? {
+          percent: risk.myTeam === "dire" ? risk.dire : risk.radiant,
+          confidence: risk.confidence,
+        }
+      : null;
+    return { active: true, mode: "draft", roles, winChance };
   }
 
   /**
@@ -1427,6 +1449,11 @@ function createServerApp(options) {
       "autoLaunch",
       "autoInstallGsi",
       "showOverlay",
+      "showDraftOverlay",
+      "showItemOverlay",
+      "itemOverlayLayout",
+      "itemOverlayHeight",
+      "itemOverlayOpacity",
     ]) {
       if (body[key] !== undefined && body[key] !== "***") {
         patch[key] = body[key];

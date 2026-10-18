@@ -224,7 +224,21 @@ app.whenReady().then(async () => {
   overlay = createOverlay({
     logger,
     getState: () => server.getOverlayState(),
-    isEnabled: () => server?.settings.get().showOverlay !== false,
+    // Draft ve item modu ayri ayri acilip kapanir (bkz. server/settings.js).
+    isEnabled: (mode) => {
+      const current = server?.settings.get() || {};
+      return mode === "draft"
+        ? current.showDraftOverlay !== false
+        : current.showItemOverlay !== false;
+    },
+    getItemConfig: () => {
+      const current = server?.settings.get() || {};
+      return {
+        layout: current.itemOverlayLayout,
+        height: current.itemOverlayHeight,
+        opacity: current.itemOverlayOpacity,
+      };
+    },
   });
   overlay.start();
 

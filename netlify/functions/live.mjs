@@ -20,10 +20,11 @@ import {
   isLiveMatchActive,
   mergeLiveStateGroup,
   mergeLiveStatesByMatch,
+  lobbySlotsFromLiveState,
   normalizeGsiPayload,
   selectLiveStateForViewer,
 } from "@dotastat/core";
-import { getCachedLiveInputs } from "./_lib/player-data.mjs";
+import { getCachedLiveInputs, getLobbyInputs } from "./_lib/player-data.mjs";
 import { liveStore } from "./_lib/store.mjs";
 import { readSession } from "./_lib/session.mjs";
 import { IDENTITY_MESSAGES, readIdentity } from "./_lib/identity.mjs";
@@ -312,6 +313,13 @@ export default async (request) => {
     });
 
     const { statsByPlayerId, profilesByPlayerId } = await getCachedLiveInputs();
+    // Kazanma ihtimali icin lobi verisi. Hata verse de canli panel calismaya
+    // devam eder; yalnizca ihtimal gorunmez. Sonuc 20 sn surec hafizasindan
+    // gelir ve ayni nesnedir, bu yuzden baglam hafizasini bozmaz.
+    const lobbyPlayers = await getLobbyInputs(
+      lobbySlotsFromLiveState(liveState),
+      { matchId: liveState.matchId },
+    ).catch(() => ({}));
     const statesKey = states
       .map((row) => row.uploaderSteamId + "@" + row.updatedAt)
       .join(",");
@@ -319,12 +327,19 @@ export default async (request) => {
       viewerSteamId + "|" + viewerRole + "|" + statesKey,
       // Online listesi hafizadan geldiginde ayni nesnedir (bkz. readOnline);
       // degistiginde baglam yeniden hesaplanir.
-      [heroOverrides, statsByPlayerId, profilesByPlayerId, online],
+      [
+        heroOverrides,
+        statsByPlayerId,
+        profilesByPlayerId,
+        online,
+        lobbyPlayers,
+      ],
       () =>
         buildLiveMatchContext({
           liveState,
           statsByPlayerId,
           profilesByPlayerId,
+          lobbyPlayers,
           viewerSteamId,
           viewerRole,
           heroOverrides,
