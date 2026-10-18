@@ -11,6 +11,12 @@ import { findRosterPlayer, toAccountId } from "../players/roster.js";
 import { heroDisplayName, normalizeHeroKey } from "../heroes/hero-names.js";
 import { buildDraftAdvice, resolveDraftStage } from "../draft/draft-advisor.js";
 import { buildLiveItemAdvice } from "../live/item-advice.js";
+import {
+  buildPreMatchRisk,
+  loadedFromInputs,
+  lobbySlotFromRow,
+  summarizePreMatchRisk,
+} from "../live/pre-match-risk.js";
 
 /** Bu suredir guncellenmemis canli mac "bitmis" sayilir. */
 export const LIVE_MATCH_TTL_MS = 3 * 60 * 1000;
@@ -375,6 +381,9 @@ function resolveMyTeam({ liveState, allPlayers, knownPlayers, input }) {
  *   online arkadaslari "olasi" oyuncu olarak degerlendirir.
  * @param {number} [input.minAdvice] Oyuncu basina en az oneri sayisi; oyun
  *   ici overlay kullanir. Verilmezse veri seviyesinin kotasi gecerli.
+ * @param {Record<string, Record<string, any>>} [input.lobbyPlayers]
+ *   accountId -> lobi verisi (bkz. player-data-service getLobbyInputs).
+ *   Verilmezse `preMatchRisk` null doner.
  */
 export function buildLiveMatchContext(input = {}) {
   const liveState = input.liveState || null;
@@ -551,9 +560,26 @@ export function buildLiveMatchContext(input = {}) {
     heroOverrides: input.heroOverrides || {},
   });
 
+  // MAC ONCESI RISK: kazanma ihtimali + uyarilar. Lobi verisi ag istegi
+  // gerektirdigi icin cagiran toplayip verir; burada yalnizca hesap yapilir.
+  // Pozisyon, oyuncunun sectigi rolle zenginlestirilmis satirdan okunur.
+  const preMatchRisk = input.lobbyPlayers
+    ? summarizePreMatchRisk(
+        buildPreMatchRisk({
+          players: loadedFromInputs(
+            allPlayers.map(lobbySlotFromRow),
+            input.lobbyPlayers,
+          ),
+          myTeam: myTeam === "dire" ? "dire" : "radiant",
+          heroOverrides: input.heroOverrides || {},
+        }),
+      )
+    : null;
+
   return {
     active: fresh,
     stale: !fresh,
+    preMatchRisk,
     matchId: liveState.matchId || "",
     phase: liveState.phase,
     gameTime: liveState.gameTime,

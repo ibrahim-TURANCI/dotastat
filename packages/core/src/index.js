@@ -253,6 +253,26 @@ export {
   THREATS,
 } from "./live/threats.js";
 
+// --- Mac oncesi risk analizi (tilt, konfor, rol uyumu, kazanma ihtimali) -----
+export {
+  analyzePlayer,
+  analyzePreMatchRisk,
+  buildPreMatchRisk,
+  comfortOf,
+  draftBalance,
+  loadLobbyPlayers,
+  loadedFromInputs,
+  lobbySlotFromRow,
+  lobbySlotsFromLiveState,
+  roleFitOf,
+  summarizePreMatchRisk,
+  tiltOf,
+  COMFORT_LABELS,
+  FETCH_TIMEOUT_MS,
+  RISK_WEIGHTS,
+  WIN_PROBABILITY_RANGE,
+} from "./live/pre-match-risk.js";
+
 // --- Hero ozellikleri ("Özellikler" kutucuklari) ----------------------------
 export {
   heroTraitSeed,

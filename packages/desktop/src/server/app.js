@@ -1115,11 +1115,20 @@ function createServerApp(options) {
   async function buildContext(state, options = {}) {
     const { statsByPlayerId, profilesByPlayerId } =
       await playerData.getCachedLiveInputs();
+    // Kazanma ihtimali icin lobi verisi: kadrodakiler onbellekten, digerleri
+    // (Stratz anahtari ayarliysa) mac basina birkac toplu istekle. Hata
+    // panelin geri kalanini durdurmaz.
+    const lobbyPlayers = await playerData
+      .getLobbyInputs(core.lobbySlotsFromLiveState(state), {
+        matchId: state.matchId,
+      })
+      .catch(() => ({}));
     return core.buildLiveMatchContext({
       liveState: state,
       minAdvice: options.minAdvice,
       statsByPlayerId,
       profilesByPlayerId,
+      lobbyPlayers,
       viewerSteamId: settings.resolveSteamId(),
       // Kullanicinin ekranda sectigi pozisyon.
       viewerRole: validRole(settings.get().myRole),
@@ -1186,7 +1195,16 @@ function createServerApp(options) {
     if (!roles.some((row) => row.heroes.length || row.filled)) {
       return { active: false, reason: "oneri-yok" };
     }
-    return { active: true, mode: "draft", roles };
+    // Kazanma ihtimali hero onerilerinin ustunde, onlarla birlikte kaybolur
+    // (draft bitince overlay item moduna gecer ve bu alan gonderilmez).
+    const risk = context.preMatchRisk;
+    const winChance = risk?.visible
+      ? {
+          percent: risk.myTeam === "dire" ? risk.dire : risk.radiant,
+          confidence: risk.confidence,
+        }
+      : null;
+    return { active: true, mode: "draft", roles, winChance };
   }
 
   /**

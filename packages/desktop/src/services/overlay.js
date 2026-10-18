@@ -67,7 +67,8 @@ const RIGHT_MARGIN = 0;
  * HUD'u da oyle).
  */
 const DRAFT_WIDTH = 196;
-const DRAFT_HEIGHT = 290;
+/** Sutunlar (~270) + ustteki kazanma ihtimali seridi (~22). */
+const DRAFT_HEIGHT = 312;
 /**
  * Pencerenin ust kenarinin ekranin ustunden uzakligi (yukseklige oran).
  * Pick ekraninda ust hero seridinin hemen altina, saga yasli durur; 16:9'da
@@ -246,6 +247,7 @@ function createOverlay(options) {
         hero: state.hero,
         items: state.items,
         roles: state.roles,
+        winChance: state.winChance || null,
         layout: itemConfig.layout,
         opacity: itemConfig.opacity,
       });

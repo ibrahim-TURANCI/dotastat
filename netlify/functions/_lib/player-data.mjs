@@ -92,3 +92,16 @@ export const getCachedLiveInputs = () => {
 
   return statsInFlight;
 };
+
+/**
+ * Mac oncesi risk analizi icin lobideki oyuncularin verisi.
+ *
+ * Kadrodakiler onbellekten okunur; yabancilar icin mac basina en fazla birkac
+ * TOPLU Stratz istegi atilir ve sonuc Blobs'ta tum ziyaretcilerle paylasilir.
+ * OpenDota'ya gidilmez (bkz. core getLobbyInputs).
+ *
+ * @param {Array<{ accountId: string }>} slots
+ * @param {{ matchId?: string }} [options]
+ */
+export const getLobbyInputs = (slots, options) =>
+  playerDataService().getLobbyInputs(slots, options);

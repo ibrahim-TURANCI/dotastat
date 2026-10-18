@@ -14,9 +14,10 @@
 
 import { createOpenDotaClient } from "../providers/opendota.js";
 import { createProviderChain } from "../providers/provider-chain.js";
+import { RATE_LIMIT } from "../providers/provider-errors.js";
 import { createStratzClient } from "../providers/stratz.js";
 import { resolveRankTier } from "./player-types.js";
-import { listRoster } from "./roster.js";
+import { findRosterPlayer, listRoster } from "./roster.js";
 import { buildPlayerEvaluation, toRosterCard } from "./evaluation.js";
 import { buildMatchDetailView } from "./match-detail.js";
 import { buildMatchSquads } from "./match-squads.js";
@@ -46,6 +47,24 @@ export const MATCH_FETCH_SIZE = 60;
  * verir; ek istek harcanmaz.
  */
 export const MATCH_HISTORY_SIZE = 200;
+
+/**
+ * Lobi taramasi (mac oncesi risk analizi; bkz. getLobbyInputs).
+ *
+ * Yabanci bir oyuncunun verisi 6 saat saklanir: ayni gece ayni kisiyle tekrar
+ * eslesmek sik ve son 20 macin trendi birkac saatte anlamli degismez.
+ */
+export const LOBBY_TTL_MS = 6 * 60 * 60 * 1000;
+/** Lobi taramasinda oyuncu basina cekilen mac (tilt + konfor penceresi). */
+export const LOBBY_MATCH_TAKE = 20;
+/** Ayni mac icin iki toplu Stratz istegi arasindaki en kisa sure. */
+export const LOBBY_BATCH_GAP_MS = 30 * 1000;
+/** Bir mac icin atilabilecek en fazla toplu istek. */
+export const LOBBY_MAX_BATCHES = 3;
+const LOBBY_GATE_TTL_MS = 2 * 60 * 60 * 1000;
+const LOBBY_MEMO_MS = 20 * 1000;
+const LOBBY_PREFIX = "lobby:";
+const LOBBY_GATE_PREFIX = "lobbygate:";
 
 /**
  * Son Maclar kadro eslesmesinde onbellekteki mac detayina bakilacak en fazla
@@ -294,11 +313,15 @@ export function createPlayerDataService(options) {
   // Iki kaynak ayni sozlesmeyi uygular; hangisinin once sorulacagi uca gore
   // degisir (bkz. PROVIDER_ORDER). Stratz anahtari yoksa zincir onu sessizce
   // atlar ve her sey OpenDota'dan gelir.
+  // Stratz istemcisine ayrica referans tutulur: lobi taramasi (bkz.
+  // getLobbyInputs) YALNIZCA Stratz kullanir, zincirin OpenDota yedegine
+  // dusmez.
+  const stratz = createStratzClient({
+    apiKey: options.stratzApiKey || "",
+    timeoutMs,
+  });
   const client = createProviderChain(
-    [
-      createOpenDotaClient({ apiKey: options.apiKey || "", timeoutMs }),
-      createStratzClient({ apiKey: options.stratzApiKey || "", timeoutMs }),
-    ],
+    [createOpenDotaClient({ apiKey: options.apiKey || "", timeoutMs }), stratz],
     { order: PROVIDER_ORDER },
   );
 
@@ -965,6 +988,153 @@ export function createPlayerDataService(options) {
     return { statsByPlayerId, profilesByPlayerId };
   }
 
+  /** Lobi taramasinin surec ici hafizasi: matchId -> son sonuc. */
+  /** @type {Map<string, { at: number, ids: string, value: Record<string, any> }>} */
+  const lobbyMemo = new Map();
+  /** @type {Map<string, Promise<Record<string, any>>>} */
+  const lobbyInFlight = new Map();
+
+  /**
+   * Mac oncesi risk analizi icin lobideki oyuncularin verisi
+   * (accountId -> FetchedPlayer; bkz. live/pre-match-risk.js).
+   *
+   * ISTEK BUTCESI — bu fonksiyonun asil isi:
+   *   - Kadrodaki oyuncu: YALNIZCA onbellekten. Paneldeki veri zaten orada.
+   *   - Yabanci oyuncu: hesap basina LOBBY_TTL_MS onbellek ("private" sonuc
+   *     dahil — gizli profil her yoklamada yeniden sorulmaz).
+   *   - Eksikler TEK Stratz istegiyle gelir (bkz. stratz.getLobbyPlayers).
+   *     Ayni mac icin iki toplu istek arasinda en az LOBBY_BATCH_GAP_MS, mac
+   *     basina en fazla LOBBY_MAX_BATCHES istek: kimlikler pick boyunca
+   *     parca parca gorundugu icin birkac tur gerekebilir, sonsuz degil.
+   *   - OpenDota'ya HIC gidilmez. Stratz yoksa/hata verirse oyuncu
+   *     "fallback" olur (bolge rutbesi + lobi ortalamasi).
+   *
+   * Panel 5 sn'de bir yokladigi icin sonuc LOBBY_MEMO_MS surec hafizasinda
+   * tutulur; ayni kimlik listesiyle gelen yoklama depoya da gitmez.
+   *
+   * @param {Array<{ accountId: string }>} slots
+   * @param {{ matchId?: string, allowFetch?: boolean }} [lobbyOptions]
+   * @returns {Promise<Record<string, any>>}
+   */
+  async function getLobbyInputs(slots, lobbyOptions = {}) {
+    const ids = [
+      ...new Set(
+        (slots || [])
+          .map((slot) => String(slot?.accountId || ""))
+          .filter((id) => /^\d+$/.test(id) && id !== "0"),
+      ),
+    ].sort();
+    if (!ids.length) {
+      return {};
+    }
+    const matchId = String(lobbyOptions.matchId || "nomatch");
+    const idKey = ids.join(",");
+    const memo = lobbyMemo.get(matchId);
+    if (memo && memo.ids === idKey && Date.now() - memo.at < LOBBY_MEMO_MS) {
+      return memo.value;
+    }
+    const flightKey = matchId + "|" + idKey;
+    if (lobbyInFlight.has(flightKey)) {
+      return lobbyInFlight.get(flightKey);
+    }
+
+    const work = (async () => {
+      /** @type {Record<string, any>} */
+      const result = {};
+      const missing = [];
+
+      await Promise.all(
+        ids.map(async (id) => {
+          const rosterPlayer = findRosterPlayer(id);
+          if (rosterPlayer) {
+            const [matches, heroes, profile] = await Promise.all([
+              getPlayerMatches(rosterPlayer, { allowFetch: false }),
+              getHeroPerformance(rosterPlayer, { allowFetch: false }),
+              getPlayerProfile(rosterPlayer, { allowFetch: false }),
+            ]);
+            result[id] = {
+              matches: matches.matches.slice(0, LOBBY_MATCH_TAKE),
+              heroes: heroes.heroes.length ? heroes.heroes : undefined,
+              rankTier: profile?.rank?.tier || null,
+              isPrivate: !matches.matches.length,
+            };
+            return;
+          }
+          const cached = await storage.get(LOBBY_PREFIX + id);
+          if (cached) {
+            result[id] = cached;
+          } else {
+            missing.push(id);
+          }
+        }),
+      );
+
+      if (
+        missing.length &&
+        lobbyOptions.allowFetch !== false &&
+        stratz.isConfigured
+      ) {
+        const gateKey = LOBBY_GATE_PREFIX + matchId;
+        const gate = (await storage.get(gateKey)) || { count: 0, at: 0 };
+        const open =
+          gate.count < LOBBY_MAX_BATCHES &&
+          Date.now() - gate.at >= LOBBY_BATCH_GAP_MS;
+        if (open) {
+          await storage.set(
+            gateKey,
+            { count: gate.count + 1, at: Date.now() },
+            { ttlMs: LOBBY_GATE_TTL_MS },
+          );
+          let fetched = null;
+          try {
+            fetched = await stratz.getLobbyPlayers(missing, {
+              matchTake: LOBBY_MATCH_TAKE,
+            });
+          } catch (error) {
+            // Kota hatasinda tekrar denenmez; agir sorgu reddedildiyse tum
+            // zamanlar hero taramasi olmadan bir kez daha.
+            if (error?.code !== RATE_LIMIT) {
+              fetched = await stratz
+                .getLobbyPlayers(missing, {
+                  matchTake: LOBBY_MATCH_TAKE,
+                  withHeroes: false,
+                })
+                .catch(() => null);
+            }
+          }
+          if (fetched) {
+            await Promise.all(
+              missing.map(async (id) => {
+                const row = fetched[id] || {
+                  matches: [],
+                  rankTier: null,
+                  isPrivate: true,
+                };
+                result[id] = row;
+                await storage.set(LOBBY_PREFIX + id, row, {
+                  ttlMs: LOBBY_TTL_MS,
+                });
+              }),
+            );
+          }
+        }
+      }
+
+      lobbyMemo.set(matchId, { at: Date.now(), ids: idKey, value: result });
+      if (lobbyMemo.size > 8) {
+        lobbyMemo.delete(lobbyMemo.keys().next().value);
+      }
+      return result;
+    })();
+
+    lobbyInFlight.set(flightKey, work);
+    try {
+      return await work;
+    } finally {
+      lobbyInFlight.delete(flightKey);
+    }
+  }
+
   /**
    * Oyuncunun maclarinda kadrodan kimlerin oldugu (bkz. match-squads.js).
    *
@@ -1318,6 +1488,7 @@ export function createPlayerDataService(options) {
     getPlayerBundle,
     getRosterDashboard,
     getCachedLiveInputs,
+    getLobbyInputs,
     getMatchSquads,
     /** Hangi kaynaklar yapilandirilmis, en son hangisi cevap verdi? */
     providerStatus: () => ({

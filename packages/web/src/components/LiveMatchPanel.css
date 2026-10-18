@@ -89,6 +89,65 @@
   gap: 8px;
 }
 
+/* --- Kazanma ihtimali (sutun basinda, tablonun ustunde) ----------------- */
+
+.win-chance {
+  margin: 0 0 10px;
+}
+
+.win-chance-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.win-chance-line strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--txt-0);
+}
+
+.win-chance.up .win-chance-line strong {
+  color: var(--good);
+}
+
+.win-chance.down .win-chance-line strong {
+  color: var(--bad);
+}
+
+.win-chance-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.win-chance-bar i {
+  display: block;
+  height: 100%;
+  background: var(--txt-2);
+  transition: width 0.4s ease;
+}
+
+.win-chance.up .win-chance-bar i {
+  background: var(--good);
+}
+
+.win-chance.down .win-chance-bar i {
+  background: var(--bad);
+}
+
+.win-chance-alert {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.win-chance-alert.high b {
+  color: var(--warn);
+}
+
 .draft-done-note {
   margin: 14px 0 0;
   padding-top: 12px;

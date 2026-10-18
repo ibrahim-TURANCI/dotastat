@@ -592,5 +592,91 @@ export function createStratzClient(options = {}) {
         .filter((row) => row.hero && row.matches > 0)
         .sort((a, b) => b.matches - a.matches);
     },
+
+    /**
+     * Lobideki oyunculari TEK ISTEKTE ceker (mac oncesi risk analizi).
+     *
+     * GraphQL takma adlariyla (`p0: player(...)`, `p1: ...`) on oyuncunun
+     * profili, son maclari ve hero istatistigi ayni sorguda gelir. Oyuncu
+     * basina ayri istek atmak bir lobide 20-30 istek demekti; bu yol 1.
+     *
+     * `withHeroes: false` sorguyu hafifletir (tum zamanlar hero taramasi en
+     * pahali kisim); agir sorgu reddedilirse cagiran bununla yeniden dener.
+     *
+     * @param {string[]} accountIds 32-bit hesap kimlikleri
+     * @param {{ matchTake?: number, withHeroes?: boolean }} [lobbyOptions]
+     * @returns {Promise<Record<string, import("../live/pre-match-risk.js").FetchedPlayer>>}
+     */
+    async getLobbyPlayers(accountIds, lobbyOptions = {}) {
+      const ids = [...new Set(accountIds.map(Number))].filter(
+        (id) => Number.isSafeInteger(id) && id > 0,
+      );
+      if (!ids.length) {
+        return {};
+      }
+      const take = Math.min(50, Math.max(1, lobbyOptions.matchTake || 20));
+      const withHeroes = lobbyOptions.withHeroes !== false;
+      const fields = (index) => `
+        p${index}: player(steamAccountId: $p${index}) {
+          steamAccount { isAnonymous seasonRank }
+          matches(request: { take: $take }) {
+            id
+            startDateTime
+            durationSeconds
+            players(steamAccountId: $p${index}) { heroId isVictory isRadiant position }
+          }
+          ${withHeroes ? "heroesPerformance(request: { take: 100000 }, take: 250) { heroId matchCount winCount }" : ""}
+        }`;
+      const query = `query DotaStatLobby($take: Int!, ${ids
+        .map((_, index) => `$p${index}: Long!`)
+        .join(", ")}) {${ids.map((_, index) => fields(index)).join("")}
+      }`;
+      const variables = { take };
+      ids.forEach((id, index) => {
+        variables["p" + index] = id;
+      });
+
+      const data = await graphql(query, variables);
+      /** @type {Record<string, any>} */
+      const result = {};
+      ids.forEach((id, index) => {
+        const player = data?.["p" + index];
+        const account = player?.steamAccount;
+        const rankTier = Number(account?.seasonRank);
+        const matches = (Array.isArray(player?.matches) ? player.matches : [])
+          .map((match) => {
+            const row = match?.players?.[0];
+            const heroId = Number(row?.heroId || 0);
+            const start = Number(match?.startDateTime || 0);
+            return {
+              matchId: String(match?.id || ""),
+              startedAt: start ? new Date(start * 1000).toISOString() : "",
+              durationSeconds: Number(match?.durationSeconds || 0),
+              hero: HERO_BY_ID.get(heroId) || "",
+              role: POSITION_TO_ROLE_KEY[String(row?.position || "")] || "",
+              result: row?.isVictory ? "win" : "loss",
+              side: row?.isRadiant ? "radiant" : "dire",
+            };
+          })
+          .filter((match) => match.matchId && match.hero);
+        const heroes = withHeroes
+          ? (player?.heroesPerformance || [])
+              .map((row) => ({
+                hero: HERO_BY_ID.get(Number(row?.heroId || 0)) || "",
+                matches: Number(row?.matchCount || 0),
+                wins: Number(row?.winCount || 0),
+              }))
+              .filter((row) => row.hero && row.matches > 0)
+          : undefined;
+        result[String(id)] = {
+          matches,
+          heroes,
+          rankTier: Number.isFinite(rankTier) && rankTier > 0 ? rankTier : null,
+          isPrivate:
+            !player || Boolean(account?.isAnonymous) || !matches.length,
+        };
+      });
+      return result;
+    },
   };
 }

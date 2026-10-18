@@ -102,8 +102,62 @@
        * ve altinda puani. Pencere sag kenara yasli; sutunlar da saga yaslanir
        * ki az pozisyon kaldiginda bosluk solda kalsin.
        */
+      /* Ustte kazanma ihtimali, altinda sutunlar; ikisi de saga yasli. */
       body.draft {
-        align-items: flex-start;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: flex-end;
+        gap: 4px;
+      }
+
+      /*
+       * Kazanma ihtimali seridi: tek satir yazi + ince cubuk. Sutunlarla ayni
+       * soluk dil; lehte yesil, aleyhte kirmizi, basabas notr.
+       */
+      .win {
+        width: 186px;
+        font:
+          600 11px "Segoe UI",
+          system-ui,
+          sans-serif;
+        color: rgba(230, 238, 247, 0.9);
+        text-shadow: 0 1px 2px #000;
+        opacity: 0.85;
+      }
+
+      .win-text {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2px;
+      }
+
+      .win-bar {
+        height: 3px;
+        border-radius: 2px;
+        background: rgba(8, 14, 22, 0.6);
+        overflow: hidden;
+      }
+
+      .win-bar i {
+        display: block;
+        height: 100%;
+        background: rgba(230, 238, 247, 0.6);
+      }
+
+      .win.up b {
+        color: #7fd99a;
+      }
+
+      .win.up .win-bar i {
+        background: #7fd99a;
+      }
+
+      .win.down b {
+        color: #f08a7e;
+      }
+
+      .win.down .win-bar i {
+        background: #f08a7e;
       }
 
       .draft-cols {
@@ -198,11 +252,16 @@
   </head>
   <body>
     <div class="items" id="items"></div>
+    <div class="win" id="win" hidden>
+      <div class="win-text"><span>Kazanma ihtimali</span><b></b></div>
+      <div class="win-bar"><i></i></div>
+    </div>
     <div class="draft-cols" id="draft"></div>
 
     <script>
       const list = document.getElementById("items");
       const draft = document.getElementById("draft");
+      const win = document.getElementById("win");
       const STAR_SVG =
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
 
@@ -265,12 +324,31 @@
         );
       }
 
-      /** @param {{ mode?: string, items?: Array<Record<string, string>>, roles?: Array<Record<string, any>>, layout?: string, opacity?: number }} state */
+      /**
+       * Kazanma ihtimali; yalnizca draft modunda ve veri yeterliyse.
+       * Cubuk 44-56 araligini tam genislige yayar: %50 ortada durur.
+       * @param {{ percent: number }|null|undefined} chance
+       */
+      function renderWin(chance) {
+        win.hidden = !chance;
+        if (!chance) {
+          return;
+        }
+        const percent = Number(chance.percent) || 50;
+        win.classList.toggle("up", percent >= 52);
+        win.classList.toggle("down", percent <= 48);
+        win.querySelector("b").textContent = "%" + percent.toFixed(1);
+        const fill = Math.min(100, Math.max(0, ((percent - 44) / 12) * 100));
+        win.querySelector(".win-bar i").style.width = fill + "%";
+      }
+
+      /** @param {{ mode?: string, items?: Array<Record<string, string>>, roles?: Array<Record<string, any>>, winChance?: { percent: number }|null, layout?: string, opacity?: number }} state */
       function render(state) {
         const isDraft = state.mode === "draft";
         document.body.classList.toggle("draft", isDraft);
         list.hidden = isDraft;
         draft.hidden = !isDraft;
+        renderWin(isDraft ? state.winChance : null);
         if (isDraft) {
           renderDraft(state);
           draft.classList.add("ready");
